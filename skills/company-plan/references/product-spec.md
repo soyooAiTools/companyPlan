@@ -13,12 +13,17 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Users should only see projects and tickets relevant to their account.
 - Admins need a global overview.
 
-## Prototype Scope
+## Production Scope
 
-- Frontend-only happy path.
-- Use React/Vite patterns already in the repo.
-- No backend, no database, no real authentication until explicitly requested.
-- Account switching in the prototype stands in for permissions.
+- Use React/Vite patterns already in the repo for the frontend.
+- Use the Node/Express API for all mutable data and bootstrap reads.
+- Persist data in SQLite with a configured production data directory.
+- Use real login sessions with HttpOnly cookies.
+- Enforce permission scoping on the server for tickets, bootstrap data, attachments, and audit history.
+- Store uploaded attachments on disk and metadata in SQLite.
+- Keep runtime data, uploaded files, cookies, and passwords out of git.
+
+Do not revert to frontend-only happy-path behavior, localStorage persistence, or account switching as a permission substitute unless the user explicitly asks for a separate prototype.
 
 ## Permissions
 
@@ -34,6 +39,17 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Dragging a gantt bar must not change row order, `开始日期`, warning data, or any other ticket content.
 - Programmer users can view their scoped gantt rows but cannot drag timeline bars.
 - Other non-admin roles must not see the `任务甘特图` tab.
+- API responses must not include out-of-scope ticket rows for non-admin users.
+- API mutation handlers must reject out-of-scope ticket updates, attachment reads, and audit access.
+
+## Authentication And Data
+
+- Login should use username/password against seeded or persisted users.
+- Sessions should be server-issued and stored in HttpOnly cookies.
+- `/api/bootstrap` must reject unauthenticated requests.
+- Ticket create/update flows must write to SQLite and remain visible after reload and process restart.
+- Attachment upload must persist file content and metadata.
+- Audit events should capture ticket creation, ticket updates, and attachment uploads with actor and timestamp.
 
 ## Demand Ticket Table
 
@@ -100,8 +116,11 @@ Avoid:
 
 ## Verification
 
-Use browser checks when changing UI:
+Use automated production scenario tests for backend behavior and browser checks when changing UI:
 
+- Unauthenticated `/api/bootstrap` returns 401.
+- Login succeeds for seeded role accounts.
+- Ticket create/update, attachment upload, audit history, role scoping, and gantt visibility are covered by `npm run test:scenarios`.
 - Admin row count should be broader than non-admin.
 - Non-admin top controls should not include admin/global navigation.
 - Non-programmer non-admin bottom tabs should show only `需求提单` and `延期任务预警`.

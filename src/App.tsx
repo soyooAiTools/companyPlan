@@ -16,7 +16,6 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  SlidersHorizontal,
   Timer,
   UsersRound,
   Workflow,
@@ -32,14 +31,18 @@ type SheetTab = "需求提单" | "延期任务预警" | "任务甘特图";
 type TicketScope = "全部相关" | "我负责的" | "我的提单";
 type Health = "green" | "amber" | "red";
 type Discipline = "美术" | "UI" | "模型" | "动画" | "研发" | "音效";
-type TicketStatus = "待接收" | "处理中" | "待验收" | "已完成" | "阻塞";
-type TicketStatusFilter = TicketStatus | "全部" | "进行中";
+type TicketStatus = "排队中" | "进行中" | "阻塞" | "已完成";
+type TicketStatusFilter = TicketStatus | "全部";
 type Priority = "P0" | "P1" | "P2";
 type TicketAttachment = {
   id: string;
   name: string;
   kind: "图片" | "附件" | "文件";
   size: string;
+  mimeType?: string;
+  sizeBytes?: number;
+  dataBase64?: string;
+  downloadUrl?: string;
 };
 
 type Person = {
@@ -100,6 +103,13 @@ type TicketBoardGroup = {
   items: Ticket[];
 };
 
+type BootstrapPayload = {
+  currentUser: Person;
+  people: Person[];
+  projects: Project[];
+  tickets: Ticket[];
+};
+
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboard }> = [
   { key: "overview", label: "运营总览", icon: LayoutDashboard },
   { key: "projects", label: "项目池", icon: BriefcaseBusiness },
@@ -110,7 +120,7 @@ const navItems: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboar
 
 const sheetTabs: SheetTab[] = ["需求提单", "延期任务预警", "任务甘特图"];
 const ticketScopeOptions: TicketScope[] = ["全部相关", "我负责的", "我的提单"];
-const statusOptions: TicketStatus[] = ["待接收", "处理中", "待验收", "已完成", "阻塞"];
+const statusOptions: TicketStatus[] = ["排队中", "进行中", "阻塞", "已完成"];
 const disciplineOptions: Discipline[] = ["美术", "UI", "模型", "动画", "研发", "音效"];
 const priorityOptions: Priority[] = ["P0", "P1", "P2"];
 const ganttDayWidth = 18;
@@ -356,7 +366,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-model",
     discipline: "模型",
     startAt: "2026/06/12 16:20",
-    status: "待接收",
+    status: "排队中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -375,7 +385,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 14:33",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -397,7 +407,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 13:30",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -416,7 +426,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/11 13:01",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 1,
     statusAgeDays: 1,
@@ -437,7 +447,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/11 14:06",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 1,
     statusAgeDays: 1,
@@ -456,7 +466,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/11 14:07",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 1,
     statusAgeDays: 1,
@@ -474,7 +484,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/11 15:05",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 1,
     statusAgeDays: 1,
@@ -492,7 +502,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 10:11",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -510,7 +520,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 10:32",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -528,7 +538,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 13:30",
-    status: "处理中",
+    status: "进行中",
     priority: "P1",
     ageDays: 0,
     statusAgeDays: 0,
@@ -546,7 +556,7 @@ const baseTickets: Ticket[] = [
     ownerId: "u-ui",
     discipline: "UI",
     startAt: "2026/06/12 15:20",
-    status: "待接收",
+    status: "排队中",
     priority: "P2",
     ageDays: 0,
     statusAgeDays: 0,
@@ -664,14 +674,14 @@ const scaledSourceNames = [
 ];
 
 const scaledStatuses: TicketStatus[] = [
-  "待接收",
-  "处理中",
-  "处理中",
-  "待验收",
-  "处理中",
+  "排队中",
+  "进行中",
+  "进行中",
+  "进行中",
+  "进行中",
   "已完成",
   "阻塞",
-  "处理中",
+  "进行中",
 ];
 
 function createScaledTickets(count = 72): Ticket[] {
@@ -682,7 +692,7 @@ function createScaledTickets(count = 72): Ticket[] {
     const hasAttachment = index % 3 === 0;
     const hasLink = index % 5 === 0;
     const ageDays = status === "已完成" ? 1 + (index % 3) : index % 9;
-    const statusAgeDays = status === "待接收" ? index % 4 : index % 6;
+    const statusAgeDays = status === "排队中" ? index % 4 : index % 6;
 
     return {
       id: `REQ-2406-${String(120 + index).padStart(3, "0")}`,
@@ -723,11 +733,10 @@ const accounts = people.filter((person) =>
 );
 
 const statusTone: Record<TicketStatus, string> = {
-  待接收: "tone-slate",
-  处理中: "tone-blue",
-  待验收: "tone-violet",
-  已完成: "tone-green",
+  排队中: "tone-slate",
+  进行中: "tone-blue",
   阻塞: "tone-red",
+  已完成: "tone-green",
 };
 
 const healthLabel: Record<Health, string> = {
@@ -756,11 +765,28 @@ function canViewGanttSheet(person: Person) {
   return person.roleKey === "admin" || person.roleKey === "programmer";
 }
 
+function canEditTicketStatus(ticket: Ticket, person: Person) {
+  return person.roleKey === "admin" || ticket.requesterId === person.id || ticket.ownerId === person.id;
+}
+
+function isTicketRelevantToUser(ticket: Ticket, person: Person, visibleProjectIds: string[]) {
+  if (person.roleKey === "admin") return true;
+  return (
+    ticket.ownerId === person.id ||
+    ticket.requesterId === person.id ||
+    visibleProjectIds.includes(ticket.projectId)
+  );
+}
+
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>("overview");
-  const [accountId, setAccountId] = useState("u-admin");
   const [selectedProjectId, setSelectedProjectId] = useState("p1");
-  const [tickets, setTickets] = useState<Ticket[]>(initialTickets);
+  const [currentUser, setCurrentUser] = useState<Person | null>(null);
+  const [peopleData, setPeopleData] = useState<Person[]>(people);
+  const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [isBootstrapping, setIsBootstrapping] = useState(true);
+  const [appError, setAppError] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<TicketStatusFilter>("全部");
   const [disciplineFilter, setDisciplineFilter] = useState<Discipline | "全部">("全部");
@@ -769,20 +795,69 @@ function App() {
   const [ticketScope, setTicketScope] = useState<TicketScope>("全部相关");
   const [isTicketFormOpen, setIsTicketFormOpen] = useState(false);
 
-  const currentUser = people.find((person) => person.id === accountId) ?? people[0];
-  const effectiveView: ViewKey = currentUser.roleKey === "admin" ? activeView : "tickets";
+  useEffect(() => {
+    void loadBootstrap();
+  }, []);
+
+  async function loadBootstrap() {
+    setIsBootstrapping(true);
+    setAppError("");
+    try {
+      const response = await fetch("/api/bootstrap", { credentials: "include" });
+      if (response.status === 401) {
+        setCurrentUser(null);
+        setTickets([]);
+        return;
+      }
+      if (!response.ok) throw new Error(await readApiError(response));
+      const data = (await response.json()) as BootstrapPayload;
+      setCurrentUser(data.currentUser);
+      setPeopleData(data.people);
+      setProjects(data.projects);
+      setTickets(data.tickets);
+      setSelectedProjectId((current) =>
+        data.projects.some((project) => project.id === current) ? current : data.projects[0]?.id ?? ""
+      );
+    } catch (error) {
+      setAppError(error instanceof Error ? error.message : "加载生产数据失败");
+    } finally {
+      setIsBootstrapping(false);
+    }
+  }
+
+  async function login(username: string, password: string) {
+    setAppError("");
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!response.ok) throw new Error(await readApiError(response));
+    await loadBootstrap();
+  }
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    setCurrentUser(null);
+    setTickets([]);
+    setActiveView("overview");
+  }
+
+  const activeUser = currentUser ?? people[0];
+  const effectiveView: ViewKey = activeUser.roleKey === "admin" ? activeView : "tickets";
   const accessibleNavItems =
-    currentUser.roleKey === "admin" ? navItems : navItems.filter((item) => item.key === "tickets");
+    activeUser.roleKey === "admin" ? navItems : navItems.filter((item) => item.key === "tickets");
   const visibleProjectIds = useMemo(() => {
-    if (currentUser.roleKey === "admin") return initialProjects.map((project) => project.id);
-    return initialProjects
-      .filter((project) => project.ownerId === currentUser.id || project.teamIds.includes(currentUser.id))
+    if (activeUser.roleKey === "admin") return projects.map((project) => project.id);
+    return projects
+      .filter((project) => project.ownerId === activeUser.id || project.teamIds.includes(activeUser.id))
       .map((project) => project.id);
-  }, [currentUser]);
+  }, [activeUser, projects]);
 
   const visibleProjects = useMemo(
-    () => initialProjects.filter((project) => visibleProjectIds.includes(project.id)),
-    [visibleProjectIds]
+    () => projects.filter((project) => visibleProjectIds.includes(project.id)),
+    [projects, visibleProjectIds]
   );
 
   const selectedProject =
@@ -790,41 +865,31 @@ function App() {
 
   const visiblePeople = useMemo(() => {
     const projectSet = new Set(visibleProjectIds);
-    return people.filter(
-      (person) => person.id === currentUser.id || person.projectIds.some((id) => projectSet.has(id))
+    return peopleData.filter(
+      (person) => person.id === activeUser.id || person.projectIds.some((id) => projectSet.has(id))
     );
-  }, [currentUser.id, visibleProjectIds]);
+  }, [activeUser.id, peopleData, visibleProjectIds]);
 
   const scopedTickets = useMemo(
     () =>
-      tickets.filter((ticket) => {
-        if (currentUser.roleKey === "admin") return true;
-        if (currentUser.roleKey !== "producer") {
-          return ticket.ownerId === currentUser.id || ticket.requesterId === currentUser.id;
-        }
-        return (
-          visibleProjectIds.includes(ticket.projectId) ||
-          ticket.ownerId === currentUser.id ||
-          ticket.requesterId === currentUser.id
-        );
-      }),
-    [currentUser.id, currentUser.roleKey, tickets, visibleProjectIds]
+      tickets.filter((ticket) => isTicketRelevantToUser(ticket, activeUser, visibleProjectIds)),
+    [activeUser, tickets, visibleProjectIds]
   );
 
   const ownerFilterOptions = useMemo(() => {
     const ownerIds = new Set(scopedTickets.map((ticket) => ticket.ownerId));
-    return people.filter((person) => ownerIds.has(person.id));
-  }, [scopedTickets]);
+    return peopleData.filter((person) => ownerIds.has(person.id));
+  }, [peopleData, scopedTickets]);
 
   const ticketsBeforeStatusFilter = useMemo(() => {
     const lowered = query.trim().toLowerCase();
     return scopedTickets.filter((ticket) => {
-      const project = initialProjects.find((item) => item.id === ticket.projectId);
-      const owner = people.find((person) => person.id === ticket.ownerId);
+      const project = projects.find((item) => item.id === ticket.projectId);
+      const owner = peopleData.find((person) => person.id === ticket.ownerId);
       const matchesScope =
         ticketScope === "全部相关" ||
-        (ticketScope === "我负责的" && ticket.ownerId === currentUser.id) ||
-        (ticketScope === "我的提单" && ticket.requesterId === currentUser.id);
+        (ticketScope === "我负责的" && ticket.ownerId === activeUser.id) ||
+        (ticketScope === "我的提单" && ticket.requesterId === activeUser.id);
       const matchesQuery =
         !lowered ||
         ticket.title.toLowerCase().includes(lowered) ||
@@ -841,7 +906,7 @@ function App() {
         (ownerFilter === "全部" || ticket.ownerId === ownerFilter)
       );
     });
-  }, [currentUser.id, disciplineFilter, ownerFilter, projectFilter, query, scopedTickets, ticketScope]);
+  }, [activeUser.id, disciplineFilter, ownerFilter, peopleData, projectFilter, projects, query, scopedTickets, ticketScope]);
 
   const filteredTickets = useMemo(
     () => ticketsBeforeStatusFilter.filter((ticket) => matchesStatusFilter(ticket, statusFilter)),
@@ -859,61 +924,67 @@ function App() {
     return { riskProjects, openTickets, agedTickets, averageProgress };
   }, [scopedTickets, visibleProjects]);
 
-  function updateTicketStatus(ticketId: string, status: TicketStatus) {
-    setTickets((items) =>
-      items.map((ticket) =>
-        ticket.id === ticketId
-          ? {
-              ...ticket,
-              status,
-              statusAgeDays: status === ticket.status ? ticket.statusAgeDays : 0,
-            }
-          : ticket
-      )
-    );
+  async function updateTicketStatus(ticketId: string, status: TicketStatus) {
+    const response = await fetch(`/api/tickets/${ticketId}/status`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      setAppError(await readApiError(response));
+      return;
+    }
+    const data = (await response.json()) as { ticket: Ticket };
+    setTickets((items) => items.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
   }
 
-  function updateTicketTimeline(ticketId: string, offsetDays: number) {
-    setTickets((items) =>
-      items.map((ticket) => {
-        if (ticket.id !== ticketId) return ticket;
-
-        const nextOffsetDays = clampGanttOffsetDays(offsetDays);
-
-        return {
-          ...ticket,
-          timelineOffsetDays: nextOffsetDays,
-        };
-      })
-    );
+  async function updateTicketTimeline(ticketId: string, offsetDays: number) {
+    const response = await fetch(`/api/tickets/${ticketId}/timeline`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ offsetDays: clampGanttOffsetDays(offsetDays) }),
+    });
+    if (!response.ok) {
+      setAppError(await readApiError(response));
+      return;
+    }
+    const data = (await response.json()) as { ticket: Ticket };
+    setTickets((items) => items.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
   }
 
-  function createTicket(ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) {
-    const nextNumber = 119 + tickets.length;
-    setTickets((items) => [
-      {
-        ...ticket,
-        id: `REQ-2406-${nextNumber}`,
-        startAt: formatNowDateTime(),
-        status: "待接收",
-        ageDays: 0,
-        statusAgeDays: 0,
-      },
-      ...items,
-    ]);
+  async function createTicket(ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) {
+    const response = await fetch("/api/tickets", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(ticket),
+    });
+    if (!response.ok) {
+      setAppError(await readApiError(response));
+      return;
+    }
+    const data = (await response.json()) as { ticket: Ticket };
+    setTickets((items) => [data.ticket, ...items.filter((item) => item.id !== data.ticket.id)]);
     setActiveView("tickets");
     setIsTicketFormOpen(false);
   }
 
-  function changeAccount(nextAccountId: string) {
-    setAccountId(nextAccountId);
-    setQuery("");
-    setStatusFilter("全部");
-    setDisciplineFilter("全部");
-    setProjectFilter("全部");
-    setOwnerFilter("全部");
-    setTicketScope("全部相关");
-    setIsTicketFormOpen(false);
+  if (isBootstrapping) {
+    return (
+      <div className="login-screen">
+        <div className="login-panel">
+          <span className="eyebrow">PlayableOps</span>
+          <h1>正在加载生产数据</h1>
+          <p>正在校验登录会话和服务端权限。</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return <LoginView onLogin={login} errorMessage={appError} />;
   }
 
   return (
@@ -945,22 +1016,27 @@ function App() {
         </nav>
 
         <div className="scope-panel">
-          <span className="eyebrow">当前账号</span>
-          <select value={accountId} onChange={(event) => changeAccount(event.target.value)}>
-            {accounts.map((account) => (
-              <option key={account.id} value={account.id}>
-                {account.name} · {roleLabel[account.roleKey]}
-              </option>
-            ))}
-          </select>
+          <span className="eyebrow">当前登录</span>
+          <div className="session-card">
+            <strong>{currentUser.name}</strong>
+            <span>{roleLabel[currentUser.roleKey]} · {currentUser.title}</span>
+          </div>
           <div className="scope-line">
             <LockKeyhole size={15} />
             <span>{currentUser.roleKey === "admin" ? "全公司项目" : "仅可查看需求提单页"}</span>
           </div>
+          <button type="button" className="logout-button" onClick={logout}>
+            退出登录
+          </button>
         </div>
       </aside>
 
       <main className={`workspace ${effectiveView === "tickets" ? "sheet-workspace" : ""}`}>
+        {appError && (
+          <div className="app-alert" role="alert">
+            {appError}
+          </div>
+        )}
         {effectiveView !== "tickets" && (
           <header className="topbar">
             <div>
@@ -968,9 +1044,6 @@ function App() {
               <h1>{navItems.find((item) => item.key === effectiveView)?.label}</h1>
             </div>
             <div className="topbar-actions">
-              <button className="icon-button" title="筛选">
-                <SlidersHorizontal size={18} />
-              </button>
               <button className="primary-button" onClick={() => setIsTicketFormOpen(true)}>
                 <Plus size={18} />
                 <span>新建提单</span>
@@ -1013,7 +1086,7 @@ function App() {
           <TicketsView
             currentUser={currentUser}
             projects={visibleProjects}
-            people={people}
+            people={peopleData}
             query={query}
             setQuery={setQuery}
             statusFilter={statusFilter}
@@ -1038,10 +1111,10 @@ function App() {
         {effectiveView === "admin" && (
           <AdminView
             currentUser={currentUser}
-            projects={initialProjects}
-            people={people}
+            projects={projects}
+            people={peopleData}
             tickets={tickets}
-            onSwitchAdmin={() => changeAccount("u-admin")}
+            onSwitchAdmin={() => undefined}
           />
         )}
       </main>
@@ -1056,6 +1129,68 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function LoginView({
+  onLogin,
+  errorMessage,
+}: {
+  onLogin: (username: string, password: string) => Promise<void>;
+  errorMessage: string;
+}) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setLocalError("");
+    try {
+      await onLogin(username, password);
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "登录失败");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="login-screen">
+      <form className="login-panel" onSubmit={submit}>
+        <div className="brand login-brand">
+          <div className="brand-mark">PO</div>
+          <div>
+            <strong>PlayableOps</strong>
+            <span>试玩广告生产中台</span>
+          </div>
+        </div>
+        <div>
+          <span className="eyebrow">生产系统登录</span>
+          <h1>需求提单数据系统</h1>
+          <p>使用服务端账号进入。所有提单、附件、状态和甘特变更都会写入数据库并记录审计日志。</p>
+        </div>
+        <label>
+          <span>用户名</span>
+          <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+        </label>
+        <label>
+          <span>密码</span>
+          <input
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            type="password"
+            autoComplete="current-password"
+          />
+        </label>
+        {(localError || errorMessage) && <div className="app-alert">{localError || errorMessage}</div>}
+        <button className="primary-button" type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "登录中" : "登录"}
+        </button>
+      </form>
+    </main>
   );
 }
 
@@ -1472,7 +1607,6 @@ function TicketsView({
             onChange={(event) => setStatusFilter(event.target.value as TicketStatusFilter)}
           >
             <option value="全部">全部状态</option>
-            <option value="进行中">进行中</option>
             {statusOptions.map((status) => (
               <option key={status} value={status}>
                 {status}
@@ -1506,8 +1640,8 @@ function TicketsView({
           </button>
           <button
             type="button"
-            className={statusFilter === "待接收" ? "summary-queue active" : "summary-queue"}
-            onClick={() => setStatusFilter("待接收")}
+            className={statusFilter === "排队中" ? "summary-queue active" : "summary-queue"}
+            onClick={() => setStatusFilter("排队中")}
           >
             排队中 <strong>{statusSummary.queue}</strong>
           </button>
@@ -1520,17 +1654,17 @@ function TicketsView({
           </button>
           <button
             type="button"
-            className={statusFilter === "已完成" ? "summary-done active" : "summary-done"}
-            onClick={() => setStatusFilter("已完成")}
-          >
-            已完成 <strong>{statusSummary.done}</strong>
-          </button>
-          <button
-            type="button"
             className={statusFilter === "阻塞" ? "summary-blocked active" : "summary-blocked"}
             onClick={() => setStatusFilter("阻塞")}
           >
             阻塞 <strong>{statusSummary.blocked}</strong>
+          </button>
+          <button
+            type="button"
+            className={statusFilter === "已完成" ? "summary-done active" : "summary-done"}
+            onClick={() => setStatusFilter("已完成")}
+          >
+            已完成 <strong>{statusSummary.done}</strong>
           </button>
         </div>
 
@@ -1561,7 +1695,7 @@ function TicketsView({
         <div className="sheet-statusbar">
           <span>当前结果：{tickets.length} 条</span>
           <span>{ticketScope}：{statusSummaryTickets.length} 条</span>
-          <span>非空分组：{groupedTickets.filter((group) => group.items.length > 0).length}</span>
+          <span>状态段：{groupedTickets.filter((group) => group.items.length > 0).length}</span>
           {selectedTicketIds.size > 0 && <span>已选：{selectedTicketIds.size} 条</span>}
         </div>
 
@@ -1714,10 +1848,16 @@ function TaskManagementSheet({
             const owner = people.find((person) => person.id === ticket.ownerId);
             const requester = people.find((person) => person.id === ticket.requesterId);
             const relation = getTicketRelation(ticket, currentUser, people);
+            const canEditStatus = canEditTicketStatus(ticket, currentUser);
 
             return (
               <article
                 className={`task-row ${selectedTicketId === ticket.id ? "selected" : ""}`}
+                data-ticket-id={ticket.id}
+                data-project-id={ticket.projectId}
+                data-requester-id={ticket.requesterId}
+                data-owner-id={ticket.ownerId}
+                data-status={ticket.status}
                 key={ticket.id}
                 onClick={() => setSelectedTicketId(ticket.id)}
                 title={`${ticket.id} · ${ticket.title} · ${ticket.summary}`}
@@ -1772,6 +1912,8 @@ function TaskManagementSheet({
                   <select
                     className={`status-select ${statusTone[ticket.status]}`}
                     value={ticket.status}
+                    disabled={!canEditStatus}
+                    title={canEditStatus ? "更新提单状态" : "仅管理员、发起人和负责人可修改状态"}
                     onClick={(event) => event.stopPropagation()}
                     onChange={(event) => onStatusChange(ticket.id, event.target.value as TicketStatus)}
                   >
@@ -1955,7 +2097,15 @@ function OverdueWarningSheet({
       {warningTickets.map((ticket) => {
         const owner = people.find((person) => person.id === ticket.ownerId);
         return (
-          <article className="warning-row" key={ticket.id}>
+          <article
+            className="warning-row"
+            data-ticket-id={ticket.id}
+            data-project-id={ticket.projectId}
+            data-requester-id={ticket.requesterId}
+            data-owner-id={ticket.ownerId}
+            data-status={ticket.status}
+            key={ticket.id}
+          >
             <span className="sheet-long-cell">{getTicketProjectName(ticket, projects)}</span>
             <span className="sheet-long-cell">{ticket.title}</span>
             <span>
@@ -2067,8 +2217,12 @@ function GanttSheet({
           <article
             className="gantt-row"
             data-ticket-id={ticket.id}
+            data-project-id={ticket.projectId}
+            data-requester-id={ticket.requesterId}
             data-owner-id={ticket.ownerId}
+            data-status={ticket.status}
             data-offset-days={offsetDays}
+            data-start-at={ticket.startAt}
             key={ticket.id}
           >
             <span className="sheet-long-cell">{getTicketProjectName(ticket, projects)}</span>
@@ -2299,7 +2453,7 @@ function TicketForm({
   projects: Project[];
   people: Person[];
   onClose: () => void;
-  onCreate: (ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) => void;
+  onCreate: (ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) => void | Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "p1");
@@ -2315,9 +2469,21 @@ function TicketForm({
   const [text, setText] = useState("");
   const [dueInDays, setDueInDays] = useState(3);
   const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
+  const ownerCandidates = useMemo(
+    () => people.filter((person) => person.discipline === discipline),
+    [discipline, people]
+  );
+  const canSubmitTicket = ownerCandidates.some((person) => person.id === ownerId);
+
+  useEffect(() => {
+    if (!canSubmitTicket) {
+      setOwnerId(ownerCandidates[0]?.id ?? "");
+    }
+  }, [canSubmitTicket, ownerCandidates]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!canSubmitTicket) return;
     onCreate({
       title: title.trim() || "未命名需求",
       sourceProjectName: sourceProjectName.trim() || undefined,
@@ -2335,14 +2501,19 @@ function TicketForm({
     });
   }
 
-  function addFiles(files: FileList | null, kindHint?: TicketAttachment["kind"]) {
+  async function addFiles(files: FileList | null, kindHint?: TicketAttachment["kind"]) {
     if (!files?.length) return;
-    const nextAttachments = Array.from(files).map((file, index) => ({
-      id: `upload-${Date.now()}-${index}-${file.name}`,
-      name: file.name,
-      kind: kindHint ?? (file.type.startsWith("image/") ? "图片" : "文件"),
-      size: formatFileSize(file.size),
-    }));
+    const nextAttachments = await Promise.all(
+      Array.from(files).map(async (file, index) => ({
+        id: `upload-${Date.now()}-${index}-${file.name}`,
+        name: file.name,
+        kind: kindHint ?? (file.type.startsWith("image/") ? "图片" : "文件"),
+        size: formatFileSize(file.size),
+        sizeBytes: file.size,
+        mimeType: file.type || "application/octet-stream",
+        dataBase64: arrayBufferToBase64(await file.arrayBuffer()),
+      }))
+    );
     setAttachments((items) => [...items, ...nextAttachments]);
   }
 
@@ -2353,7 +2524,7 @@ function TicketForm({
   function changeDiscipline(value: Discipline) {
     setDiscipline(value);
     const nextOwner = people.find((person) => person.discipline === value);
-    if (nextOwner) setOwnerId(nextOwner.id);
+    setOwnerId(nextOwner?.id ?? "");
   }
 
   function changeProject(value: string) {
@@ -2414,14 +2585,17 @@ function TicketForm({
           </label>
           <label>
             <span>负责人</span>
-            <select value={ownerId} onChange={(event) => setOwnerId(event.target.value)}>
-              {people
-                .filter((person) => person.discipline === discipline)
-                .map((person) => (
-                  <option key={person.id} value={person.id}>
-                    {person.name}
-                  </option>
-                ))}
+            <select value={ownerId} onChange={(event) => setOwnerId(event.target.value)} disabled={!ownerCandidates.length}>
+              {!ownerCandidates.length && (
+                <option value="">
+                  暂无可选负责人
+                </option>
+              )}
+              {ownerCandidates.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.name}
+                </option>
+              ))}
             </select>
           </label>
           <label>
@@ -2482,7 +2656,7 @@ function TicketForm({
                 accept="image/*"
                 multiple
                 onChange={(event) => {
-                  addFiles(event.currentTarget.files, "图片");
+                  void addFiles(event.currentTarget.files, "图片");
                   event.currentTarget.value = "";
                 }}
               />
@@ -2495,7 +2669,7 @@ function TicketForm({
                 type="file"
                 multiple
                 onChange={(event) => {
-                  addFiles(event.currentTarget.files, "附件");
+                  void addFiles(event.currentTarget.files, "附件");
                   event.currentTarget.value = "";
                 }}
               />
@@ -2508,7 +2682,7 @@ function TicketForm({
                 type="file"
                 multiple
                 onChange={(event) => {
-                  addFiles(event.currentTarget.files, "文件");
+                  void addFiles(event.currentTarget.files, "文件");
                   event.currentTarget.value = "";
                 }}
               />
@@ -2535,7 +2709,7 @@ function TicketForm({
           <button type="button" className="ghost-button" onClick={onClose}>
             取消
           </button>
-          <button className="primary-button" type="submit">
+          <button className="primary-button" type="submit" disabled={!canSubmitTicket}>
             <Plus size={18} />
             <span>提交</span>
           </button>
@@ -2657,7 +2831,7 @@ function getTicketRelation(ticket: Ticket, currentUser: Person, people: Person[]
   if (ticket.ownerId === currentUser.id) {
     return { label: "指派给我", tone: "relation-assigned" };
   }
-  return { label: `${requester?.name ?? "-"} -> ${owner?.name ?? "-"}`, tone: "relation-related" };
+  return { label: `项目相关 ${requester?.name ?? "-"} -> ${owner?.name ?? "-"}`, tone: "relation-related" };
 }
 
 function countTicketsByStatus(tickets: Ticket[], status: TicketStatus) {
@@ -2666,16 +2840,15 @@ function countTicketsByStatus(tickets: Ticket[], status: TicketStatus) {
 
 function matchesStatusFilter(ticket: Ticket, statusFilter: TicketStatusFilter) {
   if (statusFilter === "全部") return true;
-  if (statusFilter === "进行中") return ticket.status === "处理中" || ticket.status === "待验收";
   return ticket.status === statusFilter;
 }
 
 function getTicketStatusSummary(tickets: Ticket[]) {
   return {
-    queue: countTicketsByStatus(tickets, "待接收"),
-    doing: tickets.filter((ticket) => ticket.status === "处理中" || ticket.status === "待验收").length,
-    done: countTicketsByStatus(tickets, "已完成"),
+    queue: countTicketsByStatus(tickets, "排队中"),
+    doing: countTicketsByStatus(tickets, "进行中"),
     blocked: countTicketsByStatus(tickets, "阻塞"),
+    done: countTicketsByStatus(tickets, "已完成"),
   };
 }
 
@@ -2698,12 +2871,12 @@ function groupTicketsByBoardStatus(tickets: Ticket[]): TicketBoardGroup[] {
     {
       label: "排队中",
       tone: "queue",
-      statuses: ["待接收"] as TicketStatus[],
+      statuses: ["排队中"] as TicketStatus[],
     },
     {
       label: "进行中",
       tone: "doing",
-      statuses: ["处理中", "待验收"] as TicketStatus[],
+      statuses: ["进行中"] as TicketStatus[],
     },
     {
       label: "阻塞",
@@ -2747,6 +2920,25 @@ function formatDateTime(date: Date) {
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(
     date.getMinutes()
   )}`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function readApiError(response: Response) {
+  try {
+    const data = (await response.json()) as { error?: string };
+    return data.error || `请求失败：${response.status}`;
+  } catch {
+    return `请求失败：${response.status}`;
+  }
 }
 
 function formatFileSize(bytes: number) {

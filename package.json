@@ -1,15 +1,20 @@
 {
-  "name": "playable-ad-saas-prototype",
+  "name": "companyplan-production",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
+    "dev:api": "node server/index.mjs",
     "build": "tsc -b && vite build",
+    "start": "node server/index.mjs",
+    "test:scenarios": "npm run build && node scripts/company-plan-scenarios.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
+    "better-sqlite3": "^12.10.0",
+    "express": "^5.2.1",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

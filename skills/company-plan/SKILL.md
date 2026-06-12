@@ -1,13 +1,15 @@
 ---
 name: company-plan
-description: Design, build, or refine the companyPlan playable-ad production SaaS prototype with WPS/KDocs-style demand-ticket tables, role-scoped permissions, project/person/task tracking, attachments, admin overview, and happy-path React/Vite implementation. Use when the user asks about companyPlan, 试玩广告项目管理, 需求提单, 金山表格复刻, SaaS 原型, 权限隔离, or continuing this repo.
+description: Design, build, deploy, or refine the companyPlan playable-ad production SaaS with WPS/KDocs-style demand-ticket tables, Node/SQLite persistence, real login sessions, role-scoped permissions, project/person/task tracking, attachments, audit logs, admin overview, PM2/Nginx deployment, and production validation. Use when the user asks about companyPlan, 试玩广告项目管理, 需求提单, 金山表格复刻, SaaS, 权限隔离, 部署, or continuing this repo.
 ---
 
 # companyPlan
 
 ## Quick Start
 
-Use this skill for companyPlan work: a lightweight SaaS prototype for a playable-ad studio that manages many concurrent projects, cross-discipline demand tickets, owner progress, attachments, and admin/global visibility.
+Use this skill for companyPlan work: a production SaaS for a playable-ad studio that manages many concurrent projects, cross-discipline demand tickets, owner progress, attachments, audit history, and admin/global visibility.
+
+The current app is a React/Vite frontend backed by a Node/Express API, SQLite persistence, HttpOnly cookie sessions, local attachment storage, and server-side permission checks. Do not treat it as a frontend-only prototype unless the user explicitly asks to create a separate prototype.
 
 For detailed product rules, read `references/product-spec.md` before changing behavior or UI.
 
@@ -15,22 +17,25 @@ For repo setup and deployment notes, read `README.md` in this skill folder and t
 
 ## Workflow
 
-1. Preserve the current product scope: happy-path frontend prototype first, no backend/database unless explicitly requested.
+1. Preserve the current production scope: backend-backed data system first, with persistent tickets, attachments, sessions, audit logs, and role-scoped API responses.
 2. Keep the primary experience as a WPS/KDocs-like table document, not a generic dashboard or a full WPS clone.
-3. Keep non-admin users restricted to the demand-ticket table and only their relevant rows.
-4. Keep admin users able to reach global panels and work-sheet tabs.
-5. Keep the `需求提单` page inside the right workspace with the left navigation visible; do not open it as a separate full-screen panel.
-6. Validate changes with `npm run build` and, for UI changes, browser checks against admin and non-admin accounts.
+3. Keep authentication real: users log in through the API, sessions use HttpOnly cookies, and the UI must not expose a role/account switcher as a permission substitute.
+4. Keep non-admin users restricted to the demand-ticket table and only their server-scoped relevant rows.
+5. Keep admin users able to reach global panels and work-sheet tabs.
+6. Keep the `需求提单` page inside the right workspace with the left navigation visible; do not open it as a separate full-screen panel.
+7. Validate changes with `npm run build` and `npm run test:scenarios`; for UI changes, add browser checks against admin, programmer, and a non-programmer account.
 
 ## Product Guardrails
 
 - Do not connect this project to Blueprint or Blueprint tooling.
 - Do not reintroduce WPS controls the user rejected, especially `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, and `导出`.
 - Do not show the document-style top title bar on the `需求提单` page.
-- Do not add real database/auth flows while the request is still prototype/happy-path.
+- Do not bypass the backend with localStorage writes, static in-memory seed edits, or client-only permission filtering.
+- Do not commit runtime data, SQLite files, uploaded attachments, PM2 dumps, cookies, or passwords.
 - Do not make a marketing landing page. The first screen should be the usable table experience.
 - Keep demand tickets capable of representing images, attachments, and files.
 - Keep `我的提单` visible so users can distinguish requests they created from tasks assigned to them.
+- Keep server-side authorization mandatory for every ticket, audit, attachment, and bootstrap API.
 
 ## UI Direction
 
@@ -57,3 +62,7 @@ Before handing off:
 - Demand table includes project, content, `我的提单`, attachments, link, start date, priority, status, ticket age, status age, owner, type, and notes.
 - Row selection still supports half-selected header state.
 - `npm run build` passes.
+- `npm run test:scenarios` passes.
+- Unauthenticated `/api/bootstrap` returns 401.
+- Login, ticket creation/update, attachment upload, audit history, role scoping, and gantt visibility are covered by scenario tests.
+- If deployment was requested, the PM2 process is online and the public `/companyPlan/` URL plus proxied API endpoints respond correctly.

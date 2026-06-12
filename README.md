@@ -1,18 +1,6 @@
 # companyPlan
 
-Playable ad production SaaS prototype for demand-ticket, project, permission, warning, and gantt workflows.
-
-Live site:
-
-```text
-https://soyooaitools.github.io/companyPlan/
-```
-
-Deployment branch:
-
-```text
-gh-pages
-```
+Playable ad production SaaS for demand-ticket, project, permission, warning, attachment, audit, and gantt workflows.
 
 Repository:
 
@@ -22,11 +10,10 @@ https://github.com/soyooAiTools/companyPlan
 
 ## Scope
 
-- Frontend-only happy-path prototype.
-- No backend, database, or real authentication yet.
-- Account switching in the UI simulates role-scoped permissions.
+- Production data system with a Node API, SQLite database, HttpOnly session cookies, server-side row permissions, local attachment storage, and audit logging.
+- The frontend never decides row-level permissions by itself. `/api/bootstrap` returns only data scoped to the logged-in account.
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
-- Demand ticket creation supports images, attachments, and files.
+- Demand ticket creation stores images, attachments, and files through the server.
 
 ## Current Rules
 
@@ -43,7 +30,23 @@ https://github.com/soyooAiTools/companyPlan
 
 ```bash
 npm install
-npm run dev -- --port 5174
+npm run build
+npm run start
+```
+
+The production server listens on `PORT` or `4174` by default. Seed users use `COMPANYPLAN_SEED_PASSWORD` or `CompanyPlan@2026` on a fresh database.
+
+Default seed usernames:
+
+```text
+admin, producer, artist, ui, model, animator, dev, sound
+```
+
+Data is stored under `COMPANYPLAN_DATA_DIR` or `./data`:
+
+```text
+companyplan.sqlite
+uploads/
 ```
 
 ## Build
@@ -52,22 +55,26 @@ npm run dev -- --port 5174
 npm run build
 ```
 
+## Scenario Test
+
+```bash
+npm run test:scenarios
+```
+
+The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary SQLite data directory, and runs the demand-ticket permission and workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
+
+Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
+
 ## Deploy
 
-Static files are published to the `gh-pages` branch.
+Build the frontend and run the Node production server:
 
 ```bash
 npm run build
+npm run start
 ```
 
-Then publish the contents of `dist/` to the `gh-pages` branch. Vite uses `/companyPlan/` as the production base path.
-
-GitHub Pages is enabled from:
-
-```text
-source branch: gh-pages
-path: /
-```
+Set `COMPANYPLAN_DATA_DIR` to a persistent volume and back it up. Put the server behind HTTPS and set `COMPANYPLAN_COOKIE_SECURE=1` when TLS is terminated before the app.
 
 More deployment notes: [docs/deployment.md](docs/deployment.md).
 
