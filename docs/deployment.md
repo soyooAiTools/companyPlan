@@ -2,7 +2,25 @@
 
 companyPlan is a static Vite app. The current deployment target is GitHub Pages.
 
-## URL
+## Deployment Branch
+
+```text
+gh-pages
+```
+
+The `gh-pages` branch contains the latest built static files.
+
+## GitHub Pages Status
+
+GitHub Pages is not live for the current private repository because GitHub returned:
+
+```text
+Your current plan does not support GitHub Pages for this repository.
+```
+
+To enable the public Pages URL, either make the repository public or use a GitHub plan that supports Pages for private repositories.
+
+Expected URL after Pages is enabled:
 
 ```text
 https://soyooaitools.github.io/companyPlan/
@@ -31,7 +49,7 @@ index.html
 assets/
 ```
 
-GitHub Pages should be configured with:
+If the repo plan supports Pages, configure GitHub Pages with:
 
 ```text
 source branch: gh-pages
