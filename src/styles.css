@@ -253,8 +253,12 @@ button {
 }
 
 .sheet-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   min-height: 100vh;
-  padding: 0 8px 8px;
+  overflow: hidden;
+  padding: 0 8px;
   background: #eef2f6;
 }
 
@@ -526,7 +530,9 @@ button {
 }
 
 .sheet-workspace .view-stack {
+  flex: 1 1 auto;
   gap: 0;
+  min-height: 0;
 }
 
 .kpi-grid {
@@ -1175,6 +1181,10 @@ button {
 }
 
 .sheet-surface {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #d6dce6;
   border-top: 0;
@@ -1321,9 +1331,8 @@ button {
 }
 
 .task-board-table {
-  height: calc(100vh - 270px);
-  min-height: 420px;
-  max-height: 860px;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border: 0;
   border-radius: 0;
@@ -1829,7 +1838,8 @@ button {
 }
 
 .sheet-alt-table {
-  max-height: min(66vh, 760px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border: 0;
   border-radius: 0;
@@ -1837,10 +1847,6 @@ button {
   box-shadow: none;
 }
 
-.schedule-head,
-.schedule-row,
-.owner-head,
-.owner-row,
 .warning-head,
 .warning-row,
 .gantt-head,
@@ -1848,34 +1854,6 @@ button {
   display: grid;
   gap: 0;
   align-items: stretch;
-}
-
-.schedule-head,
-.schedule-row {
-  grid-template-columns:
-    minmax(190px, 1fr)
-    100px
-    88px
-    88px
-    88px
-    88px
-    minmax(360px, 1.8fr)
-    minmax(190px, 0.9fr);
-  min-width: 1200px;
-}
-
-.owner-head,
-.owner-row {
-  grid-template-columns:
-    minmax(210px, 1fr)
-    88px
-    88px
-    88px
-    88px
-    88px
-    88px
-    minmax(420px, 2fr);
-  min-width: 1230px;
 }
 
 .warning-head,
@@ -1904,8 +1882,6 @@ button {
   min-width: 1255px;
 }
 
-.schedule-head,
-.owner-head,
 .warning-head,
 .gantt-head {
   position: sticky;
@@ -1918,10 +1894,6 @@ button {
   font-weight: 800;
 }
 
-.schedule-head span,
-.schedule-row > span,
-.owner-head span,
-.owner-row > span,
 .warning-head span,
 .warning-row > span,
 .gantt-head span,
@@ -1934,10 +1906,6 @@ button {
   border-right: 1px solid var(--line);
 }
 
-.schedule-head span:last-child,
-.schedule-row > span:last-child,
-.owner-head span:last-child,
-.owner-row > span:last-child,
 .warning-head span:last-child,
 .warning-row > span:last-child,
 .gantt-head span:last-child,
@@ -1945,8 +1913,6 @@ button {
   border-right: 0;
 }
 
-.schedule-row,
-.owner-row,
 .warning-row,
 .gantt-row {
   min-height: 40px;
@@ -1955,36 +1921,15 @@ button {
   font-size: 13px;
 }
 
-.schedule-row:hover,
-.owner-row:hover,
 .warning-row:hover,
 .gantt-row:hover {
   background: #f9fcff;
-}
-
-.schedule-row > span:first-child,
-.owner-row > span:first-child {
-  display: grid;
-  align-content: center;
-  gap: 3px;
-}
-
-.schedule-row small,
-.owner-row small {
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .sheet-long-cell {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.sheet-progress-cell {
-  display: grid !important;
-  grid-template-columns: minmax(100px, 1fr) 42px;
-  gap: 8px;
 }
 
 .sheet-empty-row {
@@ -2036,8 +1981,31 @@ button {
   display: block;
   height: 18px;
   margin-top: 4px;
+  padding: 0;
+  border: 0;
   border-radius: 4px;
   background: #4aa9e9;
+  transition:
+    box-shadow 0.15s ease,
+    filter 0.15s ease;
+}
+
+.gantt-timeline .gantt-bar.draggable {
+  cursor: grab;
+}
+
+.gantt-timeline .gantt-bar.draggable:hover,
+.gantt-timeline .gantt-bar.dragging {
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.22);
+  filter: saturate(1.08);
+}
+
+.gantt-timeline .gantt-bar.dragging {
+  cursor: grabbing;
+}
+
+.gantt-timeline .gantt-bar.readonly {
+  cursor: default;
 }
 
 .owner-chip,
@@ -2068,6 +2036,7 @@ button {
 }
 
 .sheet-statusbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 14px;
@@ -2085,6 +2054,10 @@ button {
 }
 
 .sheet-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 8;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 4px;

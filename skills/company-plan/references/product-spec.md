@@ -25,7 +25,12 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Admin: can see all projects, all tickets, global overview, and admin panels.
 - Non-admin: can only see the `需求提单` page.
 - Non-admin visible rows must be relevant to that user: requester, owner, or project participation depending on role.
-- Non-admin must not see admin sheet tabs or admin navigation.
+- Non-admin must not see admin navigation.
+- Clicking `需求提单` should keep the left navigation shell in place and render the table in the right workspace, not open a separate full-screen panel.
+- Inside the `需求提单` page, every account should see bottom sheet tabs for `需求提单`, `延期任务预警`, and `任务甘特图`.
+- Every non-admin bottom sheet must render only that user's scoped/relevant tickets.
+- Admin can drag `任务甘特图` timeline bars. Dragging updates the shared ticket timeline state so the corresponding non-admin user's scoped gantt view reflects the same new position.
+- Non-admin users can view their scoped gantt rows but cannot drag timeline bars.
 
 ## Demand Ticket Table
 
@@ -70,19 +75,22 @@ Aim for a lightweight KDocs-like table form, not a full WPS clone.
 
 Keep:
 
-- Document-style top title bar.
-- Collaborator avatars and share button.
-- Lightweight toolbar with 添加记录, 字段管理, 筛选, 排序, 分组, 公告, 查找.
+- No document-style top title bar on `需求提单`; the page should start with the compact table toolbar.
+- Lightweight toolbar with only 添加记录 and 查找 visible on `需求提单`.
 - Filter row and status summary chips.
 - Spreadsheet gridlines.
 - Sticky header and frozen first columns.
 - Status group sections with colored pills and per-group add rows.
 - Bottom statusbar and worksheet tabs.
+- Worksheet tabs should stay pinned to the bottom of the page while the table body scrolls.
 
 Avoid:
 
 - 行高
 - 导出
+- Toolbar controls 字段管理、筛选、排序、分组、公告
+- Document-style top title bar on `需求提单`
+- 排班表 and 负责人看板 features
 - Full WPS app complexity
 - Marketing-style landing pages
 - Blueprint references
@@ -93,6 +101,10 @@ Use browser checks when changing UI:
 
 - Admin row count should be broader than non-admin.
 - Non-admin top controls should not include admin/global navigation.
-- Non-admin bottom tabs should show only `需求提单`.
-- `行高` and `导出` should not appear in body text.
+- Non-admin bottom tabs should show `需求提单`, `延期任务预警`, and `任务甘特图`.
+- Non-admin warning and gantt rows should be no broader than that user's scoped ticket set.
+- Admin drag on a gantt bar changes its visible timeline position and start date, then the relevant non-admin account sees the same updated bar in their scoped gantt view.
+- `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, and `导出` should not appear in the `需求提单` toolbar.
+- The `需求提单` body should not show the document-style title bar, collaborator avatars, share button, or top account selector.
+- Bottom worksheet tabs should sit at the viewport bottom.
 - First viewport should be dominated by the table document, not cards.

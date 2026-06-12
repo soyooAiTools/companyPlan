@@ -12,13 +12,11 @@ import {
   LayoutDashboard,
   ListFilter,
   LockKeyhole,
-  Megaphone,
   Paperclip,
   Plus,
   Search,
   ShieldCheck,
   SlidersHorizontal,
-  Star,
   Timer,
   UsersRound,
   Workflow,
@@ -26,11 +24,11 @@ import {
   Maximize2,
   Layers,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type RoleKey = "admin" | "producer" | "artist" | "ui" | "model" | "animator";
 type ViewKey = "overview" | "projects" | "people" | "tickets" | "admin";
-type SheetTab = "任务管理看板" | "排班表" | "👥负责人看板" | "延期任务预警" | "任务甘特图";
+type SheetTab = "需求提单" | "延期任务预警" | "任务甘特图";
 type TicketScope = "全部相关" | "我负责的" | "我的提单";
 type Health = "green" | "amber" | "red";
 type Discipline = "美术" | "UI" | "模型" | "动画" | "研发" | "音效";
@@ -88,6 +86,7 @@ type Ticket = {
   ageDays: number;
   statusAgeDays: number;
   dueInDays: number;
+  timelineOffsetDays?: number;
   needType: string;
   summary: string;
   hyperlink?: string;
@@ -109,11 +108,13 @@ const navItems: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboar
   { key: "admin", label: "管理员", icon: ShieldCheck },
 ];
 
-const sheetTabs: SheetTab[] = ["任务管理看板", "排班表", "👥负责人看板", "延期任务预警", "任务甘特图"];
+const sheetTabs: SheetTab[] = ["需求提单", "延期任务预警", "任务甘特图"];
 const ticketScopeOptions: TicketScope[] = ["全部相关", "我负责的", "我的提单"];
 const statusOptions: TicketStatus[] = ["待接收", "处理中", "待验收", "已完成", "阻塞"];
 const disciplineOptions: Discipline[] = ["美术", "UI", "模型", "动画", "研发", "音效"];
 const priorityOptions: Priority[] = ["P0", "P1", "P2"];
+const ganttDayWidth = 18;
+const ganttMaxOffsetDays = 18;
 
 const people: Person[] = [
   {
@@ -867,6 +868,23 @@ function App() {
     );
   }
 
+  function updateTicketTimeline(ticketId: string, offsetDays: number) {
+    setTickets((items) =>
+      items.map((ticket) => {
+        if (ticket.id !== ticketId) return ticket;
+
+        const nextOffsetDays = clampGanttOffsetDays(offsetDays);
+        const deltaDays = nextOffsetDays - getGanttOffsetDays(ticket);
+
+        return {
+          ...ticket,
+          startAt: shiftDateTimeByDays(ticket.startAt, deltaDays),
+          timelineOffsetDays: nextOffsetDays,
+        };
+      })
+    );
+  }
+
   function createTicket(ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) {
     const nextNumber = 119 + tickets.length;
     setTickets((items) => [
@@ -896,8 +914,8 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${effectiveView === "tickets" ? "sheet-shell" : ""}`}>
-      <aside className={`sidebar ${effectiveView === "tickets" ? "sheet-sidebar" : ""}`}>
+    <div className="app-shell">
+      <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">PO</div>
           <div>
@@ -940,68 +958,12 @@ function App() {
       </aside>
 
       <main className={`workspace ${effectiveView === "tickets" ? "sheet-workspace" : ""}`}>
-        <header className={`topbar ${effectiveView === "tickets" ? "sheet-topbar" : ""}`}>
-          {effectiveView === "tickets" ? (
-            <div className="sheet-doc-title">
-              <div className="sheet-doc-controls" aria-label="文档导航">
-                {currentUser.roleKey === "admin" && (
-                  <button type="button" onClick={() => setActiveView("overview")} title="运营总览">
-                    <LayoutDashboard size={16} />
-                  </button>
-                )}
-                <button type="button" onClick={() => setIsTicketFormOpen(true)} title="添加提单">
-                  <Plus size={16} />
-                </button>
-                {currentUser.roleKey === "admin" && (
-                  <button type="button" onClick={() => setActiveView("admin")} title="管理员面板">
-                    <ShieldCheck size={16} />
-                  </button>
-                )}
-              </div>
-              <div className="sheet-doc-icon">
-                <ClipboardList size={18} />
-              </div>
-              <div>
-                <div className="sheet-title-line">
-                  <h1>sy试玩 · 需求提单管理看板</h1>
-                  <button type="button" title="收藏">
-                    <Star size={15} />
-                  </button>
-                </div>
-                <span>需求提单</span>
-              </div>
-            </div>
-          ) : (
+        {effectiveView !== "tickets" && (
+          <header className="topbar">
             <div>
               <span className="eyebrow">试玩广告制作 · 2026-06</span>
               <h1>{navItems.find((item) => item.key === effectiveView)?.label}</h1>
             </div>
-          )}
-          {effectiveView === "tickets" ? (
-            <div className="sheet-topbar-right">
-              <div className="sheet-collaborators" aria-label="当前协作者">
-                {accounts.slice(0, 4).map((account) => (
-                  <span key={account.id} title={`${account.name} · ${roleLabel[account.roleKey]}`}>
-                    {account.name.slice(0, 1)}
-                  </span>
-                ))}
-              </div>
-              <button type="button" className="sheet-share-button">
-                分享
-              </button>
-              <div className="sheet-account-bar">
-                <LockKeyhole size={15} />
-                <span>{currentUser.roleKey === "admin" ? "全公司项目" : "仅需求提单"}</span>
-                <select value={accountId} onChange={(event) => changeAccount(event.target.value)} aria-label="当前账号">
-                  {accounts.map((account) => (
-                    <option key={account.id} value={account.id}>
-                      {account.name} · {roleLabel[account.roleKey]}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          ) : (
             <div className="topbar-actions">
               <button className="icon-button" title="筛选">
                 <SlidersHorizontal size={18} />
@@ -1011,8 +973,8 @@ function App() {
                 <span>新建提单</span>
               </button>
             </div>
-          )}
-        </header>
+          </header>
+        )}
 
         {effectiveView === "overview" && (
           <Overview
@@ -1065,6 +1027,7 @@ function App() {
             tickets={filteredTickets}
             statusSummaryTickets={ticketsBeforeStatusFilter}
             onStatusChange={updateTicketStatus}
+            onTimelineMove={updateTicketTimeline}
             onCreateTicket={() => setIsTicketFormOpen(true)}
           />
         )}
@@ -1390,6 +1353,7 @@ function TicketsView({
   tickets,
   statusSummaryTickets,
   onStatusChange,
+  onTimelineMove,
   onCreateTicket,
 }: {
   currentUser: Person;
@@ -1411,11 +1375,12 @@ function TicketsView({
   tickets: Ticket[];
   statusSummaryTickets: Ticket[];
   onStatusChange: (ticketId: string, status: TicketStatus) => void;
+  onTimelineMove: (ticketId: string, offsetDays: number) => void;
   onCreateTicket: () => void;
 }) {
-  const [activeSheetTab, setActiveSheetTab] = useState<SheetTab>("任务管理看板");
-  const visibleSheetTab = currentUser.roleKey === "admin" ? activeSheetTab : "任务管理看板";
-  const visibleSheetTabs: string[] = currentUser.roleKey === "admin" ? sheetTabs : ["需求提单"];
+  const [activeSheetTab, setActiveSheetTab] = useState<SheetTab>("需求提单");
+  const visibleSheetTabs = sheetTabs;
+  const visibleSheetTab = visibleSheetTabs.includes(activeSheetTab) ? activeSheetTab : "需求提单";
   const groupedTickets = groupTicketsByBoardStatus(tickets);
   const statusSummary = getTicketStatusSummary(statusSummaryTickets);
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(new Set());
@@ -1457,28 +1422,10 @@ function TicketsView({
           <Plus size={15} />
           添加记录
         </button>
-        <button type="button" className="sheet-tool-muted">
-          字段管理
-        </button>
-        <button type="button" onClick={() => searchInputRef.current?.focus()}>
-          <ListFilter size={15} />
-          筛选
-        </button>
-        <button type="button" className="sheet-tool-muted">
-          排序(2)
-        </button>
-        <button type="button" className="sheet-tool-muted active">
-          分组(1)
-        </button>
-        <button type="button" className="sheet-tool-muted">
-          <Megaphone size={15} />
-          公告
-        </button>
         <button type="button" onClick={() => searchInputRef.current?.focus()}>
           <Search size={15} />
           查找
         </button>
-        <span>分组：状态</span>
       </div>
 
       <div className="sheet-surface">
@@ -1582,7 +1529,7 @@ function TicketsView({
           </button>
         </div>
 
-        {visibleSheetTab === "任务管理看板" && (
+        {visibleSheetTab === "需求提单" && (
           <TaskManagementSheet
             currentUser={currentUser}
             groupedTickets={groupedTickets}
@@ -1595,10 +1542,16 @@ function TicketsView({
             onCreateTicket={onCreateTicket}
           />
         )}
-        {visibleSheetTab === "排班表" && <ScheduleSheet tickets={tickets} projects={projects} people={people} />}
-        {visibleSheetTab === "👥负责人看板" && <OwnerBoardSheet tickets={tickets} projects={projects} people={people} />}
         {visibleSheetTab === "延期任务预警" && <OverdueWarningSheet tickets={tickets} projects={projects} people={people} />}
-        {visibleSheetTab === "任务甘特图" && <GanttSheet tickets={tickets} projects={projects} people={people} />}
+        {visibleSheetTab === "任务甘特图" && (
+          <GanttSheet
+            canEditTimeline={currentUser.roleKey === "admin"}
+            tickets={tickets}
+            projects={projects}
+            people={people}
+            onTimelineMove={onTimelineMove}
+          />
+        )}
 
         <div className="sheet-statusbar">
           <span>当前结果：{tickets.length} 条</span>
@@ -1622,11 +1575,10 @@ function TicketsView({
           <div className="sheet-tabs">
             {visibleSheetTabs.map((tab) => (
               <button
-                className={currentUser.roleKey === "admin" ? (activeSheetTab === tab ? "active" : "") : "active"}
+                className={visibleSheetTab === tab ? "active" : ""}
                 key={tab}
                 type="button"
-                onClick={() => currentUser.roleKey === "admin" && setActiveSheetTab(tab as SheetTab)}
-                disabled={currentUser.roleKey !== "admin"}
+                onClick={() => setActiveSheetTab(tab)}
               >
                 {tab}
               </button>
@@ -1969,111 +1921,6 @@ function TicketDetailPanel({
   );
 }
 
-function ScheduleSheet({ tickets, projects, people }: { tickets: Ticket[]; projects: Project[]; people: Person[] }) {
-  const rows = people
-    .filter((person) => tickets.some((ticket) => ticket.ownerId === person.id))
-    .map((owner) => {
-      const ownerTickets = tickets.filter((ticket) => ticket.ownerId === owner.id);
-      return {
-        owner,
-        queue: countTicketsByStatus(ownerTickets, "待接收"),
-        doing: countTicketsByStatus(ownerTickets, "处理中"),
-        review: countTicketsByStatus(ownerTickets, "待验收"),
-        done: countTicketsByStatus(ownerTickets, "已完成"),
-        currentProjects: summarizeProjectNames(
-          ownerTickets.filter((ticket) => ticket.status !== "已完成"),
-          projects
-        ),
-      };
-    });
-
-  return (
-    <div className="sheet-alt-table schedule-table">
-      <div className="schedule-head">
-        <span>负责人</span>
-        <span>环节</span>
-        <span>排队中</span>
-        <span>进行中</span>
-        <span>待验收</span>
-        <span>已完成</span>
-        <span>当前项目</span>
-        <span>负载</span>
-      </div>
-      {rows.length === 0 && <div className="sheet-empty-row">暂无排班数据</div>}
-      {rows.map((row) => (
-        <article className="schedule-row" key={row.owner.id}>
-          <span>
-            <strong className={`owner-chip owner-${row.owner.discipline}`}>{row.owner.name}</strong>
-            <small>{row.owner.title}</small>
-          </span>
-          <span>{row.owner.discipline}</span>
-          <span>{row.queue}</span>
-          <span>{row.doing}</span>
-          <span>{row.review}</span>
-          <span>{row.done}</span>
-          <span className="sheet-long-cell">{row.currentProjects || "-"}</span>
-          <span className="sheet-progress-cell">
-            <ProgressLine value={row.owner.capacity} />
-            <small>{row.owner.capacity}%</small>
-          </span>
-        </article>
-      ))}
-    </div>
-  );
-}
-
-function OwnerBoardSheet({ tickets, projects, people }: { tickets: Ticket[]; projects: Project[]; people: Person[] }) {
-  const rows = people
-    .filter((person) => tickets.some((ticket) => ticket.ownerId === person.id))
-    .map((owner) => {
-      const ownerTickets = tickets.filter((ticket) => ticket.ownerId === owner.id);
-      const openTickets = ownerTickets.filter((ticket) => ticket.status !== "已完成");
-      const latestTicket = ownerTickets[0];
-      return {
-        owner,
-        total: ownerTickets.length,
-        open: openTickets.length,
-        queue: countTicketsByStatus(ownerTickets, "待接收"),
-        doing: countTicketsByStatus(ownerTickets, "处理中"),
-        review: countTicketsByStatus(ownerTickets, "待验收"),
-        done: countTicketsByStatus(ownerTickets, "已完成"),
-        warning: openTickets.filter((ticket) => ticket.dueInDays <= 1 || ticket.ageDays >= 1).length,
-        latest: latestTicket ? `${getTicketProjectName(latestTicket, projects)} / ${latestTicket.title}` : "-",
-      };
-    });
-
-  return (
-    <div className="sheet-alt-table owner-table">
-      <div className="owner-head">
-        <span>负责人</span>
-        <span>未结</span>
-        <span>排队中</span>
-        <span>进行中</span>
-        <span>待验收</span>
-        <span>已完成</span>
-        <span>预警</span>
-        <span>最近任务</span>
-      </div>
-      {rows.length === 0 && <div className="sheet-empty-row">暂无负责人数据</div>}
-      {rows.map((row) => (
-        <article className="owner-row" key={row.owner.id}>
-          <span>
-            <strong className={`owner-chip owner-${row.owner.discipline}`}>{row.owner.discipline}-{row.owner.name}</strong>
-            <small>{row.total} 条提单</small>
-          </span>
-          <span>{row.open}</span>
-          <span>{row.queue}</span>
-          <span>{row.doing}</span>
-          <span>{row.review}</span>
-          <span>{row.done}</span>
-          <span className={row.warning > 0 ? "danger-text" : ""}>{row.warning}</span>
-          <span className="sheet-long-cell">{row.latest}</span>
-        </article>
-      ))}
-    </div>
-  );
-}
-
 function OverdueWarningSheet({
   tickets,
   projects,
@@ -2125,8 +1972,72 @@ function OverdueWarningSheet({
   );
 }
 
-function GanttSheet({ tickets, projects, people }: { tickets: Ticket[]; projects: Project[]; people: Person[] }) {
+function GanttSheet({
+  canEditTimeline,
+  tickets,
+  projects,
+  people,
+  onTimelineMove,
+}: {
+  canEditTimeline: boolean;
+  tickets: Ticket[];
+  projects: Project[];
+  people: Person[];
+  onTimelineMove: (ticketId: string, offsetDays: number) => void;
+}) {
+  const [draggingTimeline, setDraggingTimeline] = useState<{
+    pointerId: number;
+    ticketId: string;
+    startClientX: number;
+    startOffsetDays: number;
+    previewOffsetDays: number;
+  } | null>(null);
   const rows = [...tickets].sort((a, b) => a.startAt.localeCompare(b.startAt));
+
+  function getPreviewOffsetDays(ticket: Ticket) {
+    return draggingTimeline?.ticketId === ticket.id ? draggingTimeline.previewOffsetDays : getGanttOffsetDays(ticket);
+  }
+
+  function resolveDragOffset(clientX: number, drag = draggingTimeline) {
+    if (!drag) return 0;
+    const deltaDays = Math.round((clientX - drag.startClientX) / ganttDayWidth);
+    return clampGanttOffsetDays(drag.startOffsetDays + deltaDays);
+  }
+
+  function startTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>, ticket: Ticket) {
+    if (!canEditTimeline) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startOffsetDays = getGanttOffsetDays(ticket);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDraggingTimeline({
+      pointerId: event.pointerId,
+      ticketId: ticket.id,
+      startClientX: event.clientX,
+      startOffsetDays,
+      previewOffsetDays: startOffsetDays,
+    });
+  }
+
+  function moveTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!draggingTimeline || draggingTimeline.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const previewOffsetDays = resolveDragOffset(event.clientX);
+    setDraggingTimeline((current) => (current ? { ...current, previewOffsetDays } : current));
+  }
+
+  function finishTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!draggingTimeline || draggingTimeline.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    const nextOffsetDays = resolveDragOffset(event.clientX);
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may already be released by the browser on cancel.
+    }
+    onTimelineMove(draggingTimeline.ticketId, nextOffsetDays);
+    setDraggingTimeline(null);
+  }
 
   return (
     <div className="sheet-alt-table gantt-sheet">
@@ -2142,11 +2053,19 @@ function GanttSheet({ tickets, projects, people }: { tickets: Ticket[]; projects
       {rows.map((ticket) => {
         const owner = people.find((person) => person.id === ticket.ownerId);
         const duration = Math.max(1, ticket.ageDays + Math.max(ticket.dueInDays, 0));
-        const offset = Math.min(170, Math.max(0, ticket.ageDays) * 18);
+        const offsetDays = getPreviewOffsetDays(ticket);
+        const offset = offsetDays * ganttDayWidth;
         const width = Math.max(72, Math.min(280, duration * 34));
+        const isDragging = draggingTimeline?.ticketId === ticket.id;
 
         return (
-          <article className="gantt-row" key={ticket.id}>
+          <article
+            className="gantt-row"
+            data-ticket-id={ticket.id}
+            data-owner-id={ticket.ownerId}
+            data-offset-days={offsetDays}
+            key={ticket.id}
+          >
             <span className="sheet-long-cell">{getTicketProjectName(ticket, projects)}</span>
             <span className="sheet-long-cell">{ticket.title}</span>
             <span>
@@ -2155,7 +2074,20 @@ function GanttSheet({ tickets, projects, people }: { tickets: Ticket[]; projects
             <span>{ticket.startAt}</span>
             <span>{duration} 天</span>
             <span className="gantt-timeline">
-              <i className={`gantt-bar status-${ticket.status}`} style={{ marginLeft: offset, width }} />
+              <button
+                type="button"
+                aria-disabled={!canEditTimeline}
+                aria-label={`${ticket.title} 甘特时间线`}
+                className={`gantt-bar status-${ticket.status} ${canEditTimeline ? "draggable" : "readonly"} ${
+                  isDragging ? "dragging" : ""
+                }`}
+                onPointerDown={(event) => startTimelineDrag(event, ticket)}
+                onPointerMove={moveTimelineDrag}
+                onPointerUp={finishTimelineDrag}
+                onPointerCancel={finishTimelineDrag}
+                style={{ marginLeft: offset, width }}
+                title={canEditTimeline ? "拖动调整开始日期" : "仅管理员可调整"}
+              />
             </span>
           </article>
         );
@@ -2742,12 +2674,6 @@ function getTicketStatusSummary(tickets: Ticket[]) {
   };
 }
 
-function summarizeProjectNames(tickets: Ticket[], projects: Project[]) {
-  const names = Array.from(new Set(tickets.map((ticket) => getTicketProjectName(ticket, projects))));
-  if (names.length <= 3) return names.join("、");
-  return `${names.slice(0, 3).join("、")} 等 ${names.length} 个`;
-}
-
 function getWarningLabel(ticket: Ticket) {
   if (ticket.dueInDays < 0) return "已延期";
   if (ticket.dueInDays === 0) return "今日到期";
@@ -2799,18 +2725,35 @@ function formatDue(days: number) {
   return `剩 ${days} 天`;
 }
 
-function formatNowDateTime() {
-  const now = new Date();
-  const date = new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(now);
+function clampGanttOffsetDays(days: number) {
+  return Math.max(0, Math.min(ganttMaxOffsetDays, Math.round(days)));
+}
 
-  return date.replace(/\//g, "/").replace(/\s/g, " ");
+function getGanttOffsetDays(ticket: Ticket) {
+  return clampGanttOffsetDays(ticket.timelineOffsetDays ?? ticket.ageDays);
+}
+
+function shiftDateTimeByDays(value: string, deltaDays: number) {
+  if (deltaDays === 0) return value;
+
+  const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
+  if (!match) return value;
+
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
+  date.setDate(date.getDate() + deltaDays);
+  return formatDateTime(date);
+}
+
+function formatNowDateTime() {
+  return formatDateTime(new Date());
+}
+
+function formatDateTime(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(
+    date.getMinutes()
+  )}`;
 }
 
 function formatFileSize(bytes: number) {
