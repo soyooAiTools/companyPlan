@@ -11,6 +11,8 @@ Use this skill for companyPlan work: a lightweight SaaS prototype for a playable
 
 For detailed product rules, read `references/product-spec.md` before changing behavior or UI.
 
+For repo setup and deployment notes, read `README.md` in this skill folder and the repository `docs/deployment.md`.
+
 ## Workflow
 
 1. Preserve the current product scope: happy-path frontend prototype first, no backend/database unless explicitly requested.
