@@ -11,6 +11,8 @@ This skill documents the companyPlan prototype rules for future Codex sessions.
 ## Current Product Shape
 
 - Frontend-only happy-path SaaS prototype.
+- GitHub Pages live URL: `https://soyooaitools.github.io/companyPlan/`.
+- Static deployment source: `gh-pages` branch root.
 - KDocs/WPS-like table experience, but intentionally lightweight.
 - `需求提单` stays in the right workspace; it does not open as a separate full-screen panel.
 - Demand toolbar shows only `添加记录` and `查找`.

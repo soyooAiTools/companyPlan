@@ -2,6 +2,12 @@
 
 Playable ad production SaaS prototype for demand-ticket, project, permission, warning, and gantt workflows.
 
+Live site:
+
+```text
+https://soyooaitools.github.io/companyPlan/
+```
+
 Deployment branch:
 
 ```text
@@ -56,16 +62,11 @@ npm run build
 
 Then publish the contents of `dist/` to the `gh-pages` branch. Vite uses `/companyPlan/` as the production base path.
 
-GitHub Pages is not live yet because GitHub returned:
+GitHub Pages is enabled from:
 
 ```text
-Your current plan does not support GitHub Pages for this repository.
-```
-
-To make it public on GitHub Pages, either make the repo public or use a GitHub plan that supports Pages for private repositories. The expected URL after Pages is enabled is:
-
-```text
-https://soyooaitools.github.io/companyPlan/
+source branch: gh-pages
+path: /
 ```
 
 More deployment notes: [docs/deployment.md](docs/deployment.md).
