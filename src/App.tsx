@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
-type RoleKey = "admin" | "producer" | "artist" | "ui" | "model" | "animator";
+type RoleKey = "admin" | "producer" | "artist" | "ui" | "model" | "animator" | "programmer";
 type ViewKey = "overview" | "projects" | "people" | "tickets" | "admin";
 type SheetTab = "需求提单" | "延期任务预警" | "任务甘特图";
 type TicketScope = "全部相关" | "我负责的" | "我的提单";
@@ -180,7 +180,7 @@ const people: Person[] = [
   {
     id: "u-dev",
     name: "姜北",
-    roleKey: "producer",
+    roleKey: "programmer",
     title: "Playable 开发",
     discipline: "研发",
     capacity: 87,
@@ -719,7 +719,7 @@ function createScaledTickets(count = 72): Ticket[] {
 const initialTickets: Ticket[] = [...baseTickets, ...createScaledTickets()];
 
 const accounts = people.filter((person) =>
-  ["admin", "producer", "artist", "ui", "model", "animator"].includes(person.roleKey)
+  ["admin", "producer", "artist", "ui", "model", "animator", "programmer"].includes(person.roleKey)
 );
 
 const statusTone: Record<TicketStatus, string> = {
@@ -749,7 +749,12 @@ const roleLabel: Record<RoleKey, string> = {
   ui: "UI",
   model: "模型",
   animator: "动画",
+  programmer: "程序员",
 };
+
+function canViewGanttSheet(person: Person) {
+  return person.roleKey === "admin" || person.roleKey === "programmer";
+}
 
 function App() {
   const [activeView, setActiveView] = useState<ViewKey>("overview");
@@ -874,11 +879,9 @@ function App() {
         if (ticket.id !== ticketId) return ticket;
 
         const nextOffsetDays = clampGanttOffsetDays(offsetDays);
-        const deltaDays = nextOffsetDays - getGanttOffsetDays(ticket);
 
         return {
           ...ticket,
-          startAt: shiftDateTimeByDays(ticket.startAt, deltaDays),
           timelineOffsetDays: nextOffsetDays,
         };
       })
@@ -1379,7 +1382,9 @@ function TicketsView({
   onCreateTicket: () => void;
 }) {
   const [activeSheetTab, setActiveSheetTab] = useState<SheetTab>("需求提单");
-  const visibleSheetTabs = sheetTabs;
+  const visibleSheetTabs = canViewGanttSheet(currentUser)
+    ? sheetTabs
+    : sheetTabs.filter((tab) => tab !== "任务甘特图");
   const visibleSheetTab = visibleSheetTabs.includes(activeSheetTab) ? activeSheetTab : "需求提单";
   const groupedTickets = groupTicketsByBoardStatus(tickets);
   const statusSummary = getTicketStatusSummary(statusSummaryTickets);
@@ -1992,7 +1997,7 @@ function GanttSheet({
     startOffsetDays: number;
     previewOffsetDays: number;
   } | null>(null);
-  const rows = [...tickets].sort((a, b) => a.startAt.localeCompare(b.startAt));
+  const rows = tickets;
 
   function getPreviewOffsetDays(ticket: Ticket) {
     return draggingTimeline?.ticketId === ticket.id ? draggingTimeline.previewOffsetDays : getGanttOffsetDays(ticket);
@@ -2086,7 +2091,7 @@ function GanttSheet({
                 onPointerUp={finishTimelineDrag}
                 onPointerCancel={finishTimelineDrag}
                 style={{ marginLeft: offset, width }}
-                title={canEditTimeline ? "拖动调整开始日期" : "仅管理员可调整"}
+                title={canEditTimeline ? "拖动调整时间线位置" : "仅管理员可调整"}
               />
             </span>
           </article>
@@ -2731,18 +2736,6 @@ function clampGanttOffsetDays(days: number) {
 
 function getGanttOffsetDays(ticket: Ticket) {
   return clampGanttOffsetDays(ticket.timelineOffsetDays ?? ticket.ageDays);
-}
-
-function shiftDateTimeByDays(value: string, deltaDays: number) {
-  if (deltaDays === 0) return value;
-
-  const match = value.match(/^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2})$/);
-  if (!match) return value;
-
-  const [, year, month, day, hour, minute] = match;
-  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute));
-  date.setDate(date.getDate() + deltaDays);
-  return formatDateTime(date);
 }
 
 function formatNowDateTime() {

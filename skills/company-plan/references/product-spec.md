@@ -27,10 +27,13 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Non-admin visible rows must be relevant to that user: requester, owner, or project participation depending on role.
 - Non-admin must not see admin navigation.
 - Clicking `需求提单` should keep the left navigation shell in place and render the table in the right workspace, not open a separate full-screen panel.
-- Inside the `需求提单` page, every account should see bottom sheet tabs for `需求提单`, `延期任务预警`, and `任务甘特图`.
+- Inside the `需求提单` page, every account should see bottom sheet tabs for `需求提单` and `延期任务预警`.
+- Only admin and programmer accounts should see the `任务甘特图` bottom sheet tab.
 - Every non-admin bottom sheet must render only that user's scoped/relevant tickets.
-- Admin can drag `任务甘特图` timeline bars. Dragging updates the shared ticket timeline state so the corresponding non-admin user's scoped gantt view reflects the same new position.
-- Non-admin users can view their scoped gantt rows but cannot drag timeline bars.
+- Admin can drag `任务甘特图` timeline bars. Dragging updates only that ticket's shared visual timeline offset so the corresponding non-admin user's scoped gantt view reflects the same new position.
+- Dragging a gantt bar must not change row order, `开始日期`, warning data, or any other ticket content.
+- Programmer users can view their scoped gantt rows but cannot drag timeline bars.
+- Other non-admin roles must not see the `任务甘特图` tab.
 
 ## Demand Ticket Table
 
@@ -101,9 +104,10 @@ Use browser checks when changing UI:
 
 - Admin row count should be broader than non-admin.
 - Non-admin top controls should not include admin/global navigation.
-- Non-admin bottom tabs should show `需求提单`, `延期任务预警`, and `任务甘特图`.
+- Non-programmer non-admin bottom tabs should show only `需求提单` and `延期任务预警`.
+- Programmer bottom tabs should include `任务甘特图`, but gantt bars remain read-only.
 - Non-admin warning and gantt rows should be no broader than that user's scoped ticket set.
-- Admin drag on a gantt bar changes its visible timeline position and start date, then the relevant non-admin account sees the same updated bar in their scoped gantt view.
+- Admin drag on a gantt bar changes only that bar's visible timeline position; row order and `开始日期` stay unchanged, and the relevant non-admin account sees the same updated bar in their scoped gantt view.
 - `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, and `导出` should not appear in the `需求提单` toolbar.
 - The `需求提单` body should not show the document-style title bar, collaborator avatars, share button, or top account selector.
 - Bottom worksheet tabs should sit at the viewport bottom.

@@ -42,11 +42,13 @@ Before handing off:
 
 - Admin sees global data, admin navigation, and the add-sheet control.
 - Non-admin stays inside the `需求提单` main page, sees only relevant rows, and has no admin navigation.
-- All users can see bottom sheet tabs for `需求提单`, `延期任务预警`, and `任务甘特图`.
-- Non-admin `需求提单`, `延期任务预警`, and `任务甘特图` must all be backed only by that user's scoped/relevant tickets.
+- All users can see bottom sheet tabs for `需求提单` and `延期任务预警`.
+- Only admins and programmers can see the `任务甘特图` bottom sheet tab.
+- Non-admin `需求提单`, `延期任务预警`, and any visible `任务甘特图` must all be backed only by that user's scoped/relevant tickets.
 - Do not reintroduce the removed `排班表` or `负责人看板` features unless explicitly requested.
-- Admin can drag bars in `任务甘特图`; the same updated timeline must be visible in the relevant non-admin user's scoped gantt view.
-- Non-admin users can view their scoped `任务甘特图` but cannot drag timeline bars.
+- Admin can drag bars in `任务甘特图`; dragging only moves that ticket's visual timeline bar and must not change row order, start dates, or other ticket content.
+- The same updated bar position must be visible in the relevant non-admin user's scoped gantt view.
+- Programmer users can view their scoped `任务甘特图` but cannot drag timeline bars.
 - `需求提单` does not show the document-style top title bar.
 - Toolbar does not contain `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, or `导出`.
 - Bottom sheet tabs stay pinned to the bottom of the page while the table body scrolls.
