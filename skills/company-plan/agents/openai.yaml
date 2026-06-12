@@ -1,0 +1,4 @@
+interface:
+  display_name: "companyPlan"
+  short_description: "Playable ad SaaS table prototype guide"
+  default_prompt: "Use $company-plan to continue refining the playable ad demand-ticket SaaS prototype."
