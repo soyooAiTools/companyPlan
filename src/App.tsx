@@ -1640,6 +1640,7 @@ function TicketsView({
   const groupedTickets = groupTicketsByBoardStatus(tickets);
   const statusSummary = getTicketStatusSummary(statusSummaryTickets);
   const [selectedTicketIds, setSelectedTicketIds] = useState<Set<string>>(new Set());
+  const [detailTicketId, setDetailTicketId] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -1649,6 +1650,17 @@ function TicketsView({
       return next.size === current.size ? current : next;
     });
   }, [tickets]);
+
+  useEffect(() => {
+    if (detailTicketId && !tickets.some((ticket) => ticket.id === detailTicketId)) {
+      setDetailTicketId(null);
+    }
+  }, [detailTicketId, tickets]);
+
+  function openTicketDetail(ticketId: string) {
+    setActiveSheetTab("需求提单");
+    setDetailTicketId(ticketId);
+  }
 
   function toggleTicketSelection(ticketId: string) {
     setSelectedTicketIds((current) => {
@@ -1791,13 +1803,22 @@ function TicketsView({
             projects={projects}
             people={people}
             selectedTicketIds={selectedTicketIds}
+            selectedTicketId={detailTicketId}
             onToggleTicketSelection={toggleTicketSelection}
             onToggleVisibleSelection={toggleVisibleSelection}
+            onSelectTicket={setDetailTicketId}
             onStatusChange={onStatusChange}
             onCreateTicket={onCreateTicket}
           />
         )}
-        {visibleSheetTab === "延期任务预警" && <OverdueWarningSheet tickets={tickets} projects={projects} people={people} />}
+        {visibleSheetTab === "延期任务预警" && (
+          <OverdueWarningSheet
+            tickets={tickets}
+            projects={projects}
+            people={people}
+            onOpenTicketDetail={openTicketDetail}
+          />
+        )}
         {visibleSheetTab === "任务甘特图" && (
           <GanttSheet
             canEditTimeline={currentUser.roleKey === "admin"}
@@ -1862,8 +1883,10 @@ function TaskManagementSheet({
   projects,
   people,
   selectedTicketIds,
+  selectedTicketId,
   onToggleTicketSelection,
   onToggleVisibleSelection,
+  onSelectTicket,
   onStatusChange,
   onCreateTicket,
 }: {
@@ -1872,15 +1895,16 @@ function TaskManagementSheet({
   projects: Project[];
   people: Person[];
   selectedTicketIds: Set<string>;
+  selectedTicketId: string | null;
   onToggleTicketSelection: (ticketId: string) => void;
   onToggleVisibleSelection: (ticketIds: string[]) => void;
+  onSelectTicket: (ticketId: string | null) => void;
   onStatusChange: (ticketId: string, status: TicketStatus) => void;
   onCreateTicket: () => void;
 }) {
   const hasRows = groupedTickets.some((group) => group.items.length > 0);
   const visibleGroups = groupedTickets.filter((group) => group.items.length > 0);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
-  const [selectedTicketId, setSelectedTicketId] = useState<string | null>(null);
   const visibleTickets = visibleGroups.flatMap((group) => group.items);
   const selectedTicket = visibleTickets.find((ticket) => ticket.id === selectedTicketId) ?? null;
   const visibleTicketIds = visibleTickets.map((ticket) => ticket.id);
@@ -1889,12 +1913,6 @@ function TaskManagementSheet({
     visibleTicketIds.length > 0 && visibleTicketIds.every((ticketId) => selectedTicketIds.has(ticketId));
   const selectedVisibleCount = visibleTicketIds.filter((ticketId) => selectedTicketIds.has(ticketId)).length;
   const someVisibleSelected = selectedVisibleCount > 0 && !allVisibleSelected;
-
-  useEffect(() => {
-    if (selectedTicketId && !visibleTickets.some((ticket) => ticket.id === selectedTicketId)) {
-      setSelectedTicketId(null);
-    }
-  }, [selectedTicketId, visibleTickets]);
 
   useEffect(() => {
     if (headerCheckboxRef.current) {
@@ -1977,7 +1995,7 @@ function TaskManagementSheet({
                 data-discipline={ticket.discipline}
                 data-status={ticket.status}
                 key={ticket.id}
-                onClick={() => setSelectedTicketId(ticket.id)}
+                onClick={() => onSelectTicket(ticket.id)}
                 title={`${ticket.id} · ${ticket.title} · ${ticket.summary}`}
               >
                 <span className="task-index">
@@ -2088,7 +2106,7 @@ function TaskManagementSheet({
           currentUser={currentUser}
           projects={projects}
           people={people}
-          onClose={() => setSelectedTicketId(null)}
+          onClose={() => onSelectTicket(null)}
         />
       )}
     </>
@@ -2211,10 +2229,12 @@ function OverdueWarningSheet({
   tickets,
   projects,
   people,
+  onOpenTicketDetail,
 }: {
   tickets: Ticket[];
   projects: Project[];
   people: Person[];
+  onOpenTicketDetail: (ticketId: string) => void;
 }) {
   const warningTickets = tickets
     .filter((ticket) => ticket.status !== "已完成" && getTicketRemainingHours(ticket) <= getTicketRiskWarningHours(ticket))
@@ -2231,6 +2251,7 @@ function OverdueWarningSheet({
         <span>停留时长</span>
         <span>剩余时间</span>
         <span>风险</span>
+        <span>操作</span>
       </div>
       {warningTickets.length === 0 && <div className="sheet-empty-row">暂无延期或临近风险</div>}
       {warningTickets.map((ticket) => {
@@ -2259,6 +2280,15 @@ function OverdueWarningSheet({
             <span className={getTicketRemainingHours(ticket) < 0 ? "danger-text" : ""}>{formatRemainingHours(getTicketRemainingHours(ticket))}</span>
             <span>
               <span className={`warning-chip ${getWarningTone(ticket)}`}>{getWarningLabel(ticket)}</span>
+            </span>
+            <span>
+              <button
+                type="button"
+                className="warning-detail-button"
+                onClick={() => onOpenTicketDetail(ticket.id)}
+              >
+                查看详情
+              </button>
             </span>
           </article>
         );

@@ -33,6 +33,7 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 - Non-admin users only navigate to `需求提单`.
 - Except admins, sheets must render only tickets the user requested or tickets assigned to the user. Users with the same responsibility type must not see each other's unrelated tickets.
 - All users can see `需求提单` and `延期任务预警`.
+- `延期任务预警` rows must expose `查看详情`, switching back to `需求提单` and opening that ticket's detail panel.
 - Only admin and programmer roles can see `任务甘特图`.
 - Only admin can drag gantt timeline bars and resize their visual length.
 - Programmer can view scoped gantt rows, but gantt bars are read-only.
@@ -43,6 +44,7 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 
 - Persist mutable data through the backend API.
 - Store uploaded files under the configured upload directory and keep file metadata in SQLite.
+- Seeded demo attachments must also materialize real files under the upload directory, not metadata-only placeholders.
 - Attachment detail actions must support both browser open and download for stored files.
 - Record meaningful ticket create/update and attachment events in audit logs.
 - Admin configuration changes and gantt timeline updates should also be audited.
@@ -76,4 +78,4 @@ python /root/.codex/skills/.system/skill-creator/scripts/quick_validate.py /root
 
 For UI changes, also run browser checks across admin, programmer, and a non-programmer account. For deployment changes, verify the public `/companyPlan/` URL, unauthenticated API rejection, login, and `pm2 status companyplan`.
 
-The scenario test currently covers admin project-name/type-hour configuration, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.
+The scenario test currently covers admin project-name/type-hour configuration, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, seeded attachment open, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.

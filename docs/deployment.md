@@ -38,7 +38,7 @@ Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS i
 
 ## First Run
 
-On an empty database, the server seeds the base companyPlan users, projects, demand tickets, project membership, attachment metadata, and an audit event.
+On an empty database, the server seeds the base companyPlan users, projects, demand tickets, project membership, stored demo attachment files, attachment metadata, and an audit event.
 
 Seed usernames:
 
@@ -80,7 +80,7 @@ npm run build
 npm run test:scenarios
 ```
 
-`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, admin project-name/type-hour configuration, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
+`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, seeded attachment open, admin project-name/type-hour configuration, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
 
 Manual smoke checks:
 

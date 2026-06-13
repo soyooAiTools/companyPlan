@@ -35,6 +35,7 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - Non-admin must not see admin navigation.
 - Clicking `需求提单` should keep the left navigation shell in place and render the table in the right workspace, not open a separate full-screen panel.
 - Inside the `需求提单` page, every account should see bottom sheet tabs for `需求提单` and `延期任务预警`.
+- `延期任务预警` rows must provide `查看详情`; clicking it switches to the `需求提单` sheet and opens the corresponding ticket detail panel.
 - Only admin and programmer accounts should see the `任务甘特图` bottom sheet tab.
 - Every non-admin bottom sheet must render only that user's scoped/relevant tickets.
 - Admin can drag `任务甘特图` timeline bars. Dragging updates only that ticket's shared visual timeline offset so the corresponding non-admin user's scoped gantt view reflects the same new position.
@@ -52,6 +53,7 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - `/api/bootstrap` must reject unauthenticated requests.
 - Ticket create/update flows must write to SQLite and remain visible after reload and process restart.
 - Attachment upload must persist file content and metadata.
+- Seeded/demo attachments must materialize real stored files, not metadata-only placeholders.
 - Attachment detail actions should support opening and downloading stored files when file content exists.
 - Audit events should capture ticket creation, ticket updates, attachment uploads, admin configuration changes, and gantt timeline updates with actor and timestamp.
 
@@ -141,7 +143,7 @@ Use automated production scenario tests for backend behavior and browser checks 
 
 - Unauthenticated `/api/bootstrap` returns 401.
 - Login succeeds for seeded role accounts.
-- Ticket create/update, admin configuration, attachment upload/open/download, audit history, role scoping, button actionability, and gantt visibility are covered by `npm run test:scenarios`.
+- Ticket create/update, admin configuration, seeded attachment open, attachment upload/open/download, audit history, role scoping, button actionability, and gantt visibility are covered by `npm run test:scenarios`.
 - Admin row count should be broader than non-admin.
 - Non-admin top controls should not include admin/global navigation.
 - Non-programmer non-admin bottom tabs should show only `需求提单` and `延期任务预警`.

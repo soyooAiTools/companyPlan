@@ -1763,8 +1763,9 @@ button {
     98px
     98px
     110px
-    104px;
-  min-width: 1280px;
+    104px
+    112px;
+  min-width: 1392px;
 }
 
 .gantt-head,
@@ -1821,6 +1822,23 @@ button {
 .warning-row:hover,
 .gantt-row:hover {
   background: #f9fcff;
+}
+
+.warning-detail-button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #c7d7ee;
+  border-radius: 6px;
+  background: #f7fbff;
+  color: #1c4f8f;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.warning-detail-button:hover {
+  border-color: #92b4e2;
+  background: #eaf4ff;
 }
 
 .sheet-long-cell {

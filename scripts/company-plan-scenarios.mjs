@@ -411,6 +411,43 @@ async function assertCreatedAttachmentOpenAndDownload(page, title) {
   assert(Boolean(downloadPath), "Attachment download should produce a file");
 }
 
+async function assertSeedAttachmentOpen(page) {
+  const seededRow = page.locator(".task-row").filter({ hasText: "主界面 3D 图标补模型" }).first();
+  await seededRow.click();
+  await page.waitForSelector(".ticket-detail-panel");
+  const openHref = await page.locator(".detail-attachment-list a").filter({ hasText: "打开" }).first().getAttribute("href");
+  assert(Boolean(openHref), "Seeded attachments should expose an open URL");
+  const result = await page.evaluate(async (href) => {
+    const response = await fetch(href, { credentials: "include" });
+    return {
+      ok: response.ok,
+      contentType: response.headers.get("content-type") ?? "",
+      bytes: (await response.arrayBuffer()).byteLength,
+    };
+  }, openHref);
+  assert(result.ok, "Seeded attachment open endpoint should return 200");
+  assert(result.contentType.includes("image/png"), `Seeded image should return image/png, got ${result.contentType}`);
+  assert(result.bytes > 0, "Seeded attachment should return file content");
+  await page.locator(".ticket-detail-panel .icon-button").click();
+  await page.waitForSelector(".ticket-detail-panel", { state: "detached" });
+}
+
+async function assertWarningDetailNavigation(page) {
+  await clickSheetTab(page, "延期任务预警");
+  const firstWarningRow = page.locator(".warning-row").first();
+  await firstWarningRow.waitFor();
+  const ticketId = await firstWarningRow.getAttribute("data-ticket-id");
+  assert(Boolean(ticketId), "Warning row should carry ticket id");
+  await firstWarningRow.locator("button").filter({ hasText: "查看详情" }).click();
+  await page.waitForFunction((id) => {
+    const activeTab = document.querySelector(".sheet-tabs button.active")?.textContent ?? "";
+    const detailId = document.querySelector(".ticket-detail-panel .eyebrow")?.textContent ?? "";
+    return activeTab.includes("需求提单") && detailId.includes(id);
+  }, ticketId);
+  await page.locator(".ticket-detail-panel .icon-button").click();
+  await page.waitForSelector(".ticket-detail-panel", { state: "detached" });
+}
+
 async function assertHeaderHalfSelection(page) {
   await page.locator(".task-row input.row-checkbox").first().check();
   const isIndeterminate = await page.locator(".task-table-head input.row-checkbox").evaluate((checkbox) => checkbox.indeterminate);
@@ -449,6 +486,8 @@ async function run() {
 
     await loginAs(page, "admin", "林知远");
     await assertDemandChrome(page);
+    await assertSeedAttachmentOpen(page);
+    await assertWarningDetailNavigation(page);
     await assertVisibleEnabledButtonsActionable(page, "admin demand");
 
     const adminNav = await allTexts(page.locator(".nav-button span"));
