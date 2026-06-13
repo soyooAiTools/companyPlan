@@ -20,6 +20,9 @@ This skill documents the companyPlan production SaaS rules for future Codex sess
 - `需求提单` stays in the right workspace; it does not open as a separate full-screen panel.
 - Demand toolbar shows only `添加记录` and `查找`.
 - Bottom tabs are fixed at the page bottom.
+- Admin can configure the selectable `表格项目名称` list and per-type default delivery/risk hours.
+- Demand tickets use four priority labels: `紧急`, `优先`, `普通`, `低优先`.
+- Demand-ticket age, status stay, remaining delivery time, warnings, and type defaults are calculated in hours.
 - `排班表` and `负责人看板` are removed.
 
 Do not return the app to a frontend-only/static-data implementation unless the user explicitly asks for a separate throwaway prototype.
@@ -31,7 +34,7 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 - Every non-admin sheet must render only that user's scoped/relevant tickets.
 - All users can see `需求提单` and `延期任务预警`.
 - Only admin and programmer roles can see `任务甘特图`.
-- Only admin can drag gantt timeline bars.
+- Only admin can drag gantt timeline bars and resize their visual length.
 - Programmer can view scoped gantt rows, but gantt bars are read-only.
 - Permissions must be enforced by the API, not only by frontend filtering.
 - The UI must use login/session state; do not reintroduce account switching as an auth substitute.
@@ -40,13 +43,15 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 
 - Persist mutable data through the backend API.
 - Store uploaded files under the configured upload directory and keep file metadata in SQLite.
+- Attachment detail actions must support both browser open and download for stored files.
 - Record meaningful ticket create/update and attachment events in audit logs.
+- Admin configuration changes and gantt timeline updates should also be audited.
 - Keep runtime data, SQLite files, uploads, cookies, and secrets out of git.
 - For deployment changes, update `docs/deployment.md` and verify PM2/Nginx behavior.
 
 ## Gantt Rule
 
-Admin gantt dragging updates only the selected ticket's visual timeline offset.
+Admin gantt dragging updates only the selected ticket's visual timeline offset or visual length.
 
 It must not change:
 
@@ -56,7 +61,7 @@ It must not change:
 - other ticket content
 - other gantt bars
 
-The same visual offset must appear in the corresponding programmer scoped gantt view.
+The same visual offset and length must appear in the corresponding programmer scoped gantt view.
 
 ## Validation
 
@@ -70,3 +75,5 @@ python /root/.codex/skills/.system/skill-creator/scripts/quick_validate.py /root
 ```
 
 For UI changes, also run browser checks across admin, programmer, and a non-programmer account. For deployment changes, verify the public `/companyPlan/` URL, unauthenticated API rejection, login, and `pm2 status companyplan`.
+
+The scenario test currently covers admin project-name/type-hour configuration, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.

@@ -14,6 +14,7 @@ https://github.com/soyooAiTools/companyPlan
 - The frontend never decides row-level permissions by itself. `/api/bootstrap` returns only data scoped to the logged-in account.
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
 - Demand ticket creation stores images, attachments, and files through the server.
+- Admin configuration stores selectable project names and per-ticket-type delivery/risk hours in SQLite.
 
 ## Current Rules
 
@@ -21,9 +22,11 @@ https://github.com/soyooAiTools/companyPlan
 - Non-admin users stay inside `需求提单` and only see their relevant rows.
 - All users see bottom tabs for `需求提单` and `延期任务预警`.
 - Only admin and programmer roles see `任务甘特图`.
-- Only admin can drag gantt timeline bars.
+- Priorities are `紧急`, `优先`, `普通`, and `低优先`.
+- Ticket age, status stay, remaining delivery time, warnings, and type defaults are calculated in hours.
+- Only admin can drag gantt timeline bars and resize their visual length.
 - Programmer can view scoped gantt rows but cannot drag them.
-- Dragging a gantt bar only moves that bar's visual timeline position. It does not change row order, `开始日期`, warning data, or other ticket content.
+- Dragging/resizing a gantt bar only changes that bar's visual timeline state. It does not change row order, `开始日期`, warning data, or other ticket content.
 - Removed features should stay removed unless explicitly requested: `排班表`, `负责人看板`, `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, `导出`.
 
 ## Run
@@ -61,7 +64,7 @@ npm run build
 npm run test:scenarios
 ```
 
-The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary SQLite data directory, and runs the demand-ticket permission and workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
+The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary SQLite data directory, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
 
 Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
 

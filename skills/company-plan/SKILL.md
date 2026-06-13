@@ -53,16 +53,20 @@ Before handing off:
 - Only admins and programmers can see the `任务甘特图` bottom sheet tab.
 - Non-admin `需求提单`, `延期任务预警`, and any visible `任务甘特图` must all be backed only by that user's scoped/relevant tickets.
 - Do not reintroduce the removed `排班表` or `负责人看板` features unless explicitly requested.
-- Admin can drag bars in `任务甘特图`; dragging only moves that ticket's visual timeline bar and must not change row order, start dates, or other ticket content.
-- The same updated bar position must be visible in the relevant non-admin user's scoped gantt view.
+- Admin can drag bars in `任务甘特图`; moving or resizing affects only that ticket's visual timeline bar and must not change row order, start dates, or other ticket content.
+- Admin can also resize the selected gantt bar's visual length without changing row order, start dates, warning data, or other ticket content.
+- The same updated bar position and length must be visible in the relevant non-admin user's scoped gantt view.
 - Programmer users can view their scoped `任务甘特图` but cannot drag timeline bars.
 - `需求提单` does not show the document-style top title bar.
 - Toolbar does not contain `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, or `导出`.
 - Bottom sheet tabs stay pinned to the bottom of the page while the table body scrolls.
-- Demand table includes project, content, `我的提单`, attachments, link, start date, priority, status, ticket age, status age, owner, type, and notes.
+- Demand table includes project, content, `我的提单`, attachments, link, start date, priority, status, ticket age in hours, status age in hours, remaining time in hours, owner, type, and notes.
+- Admin can configure the selectable project-name list and per-ticket-type default delivery/risk hours.
+- Priorities are `紧急`, `优先`, `普通`, and `低优先`.
+- Stored attachments can be opened and downloaded from the ticket detail panel.
 - Row selection still supports half-selected header state.
 - `npm run build` passes.
 - `npm run test:scenarios` passes.
 - Unauthenticated `/api/bootstrap` returns 401.
-- Login, ticket creation/update, attachment upload, audit history, role scoping, and gantt visibility are covered by scenario tests.
+- Login, ticket creation/update, admin configuration, attachment upload/open/download, audit history, role scoping, button actionability, and gantt visibility/move/resize are covered by scenario tests.
 - If deployment was requested, the PM2 process is online and the public `/companyPlan/` URL plus proxied API endpoints respond correctly.

@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   CircleUserRound,
   ClipboardList,
+  Download,
+  ExternalLink,
   FileImage,
   FileText,
   Gauge,
@@ -22,6 +24,8 @@ import {
   X,
   Maximize2,
   Layers,
+  Save,
+  Trash2,
 } from "lucide-react";
 import { FormEvent, type PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
@@ -33,7 +37,7 @@ type Health = "green" | "amber" | "red";
 type Discipline = "美术" | "UI" | "模型" | "动画" | "研发" | "音效";
 type TicketStatus = "排队中" | "进行中" | "阻塞" | "已完成";
 type TicketStatusFilter = TicketStatus | "全部";
-type Priority = "P0" | "P1" | "P2";
+type Priority = "紧急" | "优先" | "普通" | "低优先";
 type TicketAttachment = {
   id: string;
   name: string;
@@ -42,6 +46,7 @@ type TicketAttachment = {
   mimeType?: string;
   sizeBytes?: number;
   dataBase64?: string;
+  openUrl?: string;
   downloadUrl?: string;
 };
 
@@ -89,13 +94,34 @@ type Ticket = {
   ageDays: number;
   statusAgeDays: number;
   dueInDays: number;
+  ageHours?: number;
+  statusAgeHours?: number;
+  dueInHours?: number;
+  remainingHours?: number;
+  riskWarningHours?: number;
   timelineOffsetDays?: number;
+  timelineOffsetHours?: number;
+  timelineSpanHours?: number;
   needType: string;
   summary: string;
   hyperlink?: string;
   text?: string;
   attachments?: TicketAttachment[];
 };
+
+type TicketCreatePayload = Omit<
+  Ticket,
+  | "id"
+  | "ageDays"
+  | "statusAgeDays"
+  | "dueInDays"
+  | "ageHours"
+  | "statusAgeHours"
+  | "remainingHours"
+  | "riskWarningHours"
+  | "status"
+  | "startAt"
+>;
 
 type TicketBoardGroup = {
   label: string;
@@ -108,6 +134,24 @@ type BootstrapPayload = {
   people: Person[];
   projects: Project[];
   tickets: Ticket[];
+  config: CompanyConfig;
+};
+
+type ProjectNameOption = {
+  id: string;
+  name: string;
+};
+
+type TicketTypeSetting = {
+  typeKey: Discipline;
+  label: string;
+  defaultDeliveryHours: number;
+  riskWarningHours: number;
+};
+
+type CompanyConfig = {
+  projectNameOptions: ProjectNameOption[];
+  ticketTypeSettings: TicketTypeSetting[];
 };
 
 const navItems: Array<{ key: ViewKey; label: string; icon: typeof LayoutDashboard }> = [
@@ -122,9 +166,31 @@ const sheetTabs: SheetTab[] = ["需求提单", "延期任务预警", "任务甘�
 const ticketScopeOptions: TicketScope[] = ["全部相关", "我负责的", "我的提单"];
 const statusOptions: TicketStatus[] = ["排队中", "进行中", "阻塞", "已完成"];
 const disciplineOptions: Discipline[] = ["美术", "UI", "模型", "动画", "研发", "音效"];
-const priorityOptions: Priority[] = ["P0", "P1", "P2"];
-const ganttDayWidth = 18;
-const ganttMaxOffsetDays = 18;
+const priorityOptions: Priority[] = ["紧急", "优先", "普通", "低优先"];
+const fallbackCompanyConfig: CompanyConfig = {
+  projectNameOptions: [
+    { id: "pn-neon-chef", name: "Neon Chef 试玩 - p1" },
+    { id: "pn-merge-manor", name: "Merge Manor A/B - p2" },
+    { id: "pn-zombie-rush", name: "Zombie Rush Lite - p3" },
+    { id: "pn-farm-merge", name: "Farm Merge 4D - p4" },
+    { id: "pn-pet-salon", name: "Pet Salon Quest - p5" },
+    { id: "pn-idle-miner", name: "Idle Miner Sprint - p6" },
+    { id: "pn-puzzle-cruise", name: "Puzzle Cruise - p7" },
+    { id: "pn-royal-room", name: "Royal Room Rescue - p8" },
+  ],
+  ticketTypeSettings: [
+    { typeKey: "美术", label: "美术", defaultDeliveryHours: 36, riskWarningHours: 8 },
+    { typeKey: "UI", label: "UI", defaultDeliveryHours: 24, riskWarningHours: 6 },
+    { typeKey: "模型", label: "模型", defaultDeliveryHours: 48, riskWarningHours: 12 },
+    { typeKey: "动画", label: "动画", defaultDeliveryHours: 40, riskWarningHours: 10 },
+    { typeKey: "研发", label: "研发", defaultDeliveryHours: 32, riskWarningHours: 8 },
+    { typeKey: "音效", label: "音效", defaultDeliveryHours: 16, riskWarningHours: 4 },
+  ],
+};
+const ganttHourWidth = 4;
+const ganttMaxOffsetHours = 24 * 10;
+const ganttMinSpanHours = 4;
+const ganttMaxSpanHours = 24 * 45;
 
 const people: Person[] = [
   {
@@ -262,7 +328,7 @@ const initialProjects: Project[] = [
     openTicketCount: 9,
     teamIds: ["u-producer", "u-model", "u-sound"],
     disciplineProgress: { 美术: 42, UI: 24, 模型: 30, 动画: 22, 研发: 15, 音效: 55 },
-    blocker: "客户脚本未确认，P0 开场镜头缺参考",
+    blocker: "客户脚本未确认，紧急开场镜头缺参考",
   },
   {
     id: "p4",
@@ -367,7 +433,7 @@ const baseTickets: Ticket[] = [
     discipline: "模型",
     startAt: "2026/06/12 16:20",
     status: "排队中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -386,7 +452,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 14:33",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -408,7 +474,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 13:30",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -427,7 +493,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/11 13:01",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 1,
     statusAgeDays: 1,
     dueInDays: 2,
@@ -448,7 +514,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/11 14:06",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 1,
     statusAgeDays: 1,
     dueInDays: 2,
@@ -467,7 +533,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/11 14:07",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 1,
     statusAgeDays: 1,
     dueInDays: 2,
@@ -485,7 +551,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/11 15:05",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 1,
     statusAgeDays: 1,
     dueInDays: 2,
@@ -503,7 +569,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 10:11",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -521,7 +587,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 10:32",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -539,7 +605,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 13:30",
     status: "进行中",
-    priority: "P1",
+    priority: "优先",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 2,
@@ -557,7 +623,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 15:20",
     status: "排队中",
-    priority: "P2",
+    priority: "普通",
     ageDays: 0,
     statusAgeDays: 0,
     dueInDays: 3,
@@ -574,7 +640,7 @@ const baseTickets: Ticket[] = [
     discipline: "UI",
     startAt: "2026/06/12 16:00",
     status: "已完成",
-    priority: "P2",
+    priority: "低优先",
     ageDays: 1,
     statusAgeDays: 1,
     dueInDays: 1,
@@ -704,7 +770,7 @@ function createScaledTickets(count = 72): Ticket[] {
       discipline: template.discipline,
       startAt: `2026/06/${String(10 + (index % 3)).padStart(2, "0")} ${String(9 + (index % 9)).padStart(2, "0")}:${index % 2 === 0 ? "30" : "05"}`,
       status,
-      priority: index % 11 === 0 ? "P0" : index % 4 === 0 ? "P2" : "P1",
+      priority: index % 11 === 0 ? "紧急" : index % 7 === 0 ? "低优先" : index % 4 === 0 ? "普通" : "优先",
       ageDays,
       statusAgeDays,
       dueInDays: status === "阻塞" ? -1 : 1 + (index % 5),
@@ -784,6 +850,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<Person | null>(null);
   const [peopleData, setPeopleData] = useState<Person[]>(people);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
+  const [companyConfig, setCompanyConfig] = useState<CompanyConfig>(fallbackCompanyConfig);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isBootstrapping, setIsBootstrapping] = useState(true);
   const [appError, setAppError] = useState("");
@@ -814,6 +881,7 @@ function App() {
       setCurrentUser(data.currentUser);
       setPeopleData(data.people);
       setProjects(data.projects);
+      setCompanyConfig(data.config ?? fallbackCompanyConfig);
       setTickets(data.tickets);
       setSelectedProjectId((current) =>
         data.projects.some((project) => project.id === current) ? current : data.projects[0]?.id ?? ""
@@ -916,7 +984,7 @@ function App() {
   const metrics = useMemo(() => {
     const riskProjects = visibleProjects.filter((project) => project.health !== "green").length;
     const openTickets = scopedTickets.filter((ticket) => ticket.status !== "已完成").length;
-    const agedTickets = scopedTickets.filter((ticket) => ticket.status !== "已完成" && ticket.ageDays >= 5).length;
+    const agedTickets = scopedTickets.filter((ticket) => ticket.status !== "已完成" && getTicketAgeHours(ticket) >= 120).length;
     const averageProgress = Math.round(
       visibleProjects.reduce((sum, project) => sum + project.progress, 0) / Math.max(visibleProjects.length, 1)
     );
@@ -939,12 +1007,15 @@ function App() {
     setTickets((items) => items.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
   }
 
-  async function updateTicketTimeline(ticketId: string, offsetDays: number) {
+  async function updateTicketTimeline(ticketId: string, offsetHours: number, spanHours: number) {
     const response = await fetch(`/api/tickets/${ticketId}/timeline`, {
       method: "PATCH",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ offsetDays: clampGanttOffsetDays(offsetDays) }),
+      body: JSON.stringify({
+        offsetHours: clampGanttOffsetHours(offsetHours),
+        spanHours: clampGanttSpanHours(spanHours),
+      }),
     });
     if (!response.ok) {
       setAppError(await readApiError(response));
@@ -954,7 +1025,7 @@ function App() {
     setTickets((items) => items.map((ticket) => (ticket.id === ticketId ? data.ticket : ticket)));
   }
 
-  async function createTicket(ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) {
+  async function createTicket(ticket: TicketCreatePayload) {
     const response = await fetch("/api/tickets", {
       method: "POST",
       credentials: "include",
@@ -969,6 +1040,21 @@ function App() {
     setTickets((items) => [data.ticket, ...items.filter((item) => item.id !== data.ticket.id)]);
     setActiveView("tickets");
     setIsTicketFormOpen(false);
+  }
+
+  async function saveAdminConfig(config: CompanyConfig) {
+    const response = await fetch("/api/admin/config", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) {
+      setAppError(await readApiError(response));
+      return;
+    }
+    const data = (await response.json()) as { config: CompanyConfig };
+    setCompanyConfig(data.config);
   }
 
   if (isBootstrapping) {
@@ -1114,6 +1200,8 @@ function App() {
             projects={projects}
             people={peopleData}
             tickets={tickets}
+            config={companyConfig}
+            onSaveConfig={saveAdminConfig}
             onSwitchAdmin={() => undefined}
           />
         )}
@@ -1124,6 +1212,7 @@ function App() {
           currentUser={currentUser}
           projects={visibleProjects}
           people={visiblePeople}
+          config={companyConfig}
           onClose={() => setIsTicketFormOpen(false)}
           onCreate={createTicket}
         />
@@ -1218,7 +1307,7 @@ function Overview({
 }) {
   const urgentTickets = tickets
     .filter((ticket) => ticket.status !== "已完成")
-    .sort((a, b) => b.ageDays - a.ageDays)
+    .sort((a, b) => getTicketAgeHours(b) - getTicketAgeHours(a))
     .slice(0, 5);
 
   return (
@@ -1226,7 +1315,7 @@ function Overview({
       <div className="kpi-grid">
         <MetricCard icon={BriefcaseBusiness} label="可见项目" value={projects.length} helper="按账号权限过滤" />
         <MetricCard icon={AlertTriangle} label="风险项目" value={metrics.riskProjects} helper="关注与红灯项目" tone="risk" />
-        <MetricCard icon={ClipboardList} label="未完成提单" value={metrics.openTickets} helper={`${metrics.agedTickets} 个超过 5 天`} />
+        <MetricCard icon={ClipboardList} label="未完成提单" value={metrics.openTickets} helper={`${metrics.agedTickets} 个超过 120 小时`} />
         <MetricCard icon={Gauge} label="平均进度" value={`${metrics.averageProgress}%`} helper={currentUser.title} tone="progress" />
       </div>
 
@@ -1252,7 +1341,7 @@ function Overview({
         <section className="panel">
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">提单天数</span>
+              <span className="eyebrow">提单时长</span>
               <h2>高优先级队列</h2>
             </div>
             <Timer size={20} />
@@ -1343,7 +1432,9 @@ function ProjectSituationTable({
         const owner = people.find((person) => person.id === project.ownerId) ?? people.find((person) => person.id === "u-admin");
         const projectTickets = tickets.filter((ticket) => ticket.projectId === project.id);
         const openTickets = projectTickets.filter((ticket) => ticket.status !== "已完成");
-        const overdueTickets = openTickets.filter((ticket) => ticket.dueInDays < 0 || ticket.ageDays >= 5);
+        const overdueTickets = openTickets.filter(
+          (ticket) => getTicketRemainingHours(ticket) < 0 || getTicketAgeHours(ticket) >= 120
+        );
         const team = people.filter((person) => project.teamIds.includes(person.id));
         const relation =
           currentUser.roleKey === "admin"
@@ -1513,7 +1604,7 @@ function TicketsView({
   tickets: Ticket[];
   statusSummaryTickets: Ticket[];
   onStatusChange: (ticketId: string, status: TicketStatus) => void;
-  onTimelineMove: (ticketId: string, offsetDays: number) => void;
+  onTimelineMove: (ticketId: string, offsetHours: number, spanHours: number) => void;
   onCreateTicket: () => void;
 }) {
   const [activeSheetTab, setActiveSheetTab] = useState<SheetTab>("需求提单");
@@ -1819,8 +1910,9 @@ function TaskManagementSheet({
           <span>开始日期</span>
           <span>优先级</span>
           <span>状态</span>
-          <span>提单天数</span>
+          <span>提单时长</span>
           <span>状态停留</span>
+          <span>剩余时间</span>
           <span>负责人</span>
           <span>任务类别</span>
           <span>备注</span>
@@ -1906,7 +1998,7 @@ function TaskManagementSheet({
                 </span>
                 <span>{ticket.startAt}</span>
                 <span>
-                  <i className={`priority priority-${ticket.priority.toLowerCase()}`}>{ticket.priority}</i>
+                  <i className={`priority ${getPriorityClass(ticket.priority)}`}>{ticket.priority}</i>
                 </span>
                 <span>
                   <select
@@ -1925,13 +2017,18 @@ function TaskManagementSheet({
                   </select>
                 </span>
                 <span className="task-age-cell">
-                  <strong className={ticket.ageDays >= 5 && ticket.status !== "已完成" ? "danger-text" : ""}>
-                    {ticket.ageDays} 天
+                  <strong className={getTicketAgeHours(ticket) >= 120 && ticket.status !== "已完成" ? "danger-text" : ""}>
+                    {formatHours(getTicketAgeHours(ticket))}
                   </strong>
                 </span>
                 <span className="task-age-cell">
-                  <strong className={ticket.statusAgeDays >= 3 && ticket.status !== "已完成" ? "danger-text" : ""}>
-                    {ticket.statusAgeDays} 天
+                  <strong className={getTicketStatusAgeHours(ticket) >= 72 && ticket.status !== "已完成" ? "danger-text" : ""}>
+                    {formatHours(getTicketStatusAgeHours(ticket))}
+                  </strong>
+                </span>
+                <span className="task-age-cell">
+                  <strong className={getTicketRemainingHours(ticket) < 0 ? "danger-text" : ""}>
+                    {formatRemainingHours(getTicketRemainingHours(ticket))}
                   </strong>
                 </span>
                 <span>
@@ -1950,7 +2047,7 @@ function TaskManagementSheet({
                 <button type="button" className="task-add-row" onClick={onCreateTicket}>
                   <span>+</span>
                   <span>添加提单</span>
-                  {Array.from({ length: 12 }).map((_, index) => (
+                  {Array.from({ length: 13 }).map((_, index) => (
                     <span key={index} />
                   ))}
                 </button>
@@ -2030,7 +2127,9 @@ function TicketDetailPanel({
         </span>
         <span>
           时间
-          <strong>提单 {ticket.ageDays} 天 / 停留 {ticket.statusAgeDays} 天</strong>
+          <strong>
+            提单 {formatHours(getTicketAgeHours(ticket))} / 停留 {formatHours(getTicketStatusAgeHours(ticket))} / {formatRemainingHours(getTicketRemainingHours(ticket))}
+          </strong>
         </span>
       </div>
 
@@ -2048,6 +2147,20 @@ function TicketDetailPanel({
                 {attachment.kind === "图片" ? <FileImage size={15} /> : <Paperclip size={15} />}
                 <strong>{attachment.name}</strong>
                 <small>{attachment.kind} · {attachment.size}</small>
+                <span className="attachment-actions">
+                  {attachment.openUrl && (
+                    <a href={attachment.openUrl} target="_blank" rel="noreferrer" title={`打开 ${attachment.name}`}>
+                      <ExternalLink size={14} />
+                      打开
+                    </a>
+                  )}
+                  {attachment.downloadUrl && (
+                    <a href={attachment.downloadUrl} download title={`下载 ${attachment.name}`}>
+                      <Download size={14} />
+                      下载
+                    </a>
+                  )}
+                </span>
               </span>
             ))}
           </div>
@@ -2078,8 +2191,8 @@ function OverdueWarningSheet({
   people: Person[];
 }) {
   const warningTickets = tickets
-    .filter((ticket) => ticket.status !== "已完成" && (ticket.dueInDays <= 1 || ticket.ageDays >= 1 || ticket.statusAgeDays >= 1))
-    .sort((a, b) => a.dueInDays - b.dueInDays || b.ageDays - a.ageDays);
+    .filter((ticket) => ticket.status !== "已完成" && getTicketRemainingHours(ticket) <= getTicketRiskWarningHours(ticket))
+    .sort((a, b) => getTicketRemainingHours(a) - getTicketRemainingHours(b) || getTicketAgeHours(b) - getTicketAgeHours(a));
 
   return (
     <div className="sheet-alt-table warning-table">
@@ -2088,9 +2201,9 @@ function OverdueWarningSheet({
         <span>工作内容</span>
         <span>负责人</span>
         <span>状态</span>
-        <span>提单天数</span>
-        <span>停留天数</span>
-        <span>剩余天数</span>
+        <span>提单时长</span>
+        <span>停留时长</span>
+        <span>剩余时间</span>
         <span>风险</span>
       </div>
       {warningTickets.length === 0 && <div className="sheet-empty-row">暂无延期或临近风险</div>}
@@ -2114,9 +2227,9 @@ function OverdueWarningSheet({
             <span>
               <span className={`pill ${statusTone[ticket.status]}`}>{ticket.status}</span>
             </span>
-            <span className={ticket.ageDays >= 5 ? "danger-text" : ""}>{ticket.ageDays} 天</span>
-            <span>{ticket.statusAgeDays} 天</span>
-            <span className={ticket.dueInDays < 0 ? "danger-text" : ""}>{formatDue(ticket.dueInDays)}</span>
+            <span className={getTicketAgeHours(ticket) >= 120 ? "danger-text" : ""}>{formatHours(getTicketAgeHours(ticket))}</span>
+            <span>{formatHours(getTicketStatusAgeHours(ticket))}</span>
+            <span className={getTicketRemainingHours(ticket) < 0 ? "danger-text" : ""}>{formatRemainingHours(getTicketRemainingHours(ticket))}</span>
             <span>
               <span className={`warning-chip ${getWarningTone(ticket)}`}>{getWarningLabel(ticket)}</span>
             </span>
@@ -2138,59 +2251,90 @@ function GanttSheet({
   tickets: Ticket[];
   projects: Project[];
   people: Person[];
-  onTimelineMove: (ticketId: string, offsetDays: number) => void;
+  onTimelineMove: (ticketId: string, offsetHours: number, spanHours: number) => void;
 }) {
   const [draggingTimeline, setDraggingTimeline] = useState<{
     pointerId: number;
     ticketId: string;
+    mode: "move" | "resize";
     startClientX: number;
-    startOffsetDays: number;
-    previewOffsetDays: number;
+    startOffsetHours: number;
+    startSpanHours: number;
+    previewOffsetHours: number;
+    previewSpanHours: number;
   } | null>(null);
   const rows = tickets;
 
-  function getPreviewOffsetDays(ticket: Ticket) {
-    return draggingTimeline?.ticketId === ticket.id ? draggingTimeline.previewOffsetDays : getGanttOffsetDays(ticket);
+  function getPreviewOffsetHours(ticket: Ticket) {
+    return draggingTimeline?.ticketId === ticket.id ? draggingTimeline.previewOffsetHours : getGanttOffsetHours(ticket);
   }
 
-  function resolveDragOffset(clientX: number, drag = draggingTimeline) {
-    if (!drag) return 0;
-    const deltaDays = Math.round((clientX - drag.startClientX) / ganttDayWidth);
-    return clampGanttOffsetDays(drag.startOffsetDays + deltaDays);
+  function getPreviewSpanHours(ticket: Ticket) {
+    return draggingTimeline?.ticketId === ticket.id ? draggingTimeline.previewSpanHours : getGanttSpanHours(ticket);
+  }
+
+  function resolveDrag(clientX: number, drag = draggingTimeline) {
+    if (!drag) {
+      return { offsetHours: 0, spanHours: ganttMinSpanHours };
+    }
+    const deltaHours = Math.round((clientX - drag.startClientX) / ganttHourWidth);
+    if (drag.mode === "resize") {
+      return {
+        offsetHours: drag.startOffsetHours,
+        spanHours: clampGanttSpanHours(drag.startSpanHours + deltaHours),
+      };
+    }
+    return {
+      offsetHours: clampGanttOffsetHours(drag.startOffsetHours + deltaHours),
+      spanHours: drag.startSpanHours,
+    };
   }
 
   function startTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>, ticket: Ticket) {
     if (!canEditTimeline) return;
     event.preventDefault();
     event.stopPropagation();
-    const startOffsetDays = getGanttOffsetDays(ticket);
+    const startOffsetHours = getGanttOffsetHours(ticket);
+    const startSpanHours = getGanttSpanHours(ticket);
+    const target = event.target as HTMLElement;
     event.currentTarget.setPointerCapture(event.pointerId);
     setDraggingTimeline({
       pointerId: event.pointerId,
       ticketId: ticket.id,
+      mode: target.closest(".gantt-resize-handle") ? "resize" : "move",
       startClientX: event.clientX,
-      startOffsetDays,
-      previewOffsetDays: startOffsetDays,
+      startOffsetHours,
+      startSpanHours,
+      previewOffsetHours: startOffsetHours,
+      previewSpanHours: startSpanHours,
     });
   }
 
   function moveTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!draggingTimeline || draggingTimeline.pointerId !== event.pointerId) return;
     event.preventDefault();
-    const previewOffsetDays = resolveDragOffset(event.clientX);
-    setDraggingTimeline((current) => (current ? { ...current, previewOffsetDays } : current));
+    const preview = resolveDrag(event.clientX);
+    setDraggingTimeline((current) =>
+      current
+        ? {
+            ...current,
+            previewOffsetHours: preview.offsetHours,
+            previewSpanHours: preview.spanHours,
+          }
+        : current
+    );
   }
 
   function finishTimelineDrag(event: ReactPointerEvent<HTMLButtonElement>) {
     if (!draggingTimeline || draggingTimeline.pointerId !== event.pointerId) return;
     event.preventDefault();
-    const nextOffsetDays = resolveDragOffset(event.clientX);
+    const next = resolveDrag(event.clientX);
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {
       // Pointer capture may already be released by the browser on cancel.
     }
-    onTimelineMove(draggingTimeline.ticketId, nextOffsetDays);
+    onTimelineMove(draggingTimeline.ticketId, next.offsetHours, next.spanHours);
     setDraggingTimeline(null);
   }
 
@@ -2207,10 +2351,10 @@ function GanttSheet({
       {rows.length === 0 && <div className="sheet-empty-row">暂无甘特图数据</div>}
       {rows.map((ticket) => {
         const owner = people.find((person) => person.id === ticket.ownerId);
-        const duration = Math.max(1, ticket.ageDays + Math.max(ticket.dueInDays, 0));
-        const offsetDays = getPreviewOffsetDays(ticket);
-        const offset = offsetDays * ganttDayWidth;
-        const width = Math.max(72, Math.min(280, duration * 34));
+        const spanHours = getPreviewSpanHours(ticket);
+        const offsetHours = getPreviewOffsetHours(ticket);
+        const offset = offsetHours * ganttHourWidth;
+        const width = Math.max(72, Math.min(420, spanHours * ganttHourWidth));
         const isDragging = draggingTimeline?.ticketId === ticket.id;
 
         return (
@@ -2221,7 +2365,8 @@ function GanttSheet({
             data-requester-id={ticket.requesterId}
             data-owner-id={ticket.ownerId}
             data-status={ticket.status}
-            data-offset-days={offsetDays}
+            data-offset-hours={offsetHours}
+            data-span-hours={spanHours}
             data-start-at={ticket.startAt}
             key={ticket.id}
           >
@@ -2231,12 +2376,12 @@ function GanttSheet({
               <strong className={`owner-chip owner-${ticket.discipline}`}>{owner?.name ?? "-"}</strong>
             </span>
             <span>{ticket.startAt}</span>
-            <span>{duration} 天</span>
+            <span>{formatHours(spanHours)}</span>
             <span className="gantt-timeline">
               <button
                 type="button"
                 aria-disabled={!canEditTimeline}
-                aria-label={`${ticket.title} 甘特时间线`}
+                aria-label={`${ticket.title} 甘特时间线，${formatHours(spanHours)}`}
                 className={`gantt-bar status-${ticket.status} ${canEditTimeline ? "draggable" : "readonly"} ${
                   isDragging ? "dragging" : ""
                 }`}
@@ -2245,8 +2390,10 @@ function GanttSheet({
                 onPointerUp={finishTimelineDrag}
                 onPointerCancel={finishTimelineDrag}
                 style={{ marginLeft: offset, width }}
-                title={canEditTimeline ? "拖动调整时间线位置" : "仅管理员可调整"}
-              />
+                title={canEditTimeline ? "拖动条形移动时间线，拖右侧手柄调整长短" : "仅管理员可调整"}
+              >
+                {canEditTimeline && <span className="gantt-resize-handle" aria-hidden="true" />}
+              </button>
             </span>
           </article>
         );
@@ -2260,14 +2407,28 @@ function AdminView({
   projects,
   people,
   tickets,
+  config,
+  onSaveConfig,
   onSwitchAdmin,
 }: {
   currentUser: Person;
   projects: Project[];
   people: Person[];
   tickets: Ticket[];
+  config: CompanyConfig;
+  onSaveConfig: (config: CompanyConfig) => void | Promise<void>;
   onSwitchAdmin: () => void;
 }) {
+  const [projectNameDrafts, setProjectNameDrafts] = useState<ProjectNameOption[]>(config.projectNameOptions);
+  const [typeSettingDrafts, setTypeSettingDrafts] = useState<TicketTypeSetting[]>(config.ticketTypeSettings);
+  const [newProjectName, setNewProjectName] = useState("");
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
+  useEffect(() => {
+    setProjectNameDrafts(config.projectNameOptions);
+    setTypeSettingDrafts(config.ticketTypeSettings);
+  }, [config]);
+
   if (currentUser.roleKey !== "admin") {
     return (
       <section className="empty-state">
@@ -2283,7 +2444,7 @@ function AdminView({
   }
 
   const openTickets = tickets.filter((ticket) => ticket.status !== "已完成");
-  const overdueTickets = openTickets.filter((ticket) => ticket.dueInDays < 0);
+  const overdueTickets = openTickets.filter((ticket) => getTicketRemainingHours(ticket) < 0);
   const averageLoad = Math.round(people.reduce((sum, person) => sum + person.capacity, 0) / people.length);
   const disciplineLoads = disciplineOptions.map((discipline) => {
     const members = people.filter((person) => person.discipline === discipline);
@@ -2292,6 +2453,42 @@ function AdminView({
       : 0;
     return { discipline, load };
   });
+
+  function addProjectName() {
+    const name = newProjectName.trim();
+    if (!name || projectNameDrafts.some((option) => option.name === name)) return;
+    setProjectNameDrafts((items) => [...items, { id: `draft-${Date.now()}`, name }]);
+    setNewProjectName("");
+  }
+
+  function removeProjectName(id: string) {
+    setProjectNameDrafts((items) => (items.length > 1 ? items.filter((item) => item.id !== id) : items));
+  }
+
+  function updateTypeSetting(typeKey: Discipline, field: "defaultDeliveryHours" | "riskWarningHours", value: number) {
+    setTypeSettingDrafts((items) =>
+      items.map((item) =>
+        item.typeKey === typeKey
+          ? {
+              ...item,
+              [field]: Math.max(1, Math.round(value || 1)),
+            }
+          : item
+      )
+    );
+  }
+
+  async function saveConfig() {
+    setIsSavingConfig(true);
+    try {
+      await onSaveConfig({
+        projectNameOptions: projectNameDrafts,
+        ticketTypeSettings: typeSettingDrafts,
+      });
+    } finally {
+      setIsSavingConfig(false);
+    }
+  }
 
   return (
     <section className="view-stack">
@@ -2346,6 +2543,94 @@ function AdminView({
           </div>
         </section>
       </div>
+
+      <section className="admin-config-panel">
+        <div className="panel-heading">
+          <div>
+            <span className="eyebrow">配置</span>
+            <h2>提单默认规则</h2>
+          </div>
+          <button className="primary-button" type="button" onClick={saveConfig} disabled={isSavingConfig}>
+            <Save size={17} />
+            <span>{isSavingConfig ? "保存中" : "保存配置"}</span>
+          </button>
+        </div>
+
+        <div className="admin-config-grid">
+          <div className="admin-config-block">
+            <div className="config-block-head">
+              <strong>项目名称列表</strong>
+              <small>新建提单时的“表格项目名称”候选项</small>
+            </div>
+            <div className="project-name-editor">
+              {projectNameDrafts.map((option) => (
+                <span key={option.id}>
+                  <input
+                    value={option.name}
+                    onChange={(event) =>
+                      setProjectNameDrafts((items) =>
+                        items.map((item) => (item.id === option.id ? { ...item, name: event.target.value } : item))
+                      )
+                    }
+                  />
+                  <button type="button" title="移除项目名称" onClick={() => removeProjectName(option.id)}>
+                    <Trash2 size={15} />
+                  </button>
+                </span>
+              ))}
+            </div>
+            <div className="project-name-add">
+              <input
+                value={newProjectName}
+                onChange={(event) => setNewProjectName(event.target.value)}
+                placeholder="新增项目名称"
+              />
+              <button type="button" className="ghost-button" onClick={addProjectName}>
+                <Plus size={16} />
+                <span>添加</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="admin-config-block">
+            <div className="config-block-head">
+              <strong>类型交付时间</strong>
+              <small>新提单按负责人环节自动套用，风险按剩余小时判断</small>
+            </div>
+            <div className="type-setting-editor">
+              {typeSettingDrafts.map((setting) => (
+                <div key={setting.typeKey}>
+                  <strong>{setting.label}</strong>
+                  <label>
+                    <span>默认交付小时</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={720}
+                      value={setting.defaultDeliveryHours}
+                      onChange={(event) =>
+                        updateTypeSetting(setting.typeKey, "defaultDeliveryHours", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>风险阈值小时</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={setting.riskWarningHours}
+                      onChange={(event) =>
+                        updateTypeSetting(setting.typeKey, "riskWarningHours", Number(event.target.value))
+                      }
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="table-panel">
         <div className="panel-heading">
@@ -2446,33 +2731,41 @@ function TicketForm({
   currentUser,
   projects,
   people,
+  config,
   onClose,
   onCreate,
 }: {
   currentUser: Person;
   projects: Project[];
   people: Person[];
+  config: CompanyConfig;
   onClose: () => void;
-  onCreate: (ticket: Omit<Ticket, "id" | "ageDays" | "statusAgeDays" | "status" | "startAt">) => void | Promise<void>;
+  onCreate: (ticket: TicketCreatePayload) => void | Promise<void>;
 }) {
   const [title, setTitle] = useState("");
   const [projectId, setProjectId] = useState(projects[0]?.id ?? "p1");
-  const [sourceProjectName, setSourceProjectName] = useState(projects[0]?.name ?? "");
+  const configuredProjectNames = config.projectNameOptions.length
+    ? config.projectNameOptions
+    : projects.map((project) => ({ id: project.id, name: project.name }));
+  const [sourceProjectName, setSourceProjectName] = useState(configuredProjectNames[0]?.name ?? projects[0]?.name ?? "");
   const [discipline, setDiscipline] = useState<Discipline>(
     currentUser.discipline !== "管理" && currentUser.discipline !== "项目" ? currentUser.discipline : "美术"
   );
   const [ownerId, setOwnerId] = useState(people.find((person) => person.discipline === discipline)?.id ?? people[0].id);
-  const [priority, setPriority] = useState<Priority>("P1");
+  const [priority, setPriority] = useState<Priority>("普通");
   const [needType, setNeedType] = useState("资产补充");
   const [summary, setSummary] = useState("");
   const [hyperlink, setHyperlink] = useState("");
   const [text, setText] = useState("");
-  const [dueInDays, setDueInDays] = useState(3);
   const [attachments, setAttachments] = useState<TicketAttachment[]>([]);
   const ownerCandidates = useMemo(
     () => people.filter((person) => person.discipline === discipline),
     [discipline, people]
   );
+  const selectedTypeSetting =
+    config.ticketTypeSettings.find((setting) => setting.typeKey === discipline) ??
+    fallbackCompanyConfig.ticketTypeSettings.find((setting) => setting.typeKey === discipline);
+  const dueInHours = selectedTypeSetting?.defaultDeliveryHours ?? 72;
   const canSubmitTicket = ownerCandidates.some((person) => person.id === ownerId);
 
   useEffect(() => {
@@ -2492,7 +2785,7 @@ function TicketForm({
       ownerId,
       discipline,
       priority,
-      dueInDays,
+      dueInHours,
       needType,
       summary: summary.trim() || "待补充说明",
       hyperlink: hyperlink.trim() || undefined,
@@ -2525,15 +2818,14 @@ function TicketForm({
     setDiscipline(value);
     const nextOwner = people.find((person) => person.discipline === value);
     setOwnerId(nextOwner?.id ?? "");
+    const nextSetting = config.ticketTypeSettings.find((setting) => setting.typeKey === value);
+    if (!needType.trim() || disciplineOptions.includes(needType as Discipline)) {
+      setNeedType(nextSetting?.label ?? value);
+    }
   }
 
   function changeProject(value: string) {
-    const previousProject = projects.find((project) => project.id === projectId);
-    const nextProject = projects.find((project) => project.id === value);
     setProjectId(value);
-    if (!sourceProjectName.trim() || sourceProjectName.trim() === previousProject?.name) {
-      setSourceProjectName(nextProject?.name ?? "");
-    }
   }
 
   return (
@@ -2567,11 +2859,13 @@ function TicketForm({
           </label>
           <label>
             <span>表格项目名称</span>
-            <input
-              value={sourceProjectName}
-              onChange={(event) => setSourceProjectName(event.target.value)}
-              placeholder="例：小主厨解锁餐厅 - ttwj"
-            />
+            <select value={sourceProjectName} onChange={(event) => setSourceProjectName(event.target.value)}>
+              {configuredProjectNames.map((option) => (
+                <option key={option.id} value={option.name}>
+                  {option.name}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             <span>环节</span>
@@ -2613,13 +2907,14 @@ function TicketForm({
             <input value={needType} onChange={(event) => setNeedType(event.target.value)} />
           </label>
           <label>
-            <span>期望天数</span>
+            <span>期望小时</span>
             <input
               type="number"
               min={1}
-              max={14}
-              value={dueInDays}
-              onChange={(event) => setDueInDays(Number(event.target.value))}
+              max={720}
+              value={dueInHours}
+              readOnly
+              title="由管理员后台的类型交付时间自动计算"
             />
           </label>
         </div>
@@ -2754,7 +3049,7 @@ function TicketMiniCard({ ticket, projects, people }: { ticket: Ticket; projects
       </div>
       <div>
         <span className={`pill ${statusTone[ticket.status]}`}>{ticket.status}</span>
-        <b className={ticket.ageDays >= 5 ? "danger-text" : ""}>{ticket.ageDays} 天</b>
+        <b className={getTicketAgeHours(ticket) >= 120 ? "danger-text" : ""}>{formatHours(getTicketAgeHours(ticket))}</b>
       </div>
     </article>
   );
@@ -2853,16 +3148,18 @@ function getTicketStatusSummary(tickets: Ticket[]) {
 }
 
 function getWarningLabel(ticket: Ticket) {
-  if (ticket.dueInDays < 0) return "已延期";
-  if (ticket.dueInDays === 0) return "今日到期";
-  if (ticket.dueInDays === 1) return "临近";
-  if (ticket.ageDays >= 5) return "久未完成";
+  const remainingHours = getTicketRemainingHours(ticket);
+  if (remainingHours < 0) return "已延期";
+  if (remainingHours === 0) return "本小时到期";
+  if (remainingHours <= getTicketRiskWarningHours(ticket)) return "临近";
+  if (getTicketAgeHours(ticket) >= 120) return "久未完成";
   return "观察";
 }
 
 function getWarningTone(ticket: Ticket) {
-  if (ticket.dueInDays < 0 || ticket.status === "阻塞") return "warning-red";
-  if (ticket.dueInDays <= 1 || ticket.ageDays >= 5) return "warning-amber";
+  const remainingHours = getTicketRemainingHours(ticket);
+  if (remainingHours < 0 || ticket.status === "阻塞") return "warning-red";
+  if (remainingHours <= getTicketRiskWarningHours(ticket) || getTicketAgeHours(ticket) >= 120) return "warning-amber";
   return "warning-blue";
 }
 
@@ -2903,12 +3200,61 @@ function formatDue(days: number) {
   return `剩 ${days} 天`;
 }
 
-function clampGanttOffsetDays(days: number) {
-  return Math.max(0, Math.min(ganttMaxOffsetDays, Math.round(days)));
+function formatHours(hours: number) {
+  const normalized = Math.max(0, Math.round(hours));
+  if (normalized < 24) return `${normalized} 小时`;
+  const days = Math.floor(normalized / 24);
+  const restHours = normalized % 24;
+  return restHours ? `${days} 天 ${restHours} 小时` : `${days} 天`;
 }
 
-function getGanttOffsetDays(ticket: Ticket) {
-  return clampGanttOffsetDays(ticket.timelineOffsetDays ?? ticket.ageDays);
+function formatRemainingHours(hours: number) {
+  const normalized = Math.round(hours);
+  if (normalized < 0) return `逾期 ${formatHours(Math.abs(normalized))}`;
+  if (normalized === 0) return "本小时到期";
+  return `剩 ${formatHours(normalized)}`;
+}
+
+function getTicketAgeHours(ticket: Ticket) {
+  return Math.max(0, Math.round(ticket.ageHours ?? ticket.ageDays * 24));
+}
+
+function getTicketStatusAgeHours(ticket: Ticket) {
+  return Math.max(0, Math.round(ticket.statusAgeHours ?? ticket.statusAgeDays * 24));
+}
+
+function getTicketRemainingHours(ticket: Ticket) {
+  return Math.round(ticket.remainingHours ?? ticket.dueInDays * 24);
+}
+
+function getTicketRiskWarningHours(ticket: Ticket) {
+  return Math.max(1, Math.round(ticket.riskWarningHours ?? 8));
+}
+
+function getPriorityClass(priority: Priority) {
+  const classes: Record<Priority, string> = {
+    紧急: "priority-urgent",
+    优先: "priority-high",
+    普通: "priority-normal",
+    低优先: "priority-low",
+  };
+  return classes[priority];
+}
+
+function clampGanttOffsetHours(hours: number) {
+  return Math.max(0, Math.min(ganttMaxOffsetHours, Math.round(hours)));
+}
+
+function clampGanttSpanHours(hours: number) {
+  return Math.max(ganttMinSpanHours, Math.min(ganttMaxSpanHours, Math.round(hours)));
+}
+
+function getGanttOffsetHours(ticket: Ticket) {
+  return clampGanttOffsetHours(ticket.timelineOffsetHours ?? (ticket.timelineOffsetDays ?? ticket.ageDays) * 24);
+}
+
+function getGanttSpanHours(ticket: Ticket) {
+  return clampGanttSpanHours(ticket.timelineSpanHours ?? ticket.dueInHours ?? Math.max(4, ticket.dueInDays * 24));
 }
 
 function formatNowDateTime() {

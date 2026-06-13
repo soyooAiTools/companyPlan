@@ -4,7 +4,14 @@ import { extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import Database from "better-sqlite3";
-import { people as seedPeople, projects as seedProjects, seedPassword, tickets as seedTickets } from "./seed-data.mjs";
+import {
+  people as seedPeople,
+  projectNameOptions as seedProjectNameOptions,
+  projects as seedProjects,
+  seedPassword,
+  ticketTypeSettings as seedTicketTypeSettings,
+  tickets as seedTickets,
+} from "./seed-data.mjs";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const dataDir = process.env.COMPANYPLAN_DATA_DIR ?? join(repoRoot, "data");
@@ -15,8 +22,10 @@ const sessionTtlDays = Number(process.env.COMPANYPLAN_SESSION_DAYS ?? "7");
 const maxAttachmentBytes = Number(process.env.COMPANYPLAN_MAX_ATTACHMENT_BYTES ?? `${10 * 1024 * 1024}`);
 const port = Number(process.env.PORT ?? "4174");
 const statusOptions = new Set(["排队中", "进行中", "阻塞", "已完成"]);
-const priorityOptions = new Set(["P0", "P1", "P2"]);
+const priorityOptions = new Set(["紧急", "优先", "普通", "低优先"]);
 const attachmentKinds = new Set(["图片", "附件", "文件"]);
+const defaultDeliveryHours = 72;
+const defaultRiskWarningHours = 8;
 
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(uploadDir, { recursive: true });
@@ -84,6 +93,77 @@ app.get("/api/bootstrap", requireAuth, (request, response) => {
   response.json(getBootstrap(request.user));
 });
 
+app.patch("/api/admin/config", requireAuth, requireAdmin, (request, response) => {
+  const projectNameOptions = Array.isArray(request.body?.projectNameOptions)
+    ? request.body.projectNameOptions
+    : null;
+  const ticketTypeSettings = Array.isArray(request.body?.ticketTypeSettings)
+    ? request.body.ticketTypeSettings
+    : null;
+
+  if (!projectNameOptions || !ticketTypeSettings) {
+    return response.status(400).json({ error: "配置内容不完整" });
+  }
+
+  const sanitizedNames = [];
+  const seenNames = new Set();
+  for (const option of projectNameOptions) {
+    const name = cleanText(option?.name, 160);
+    if (!name || seenNames.has(name)) continue;
+    seenNames.add(name);
+    sanitizedNames.push({
+      id: cleanText(option?.id, 80) || crypto.randomUUID(),
+      name,
+    });
+  }
+
+  if (!sanitizedNames.length) {
+    return response.status(400).json({ error: "项目名称列表至少需要保留一个项目名称" });
+  }
+
+  const knownTypes = new Set(db.prepare("SELECT type_key FROM ticket_type_settings").all().map((row) => row.type_key));
+  const sanitizedTypeSettings = ticketTypeSettings
+    .map((item) => ({
+      typeKey: cleanText(item?.typeKey, 80),
+      defaultDeliveryHours: clampNumber(item?.defaultDeliveryHours, 1, 24 * 30, defaultDeliveryHours),
+      riskWarningHours: clampNumber(item?.riskWarningHours, 1, 24 * 7, defaultRiskWarningHours),
+    }))
+    .filter((item) => knownTypes.has(item.typeKey));
+
+  if (!sanitizedTypeSettings.length) {
+    return response.status(400).json({ error: "至少需要保留一个提单类型配置" });
+  }
+
+  const now = new Date().toISOString();
+  const updateConfig = db.transaction(() => {
+    db.prepare("DELETE FROM project_name_options").run();
+    const insertProjectName = db.prepare(
+      `INSERT INTO project_name_options (id, name, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    );
+    sanitizedNames.forEach((option, index) => {
+      insertProjectName.run(option.id, option.name, index, now, now);
+    });
+
+    const updateType = db.prepare(
+      `UPDATE ticket_type_settings
+       SET default_delivery_hours = ?, risk_warning_hours = ?, updated_at = ?
+       WHERE type_key = ?`
+    );
+    sanitizedTypeSettings.forEach((setting) => {
+      updateType.run(setting.defaultDeliveryHours, setting.riskWarningHours, now, setting.typeKey);
+    });
+
+    audit(request.user.id, "admin_config_updated", "system", "companyplan_config", request, {
+      projectNameOptions: sanitizedNames.length,
+      ticketTypeSettings: sanitizedTypeSettings.length,
+    });
+  });
+
+  updateConfig();
+  response.json({ config: getCompanyConfig() });
+});
+
 app.post("/api/tickets", requireAuth, (request, response) => {
   const payload = request.body ?? {};
   const visibleProjectIds = getVisibleProjectIds(request.user);
@@ -100,23 +180,31 @@ app.post("/api/tickets", requireAuth, (request, response) => {
     return response.status(400).json({ error: "负责人岗位与提单环节不匹配" });
   }
 
+  const sourceProjectName = cleanText(payload.sourceProjectName, 160);
+  if (sourceProjectName && !isConfiguredProjectName(sourceProjectName)) {
+    return response.status(400).json({ error: "项目名称不在管理员配置列表中" });
+  }
+
   const ticketId = nextTicketId();
   const now = new Date();
   const ticket = {
     id: ticketId,
     title: cleanText(payload.title, 120) || "未命名需求",
-    sourceProjectName: cleanText(payload.sourceProjectName, 160) || null,
+    sourceProjectName: sourceProjectName || null,
     projectId: String(payload.projectId),
     requesterId: request.user.id,
     ownerId: owner.id,
     discipline: String(payload.discipline),
     startAt: formatDateTime(now),
     status: "排队中",
-    priority: priorityOptions.has(payload.priority) ? payload.priority : "P1",
+    priority: priorityOptions.has(payload.priority) ? payload.priority : "普通",
     ageDays: 0,
     statusAgeDays: 0,
-    dueInDays: clampNumber(payload.dueInDays, 1, 30, 3),
+    dueInDays: 0,
+    dueInHours: getDefaultDeliveryHours(payload.discipline),
     timelineOffsetDays: 0,
+    timelineOffsetHours: 0,
+    timelineSpanHours: getDefaultDeliveryHours(payload.discipline),
     needType: cleanText(payload.needType, 80) || "资产补充",
     summary: cleanText(payload.summary, 2000) || "待补充说明",
     hyperlink: cleanText(payload.hyperlink, 500) || null,
@@ -127,11 +215,13 @@ app.post("/api/tickets", requireAuth, (request, response) => {
     db.prepare(
       `INSERT INTO tickets (
         id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
-        age_days, status_age_days, due_in_days, timeline_offset_days, need_type, summary, hyperlink, text,
+        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
+        need_type, summary, hyperlink, text,
         created_at, updated_at, status_updated_at
       ) VALUES (
         @id, @title, @sourceProjectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
-        @ageDays, @statusAgeDays, @dueInDays, @timelineOffsetDays, @needType, @summary, @hyperlink, @text,
+        @ageDays, @statusAgeDays, @dueInDays, @dueInHours, @timelineOffsetDays, @timelineOffsetHours, @timelineSpanHours,
+        @needType, @summary, @hyperlink, @text,
         @createdAt, @updatedAt, @statusUpdatedAt
       )`
     ).run({
@@ -184,17 +274,48 @@ app.patch("/api/tickets/:ticketId/timeline", requireAuth, (request, response) =>
   if (!ticket) return response.status(404).json({ error: "提单不存在" });
   if (request.user.roleKey !== "admin") return response.status(403).json({ error: "只有管理员可以调整甘特视觉时间线" });
 
-  const offsetDays = clampNumber(request.body?.offsetDays, 0, 18, ticket.timelineOffsetDays ?? ticket.ageDays);
-  db.prepare("UPDATE tickets SET timeline_offset_days = ?, updated_at = ? WHERE id = ?").run(
-    offsetDays,
+  const fallbackOffsetHours = ticket.timelineOffsetHours ?? (ticket.timelineOffsetDays ?? ticket.ageDays ?? 0) * 24;
+  const fallbackSpanHours = ticket.timelineSpanHours ?? ticket.dueInHours ?? defaultDeliveryHours;
+  const requestedOffset = request.body?.offsetHours ?? Number(request.body?.offsetDays ?? 0) * 24;
+  const requestedSpan = request.body?.spanHours ?? request.body?.durationHours ?? fallbackSpanHours;
+  const offsetHours = clampNumber(requestedOffset, 0, 24 * 30, fallbackOffsetHours);
+  const spanHours = clampNumber(requestedSpan, 1, 24 * 45, fallbackSpanHours);
+
+  db.prepare(
+    `UPDATE tickets
+     SET timeline_offset_hours = ?, timeline_span_hours = ?, timeline_offset_days = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(
+    offsetHours,
+    spanHours,
+    Math.round(offsetHours / 24),
     new Date().toISOString(),
     ticket.id
   );
-  audit(request.user.id, "ticket_timeline_moved", "ticket", ticket.id, request, {
-    from: ticket.timelineOffsetDays ?? ticket.ageDays,
-    to: offsetDays,
+  audit(request.user.id, "ticket_timeline_updated", "ticket", ticket.id, request, {
+    from: {
+      offsetHours: fallbackOffsetHours,
+      spanHours: fallbackSpanHours,
+    },
+    to: {
+      offsetHours,
+      spanHours,
+    },
   });
   response.json({ ticket: getTicketById(ticket.id) });
+});
+
+app.get("/api/attachments/:attachmentId/open", requireAuth, (request, response) => {
+  const attachment = db.prepare("SELECT * FROM attachments WHERE id = ?").get(request.params.attachmentId);
+  if (!attachment) return response.status(404).json({ error: "附件不存在" });
+  const ticket = getTicketById(attachment.ticket_id);
+  if (!ticket || !canReadTicket(request.user, ticket)) return response.status(403).json({ error: "无权打开该附件" });
+  if (!attachment.storage_path || !existsSync(attachment.storage_path)) {
+    return response.status(404).json({ error: "附件文件未落盘" });
+  }
+  response.setHeader("Content-Type", attachment.mime_type || "application/octet-stream");
+  response.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.name)}"`);
+  response.sendFile(attachment.storage_path);
 });
 
 app.get("/api/attachments/:attachmentId/download", requireAuth, (request, response) => {
@@ -295,11 +416,14 @@ function initializeSchema() {
       discipline TEXT NOT NULL,
       start_at TEXT NOT NULL,
       status TEXT NOT NULL CHECK(status IN ('排队中', '进行中', '阻塞', '已完成')),
-      priority TEXT NOT NULL CHECK(priority IN ('P0', 'P1', 'P2')),
+      priority TEXT NOT NULL CHECK(priority IN ('紧急', '优先', '普通', '低优先')),
       age_days INTEGER NOT NULL DEFAULT 0,
       status_age_days INTEGER NOT NULL DEFAULT 0,
       due_in_days INTEGER NOT NULL DEFAULT 3,
+      due_in_hours INTEGER NOT NULL DEFAULT 72,
       timeline_offset_days INTEGER DEFAULT 0,
+      timeline_offset_hours INTEGER DEFAULT 0,
+      timeline_span_hours INTEGER DEFAULT 72,
       need_type TEXT NOT NULL,
       summary TEXT NOT NULL,
       hyperlink TEXT,
@@ -342,17 +466,40 @@ function initializeSchema() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS project_name_options (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ticket_type_settings (
+      type_key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      default_delivery_hours INTEGER NOT NULL,
+      risk_warning_hours INTEGER NOT NULL DEFAULT 8,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets(requester_id);
     CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(owner_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_person ON sessions(person_id);
     CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events(entity_type, entity_id);
   `);
+  migrateSchema();
 }
 
 function seedDatabase() {
   const count = db.prepare("SELECT COUNT(*) AS count FROM people").get().count;
-  if (count > 0) return;
+  if (count > 0) {
+    seedConfigIfMissing();
+    return;
+  }
 
   const insertAll = db.transaction(() => {
     const insertPerson = db.prepare(
@@ -372,11 +519,13 @@ function seedDatabase() {
     const insertTicket = db.prepare(
       `INSERT INTO tickets (
         id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
-        age_days, status_age_days, due_in_days, timeline_offset_days, need_type, summary, hyperlink, text,
+        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
+        need_type, summary, hyperlink, text,
         created_at, updated_at, status_updated_at
       ) VALUES (
         @id, @title, @sourceProjectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
-        @ageDays, @statusAgeDays, @dueInDays, @timelineOffsetDays, @needType, @summary, @hyperlink, @text,
+        @ageDays, @statusAgeDays, @dueInDays, @dueInHours, @timelineOffsetDays, @timelineOffsetHours, @timelineSpanHours,
+        @needType, @summary, @hyperlink, @text,
         @createdAt, @updatedAt, @statusUpdatedAt
       )`
     );
@@ -400,11 +549,17 @@ function seedDatabase() {
     }
 
     const now = new Date().toISOString();
+    seedConfigRows(now);
     for (const ticket of seedTickets) {
+      const dueInHours = ticket.dueInHours ?? Math.max(1, (ticket.dueInDays ?? 3) * 24);
+      const timelineOffsetHours = ticket.timelineOffsetHours ?? Math.max(0, (ticket.timelineOffsetDays ?? ticket.ageDays ?? 0) * 24);
       insertTicket.run({
         ...ticket,
         sourceProjectName: ticket.sourceProjectName ?? null,
+        dueInHours,
         timelineOffsetDays: ticket.timelineOffsetDays ?? ticket.ageDays,
+        timelineOffsetHours,
+        timelineSpanHours: ticket.timelineSpanHours ?? Math.max(4, dueInHours),
         createdAt: now,
         updatedAt: now,
         statusUpdatedAt: now,
@@ -438,6 +593,188 @@ function seedDatabase() {
   insertAll();
 }
 
+function migrateSchema() {
+  ensureColumn("tickets", "due_in_hours", "INTEGER NOT NULL DEFAULT 72");
+  ensureColumn("tickets", "timeline_offset_hours", "INTEGER DEFAULT 0");
+  ensureColumn("tickets", "timeline_span_hours", "INTEGER DEFAULT 72");
+
+  db.prepare(
+    "UPDATE tickets SET due_in_hours = due_in_days * 24 WHERE due_in_hours = 72 AND due_in_days > 0 AND due_in_days != 3"
+  ).run();
+  db.prepare(
+    "UPDATE tickets SET timeline_offset_hours = COALESCE(timeline_offset_days, age_days, 0) * 24 WHERE timeline_offset_hours IS NULL OR timeline_offset_hours = 0"
+  ).run();
+  db.prepare(
+    "UPDATE tickets SET timeline_span_hours = MAX(4, due_in_hours) WHERE timeline_span_hours IS NULL"
+  ).run();
+
+  const ticketSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tickets'").get()?.sql ?? "";
+  if (ticketSchema.includes("'P0'") || ticketSchema.includes("'P1'") || ticketSchema.includes("'P2'")) {
+    rebuildTicketsForChinesePriorities();
+  } else {
+    db.prepare(
+      `UPDATE tickets
+       SET priority = CASE priority
+         WHEN 'P0' THEN '紧急'
+         WHEN 'P1' THEN '优先'
+         WHEN 'P2' THEN '普通'
+         ELSE priority
+       END`
+    ).run();
+  }
+
+  repairAttachmentForeignKey();
+}
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
+  if (!columns.includes(columnName)) {
+    db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
+  }
+}
+
+function rebuildTicketsForChinesePriorities() {
+  db.pragma("foreign_keys = OFF");
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS tickets_next;
+      ALTER TABLE tickets RENAME TO tickets_old;
+
+      CREATE TABLE tickets (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        source_project_name TEXT,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        requester_id TEXT NOT NULL REFERENCES people(id),
+        owner_id TEXT NOT NULL REFERENCES people(id),
+        discipline TEXT NOT NULL,
+        start_at TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('排队中', '进行中', '阻塞', '已完成')),
+        priority TEXT NOT NULL CHECK(priority IN ('紧急', '优先', '普通', '低优先')),
+        age_days INTEGER NOT NULL DEFAULT 0,
+        status_age_days INTEGER NOT NULL DEFAULT 0,
+        due_in_days INTEGER NOT NULL DEFAULT 3,
+        due_in_hours INTEGER NOT NULL DEFAULT 72,
+        timeline_offset_days INTEGER DEFAULT 0,
+        timeline_offset_hours INTEGER DEFAULT 0,
+        timeline_span_hours INTEGER DEFAULT 72,
+        need_type TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        hyperlink TEXT,
+        text TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        status_updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO tickets (
+        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
+        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
+        need_type, summary, hyperlink, text, created_at, updated_at, status_updated_at
+      )
+      SELECT
+        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status,
+        CASE priority
+          WHEN 'P0' THEN '紧急'
+          WHEN 'P1' THEN '优先'
+          WHEN 'P2' THEN '普通'
+          WHEN '低优先' THEN '低优先'
+          WHEN '普通' THEN '普通'
+          WHEN '优先' THEN '优先'
+          WHEN '紧急' THEN '紧急'
+          ELSE '普通'
+        END,
+        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
+        need_type, summary, hyperlink, text, created_at, updated_at, status_updated_at
+      FROM tickets_old;
+
+      DROP TABLE tickets_old;
+      CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
+      CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets(requester_id);
+      CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(owner_id);
+    `);
+  } finally {
+    db.pragma("foreign_keys = ON");
+  }
+}
+
+function repairAttachmentForeignKey() {
+  const foreignKeys = db.prepare("PRAGMA foreign_key_list(attachments)").all();
+  if (!foreignKeys.every((item) => item.table === "tickets")) {
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.exec(`
+        DROP TABLE IF EXISTS attachments_next;
+        CREATE TABLE attachments_next (
+          id TEXT PRIMARY KEY,
+          ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          kind TEXT NOT NULL CHECK(kind IN ('图片', '附件', '文件')),
+          mime_type TEXT,
+          size_bytes INTEGER,
+          size_label TEXT NOT NULL,
+          storage_path TEXT,
+          sha256 TEXT,
+          created_at TEXT NOT NULL
+        );
+
+        INSERT INTO attachments_next (
+          id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at
+        )
+        SELECT id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at
+        FROM attachments;
+
+        DROP TABLE attachments;
+        ALTER TABLE attachments_next RENAME TO attachments;
+      `);
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+  }
+
+  const violations = db.prepare("PRAGMA foreign_key_check").all();
+  if (violations.length) {
+    throw new Error(`Migration left ${violations.length} foreign key violation(s)`);
+  }
+}
+
+function seedConfigIfMissing() {
+  const now = new Date().toISOString();
+  const insertDefaults = db.transaction(() => {
+    seedConfigRows(now);
+  });
+  insertDefaults();
+}
+
+function seedConfigRows(now) {
+  const projectNameCount = db.prepare("SELECT COUNT(*) AS count FROM project_name_options").get().count;
+  if (projectNameCount === 0) {
+    const insertProjectName = db.prepare(
+      `INSERT INTO project_name_options (id, name, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)`
+    );
+    seedProjectNameOptions.forEach((option, index) => {
+      insertProjectName.run(option.id, option.name, index, now, now);
+    });
+  }
+
+  const insertType = db.prepare(
+    `INSERT OR IGNORE INTO ticket_type_settings (
+      type_key, label, default_delivery_hours, risk_warning_hours, is_active, sort_order, updated_at
+    ) VALUES (?, ?, ?, ?, 1, ?, ?)`
+  );
+  seedTicketTypeSettings.forEach((setting, index) => {
+    insertType.run(
+      setting.typeKey,
+      setting.label,
+      setting.defaultDeliveryHours,
+      setting.riskWarningHours ?? defaultRiskWarningHours,
+      index,
+      now
+    );
+  });
+}
+
 function attachSession(request, _response, next) {
   const cookies = parseCookies(request.headers.cookie ?? "");
   const sessionId = cookies[sessionCookieName];
@@ -466,6 +803,13 @@ function requireAuth(request, response, next) {
     if (!request.user) return response.status(401).json({ error: "请先登录" });
     next();
   });
+}
+
+function requireAdmin(request, response, next) {
+  if (request.user?.roleKey !== "admin") {
+    return response.status(403).json({ error: "只有管理员可以修改系统配置" });
+  }
+  next();
 }
 
 function setSessionCookie(response, sessionId, expiresAt) {
@@ -520,12 +864,35 @@ function getBootstrap(user) {
   const projectIds = projects.map((project) => project.id);
   const people = getVisiblePeople(user, projectIds);
   const tickets = getVisibleTickets(user, projectIds);
+  const config = getCompanyConfig();
 
   return {
     currentUser: user,
     people,
     projects,
     tickets,
+    config,
+  };
+}
+
+function getCompanyConfig() {
+  return {
+    projectNameOptions: db
+      .prepare("SELECT * FROM project_name_options WHERE is_active = 1 ORDER BY sort_order, name")
+      .all()
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+      })),
+    ticketTypeSettings: db
+      .prepare("SELECT * FROM ticket_type_settings WHERE is_active = 1 ORDER BY sort_order, label")
+      .all()
+      .map((row) => ({
+        typeKey: row.type_key,
+        label: row.label,
+        defaultDeliveryHours: row.default_delivery_hours,
+        riskWarningHours: row.risk_warning_hours,
+      })),
   };
 }
 
@@ -606,6 +973,20 @@ function canReadTicket(user, ticket) {
 
 function canMutateTicket(user, ticket) {
   return user.roleKey === "admin" || ticket.requesterId === user.id || ticket.ownerId === user.id;
+}
+
+function getDefaultDeliveryHours(typeKey) {
+  const row = db.prepare("SELECT default_delivery_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
+  return row ? row.default_delivery_hours : defaultDeliveryHours;
+}
+
+function isConfiguredProjectName(name) {
+  return Boolean(db.prepare("SELECT 1 FROM project_name_options WHERE name = ? AND is_active = 1").get(name));
+}
+
+function getRiskWarningHours(typeKey) {
+  const row = db.prepare("SELECT risk_warning_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
+  return row ? row.risk_warning_hours : defaultRiskWarningHours;
 }
 
 function nextTicketId() {
@@ -696,6 +1077,13 @@ function mapProject(row) {
 
 function mapTicket(row) {
   const attachments = db.prepare("SELECT * FROM attachments WHERE ticket_id = ? ORDER BY created_at, id").all(row.id).map(mapAttachment);
+  const ageHours = getElapsedHours(row.start_at);
+  const statusAgeHours = getElapsedHours(row.status_updated_at);
+  const dueInHours = Number(row.due_in_hours ?? defaultDeliveryHours);
+  const remainingHours = row.status === "已完成" ? 0 : dueInHours - ageHours;
+  const riskWarningHours = getRiskWarningHours(row.discipline);
+  const timelineOffsetHours = Number(row.timeline_offset_hours ?? (row.timeline_offset_days ?? row.age_days ?? 0) * 24);
+  const timelineSpanHours = Number(row.timeline_span_hours ?? dueInHours);
   return {
     id: row.id,
     title: row.title,
@@ -707,10 +1095,17 @@ function mapTicket(row) {
     startAt: row.start_at,
     status: row.status,
     priority: row.priority,
-    ageDays: row.age_days,
-    statusAgeDays: row.status_age_days,
-    dueInDays: row.due_in_days,
+    ageDays: Math.floor(ageHours / 24),
+    statusAgeDays: Math.floor(statusAgeHours / 24),
+    dueInDays: Math.ceil(remainingHours / 24),
+    ageHours,
+    statusAgeHours,
+    dueInHours,
+    remainingHours,
+    riskWarningHours,
     timelineOffsetDays: row.timeline_offset_days,
+    timelineOffsetHours,
+    timelineSpanHours,
     needType: row.need_type,
     summary: row.summary,
     hyperlink: row.hyperlink ?? undefined,
@@ -726,6 +1121,7 @@ function mapAttachment(row) {
     kind: row.kind,
     size: row.size_label,
     mimeType: row.mime_type ?? undefined,
+    openUrl: row.storage_path ? `/api/attachments/${row.id}/open` : undefined,
     downloadUrl: row.storage_path ? `/api/attachments/${row.id}/download` : undefined,
   };
 }
@@ -782,6 +1178,20 @@ function clampNumber(value, min, max, fallback) {
 function formatDateTime(date) {
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}/${pad(date.getMonth() + 1)}/${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function getElapsedHours(value) {
+  const date = parseDateTime(value);
+  if (!date) return 0;
+  const diff = Date.now() - date.getTime();
+  return Math.max(0, Math.floor(diff / (60 * 60 * 1000)));
+}
+
+function parseDateTime(value) {
+  if (!value) return null;
+  const normalized = String(value).replace(/\//g, "-");
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : null;
 }
 
 function formatFileSize(bytes) {

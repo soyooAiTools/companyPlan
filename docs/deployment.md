@@ -80,7 +80,7 @@ npm run build
 npm run test:scenarios
 ```
 
-`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, attachment uploads, audit logging, read-only programmer gantt access, and admin-only gantt movement. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
+`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, admin project-name/type-hour configuration, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
 
 Manual smoke checks:
 
@@ -89,4 +89,4 @@ Manual smoke checks:
 - Non-admin users only see `需求提单` navigation and scoped rows.
 - Non-programmer users do not see `任务甘特图`.
 - Programmer users see scoped gantt rows but cannot drag bars.
-- Admin gantt drag changes only visual offset and writes an audit event.
+- Admin gantt drag changes visual offset/length and writes an audit event.

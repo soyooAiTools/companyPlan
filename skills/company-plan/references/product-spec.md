@@ -21,6 +21,7 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Use real login sessions with HttpOnly cookies.
 - Enforce permission scoping on the server for tickets, bootstrap data, attachments, and audit history.
 - Store uploaded attachments on disk and metadata in SQLite.
+- Store admin configuration for selectable project names and per-ticket-type delivery/risk hours in SQLite.
 - Keep runtime data, uploaded files, cookies, and passwords out of git.
 
 Do not revert to frontend-only happy-path behavior, localStorage persistence, or account switching as a permission substitute unless the user explicitly asks for a separate prototype.
@@ -36,7 +37,8 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - Only admin and programmer accounts should see the `任务甘特图` bottom sheet tab.
 - Every non-admin bottom sheet must render only that user's scoped/relevant tickets.
 - Admin can drag `任务甘特图` timeline bars. Dragging updates only that ticket's shared visual timeline offset so the corresponding non-admin user's scoped gantt view reflects the same new position.
-- Dragging a gantt bar must not change row order, `开始日期`, warning data, or any other ticket content.
+- Admin can resize a gantt bar's visual length. Resizing updates only that ticket's shared visual timeline length.
+- Dragging or resizing a gantt bar must not change row order, `开始日期`, warning data, or any other ticket content.
 - Programmer users can view their scoped gantt rows but cannot drag timeline bars.
 - Other non-admin roles must not see the `任务甘特图` tab.
 - API responses must not include out-of-scope ticket rows for non-admin users.
@@ -49,7 +51,17 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - `/api/bootstrap` must reject unauthenticated requests.
 - Ticket create/update flows must write to SQLite and remain visible after reload and process restart.
 - Attachment upload must persist file content and metadata.
-- Audit events should capture ticket creation, ticket updates, and attachment uploads with actor and timestamp.
+- Attachment detail actions should support opening and downloading stored files when file content exists.
+- Audit events should capture ticket creation, ticket updates, attachment uploads, admin configuration changes, and gantt timeline updates with actor and timestamp.
+
+## Admin Configuration
+
+- Admin can configure the selectable `表格项目名称` list used by demand-ticket creation.
+- The server must reject ticket creation when `表格项目名称` is not in the configured active list.
+- Admin can configure default delivery hours and risk-warning hours for every ticket type/discipline, including `模型`.
+- New tickets must use the server-side type configuration to calculate expected delivery hours, remaining hours, and risk state.
+- Time calculations for ticket age, status stay, remaining delivery time, and warnings are hour-based, not day-based.
+- Configuration changes must persist in SQLite and be returned through authenticated bootstrap data.
 
 ## Demand Ticket Table
 
@@ -63,11 +75,19 @@ Required columns:
 - 开始日期
 - 优先级
 - 状态
-- 提单天数
+- 提单时长
 - 状态停留
+- 剩余时间
 - 负责人
 - 任务类别
 - 备注
+
+Required priority labels:
+
+- 紧急
+- 优先
+- 普通
+- 低优先
 
 Required status handling:
 
@@ -86,7 +106,7 @@ Demand ticket creation should support:
 - 附件
 - 文件
 
-Table cells should summarize counts compactly. Detail views can show filename, type, and size.
+Table cells should summarize counts compactly. Detail views should show filename, type, size, open action, and download action when file content is stored.
 
 ## KDocs/WPS Table Fidelity
 
@@ -120,13 +140,16 @@ Use automated production scenario tests for backend behavior and browser checks 
 
 - Unauthenticated `/api/bootstrap` returns 401.
 - Login succeeds for seeded role accounts.
-- Ticket create/update, attachment upload, audit history, role scoping, and gantt visibility are covered by `npm run test:scenarios`.
+- Ticket create/update, admin configuration, attachment upload/open/download, audit history, role scoping, button actionability, and gantt visibility are covered by `npm run test:scenarios`.
 - Admin row count should be broader than non-admin.
 - Non-admin top controls should not include admin/global navigation.
 - Non-programmer non-admin bottom tabs should show only `需求提单` and `延期任务预警`.
 - Programmer bottom tabs should include `任务甘特图`, but gantt bars remain read-only.
 - Non-admin warning and gantt rows should be no broader than that user's scoped ticket set.
-- Admin drag on a gantt bar changes only that bar's visible timeline position; row order and `开始日期` stay unchanged, and the relevant non-admin account sees the same updated bar in their scoped gantt view.
+- Admin drag on a gantt bar changes only that bar's visible timeline position; resizing changes only that bar's visible timeline length; row order and `开始日期` stay unchanged, and the relevant non-admin account sees the same updated bar state in their scoped gantt view.
+- Priority controls should expose only `紧急`, `优先`, `普通`, and `低优先`.
+- The ticket form should show hour-based expected delivery, not `期望天数`.
+- Warning rows should be based on remaining hours and configured per-type risk-warning hours.
 - `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, and `导出` should not appear in the `需求提单` toolbar.
 - The `需求提单` body should not show the document-style title bar, collaborator avatars, share button, or top account selector.
 - Bottom worksheet tabs should sit at the viewport bottom.
