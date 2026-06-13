@@ -244,6 +244,16 @@ const people: Person[] = [
     projectIds: ["p1", "p3", "p4", "p6"],
   },
   {
+    id: "u-model-2",
+    name: "陆承",
+    roleKey: "model",
+    title: "3D 模型",
+    discipline: "模型",
+    capacity: 78,
+    completion: 84,
+    projectIds: ["p1", "p3"],
+  },
+  {
     id: "u-animator",
     name: "许遥",
     roleKey: "animator",
@@ -290,7 +300,7 @@ const initialProjects: Project[] = [
     dueInDays: 6,
     ticketCount: 34,
     openTicketCount: 11,
-    teamIds: ["u-producer", "u-artist", "u-ui", "u-model", "u-animator", "u-dev"],
+    teamIds: ["u-producer", "u-artist", "u-ui", "u-model", "u-model-2", "u-animator", "u-dev"],
     disciplineProgress: { 美术: 72, UI: 80, 模型: 58, 动画: 64, 研发: 66, 音效: 20 },
     blocker: "模型低模包延迟，影响 6 个动画状态机",
   },
@@ -326,7 +336,7 @@ const initialProjects: Project[] = [
     dueInDays: 12,
     ticketCount: 18,
     openTicketCount: 9,
-    teamIds: ["u-producer", "u-model", "u-sound"],
+    teamIds: ["u-producer", "u-model", "u-model-2", "u-sound"],
     disciplineProgress: { 美术: 42, UI: 24, 模型: 30, 动画: 22, 研发: 15, 音效: 55 },
     blocker: "客户脚本未确认，紧急开场镜头缺参考",
   },
@@ -441,6 +451,25 @@ const baseTickets: Ticket[] = [
     summary: "UI 侧需要一个低面数 3D 餐厅图标，供主界面入口使用。",
     text: "我提给模型同事",
     attachments: [{ id: "att-ui-66-1", name: "icon_blockout.png", kind: "图片", size: "680 KB" }],
+  },
+  {
+    id: "MODEL-2406-070",
+    title: "同岗位模型师道具低模",
+    sourceProjectName: "Zombie Rush Lite - p3",
+    projectId: "p3",
+    requesterId: "u-admin",
+    ownerId: "u-model-2",
+    discipline: "模型",
+    startAt: "2026/06/12 15:10",
+    status: "进行中",
+    priority: "普通",
+    ageDays: 0,
+    statusAgeDays: 0,
+    dueInDays: 2,
+    needType: "模型",
+    summary: "给另一位模型师的道具低模任务，不能被顾远仅因同岗位看到。",
+    text: "同岗位隔离验证",
+    attachments: [{ id: "att-model-70-1", name: "prop_blockout.png", kind: "图片", size: "540 KB" }],
   },
   {
     id: "UI-2406-065",
@@ -835,11 +864,9 @@ function canEditTicketStatus(ticket: Ticket, person: Person) {
   return person.roleKey === "admin" || ticket.requesterId === person.id || ticket.ownerId === person.id;
 }
 
-function isTicketRelevantToUser(ticket: Ticket, person: Person, visibleProjectIds: string[]) {
+function isTicketRelevantToUser(ticket: Ticket, person: Person) {
   if (person.roleKey === "admin") return true;
-  if (ticket.ownerId === person.id || ticket.requesterId === person.id) return true;
-  if (person.roleKey === "producer") return visibleProjectIds.includes(ticket.projectId);
-  return ticket.discipline === person.discipline;
+  return ticket.ownerId === person.id || ticket.requesterId === person.id;
 }
 
 function App() {
@@ -938,8 +965,8 @@ function App() {
 
   const scopedTickets = useMemo(
     () =>
-      tickets.filter((ticket) => isTicketRelevantToUser(ticket, activeUser, visibleProjectIds)),
-    [activeUser, tickets, visibleProjectIds]
+      tickets.filter((ticket) => isTicketRelevantToUser(ticket, activeUser)),
+    [activeUser, tickets]
   );
 
   const ownerFilterOptions = useMemo(() => {
@@ -2535,11 +2562,11 @@ function AdminView({
             </div>
             <div>
               <strong>项目负责人</strong>
-              <span>负责项目、项目成员、项目提单、交付风险</span>
+              <span>本人发起、或本人负责的提单</span>
             </div>
             <div>
               <strong>制作人员</strong>
-              <span>本人发起、本人负责、或本岗位类型提单</span>
+              <span>本人发起、或本人负责的提单</span>
             </div>
           </div>
         </section>

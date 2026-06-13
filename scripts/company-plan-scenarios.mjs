@@ -26,12 +26,13 @@ const requiredDemandColumns = [
   "任务类别",
   "备注",
 ];
-const accountScopes = {
-  "u-producer": { name: "周牧", projects: ["p1", "p2", "p3", "p7"] },
-  "u-ui": { name: "何苗", discipline: "UI" },
-  "u-model": { name: "顾远", discipline: "模型" },
-  "u-dev": { name: "姜北", discipline: "研发" },
+const accountNames = {
+  "u-producer": "周牧",
+  "u-ui": "何苗",
+  "u-model": "顾远",
+  "u-dev": "姜北",
 };
+const peerModelTicketTitle = "同岗位模型师道具低模";
 
 let assertions = 0;
 
@@ -148,8 +149,13 @@ async function allTexts(locator) {
   return (await locator.allInnerTexts()).map((text) => text.trim()).filter(Boolean);
 }
 
-async function collectRows(page, selector) {
-  await page.waitForSelector(selector);
+async function collectRows(page, selector, options = {}) {
+  const { requireRows = true } = options;
+  if (requireRows) {
+    await page.waitForSelector(selector);
+  } else {
+    await page.waitForTimeout(80);
+  }
   return page.locator(selector).evaluateAll((rows) =>
     rows.map((row) => ({
       ticketId: row.dataset.ticketId,
@@ -165,21 +171,31 @@ async function collectRows(page, selector) {
   );
 }
 
-function assertScopedRows(rows, accountId, label) {
-  const scope = accountScopes[accountId];
-  assert(Boolean(scope), `${label}: missing test scope for ${accountId}`);
-  assert(rows.length > 0, `${label}: expected at least one visible row for ${scope.name}`);
+async function collectBootstrapTickets(page) {
+  const payload = await page.evaluate(async () => {
+    const response = await fetch("/api/bootstrap", { credentials: "include" });
+    return response.json();
+  });
+  return payload.tickets;
+}
+
+function assertScopedRows(rows, accountId, label, options = {}) {
+  const { requireRows = true } = options;
+  const accountName = accountNames[accountId];
+  assert(Boolean(accountName), `${label}: missing test account name for ${accountId}`);
+  if (requireRows) {
+    assert(rows.length > 0, `${label}: expected at least one visible row for ${accountName}`);
+  }
 
   const leakedRows = rows.filter(
     (row) => {
       if (row.ownerId === accountId || row.requesterId === accountId) return false;
-      if (scope.projects?.includes(row.projectId ?? "")) return false;
-      return row.discipline !== scope.discipline;
+      return true;
     }
   );
   assert(
     leakedRows.length === 0,
-    `${label}: ${scope.name} saw out-of-scope rows: ${leakedRows.map((row) => row.ticketId).join(", ")}`
+    `${label}: ${accountName} saw out-of-scope rows: ${leakedRows.map((row) => row.ticketId ?? row.id).join(", ")}`
   );
 }
 
@@ -448,6 +464,7 @@ async function run() {
     const configuredProjectName = await configureAdminDefaults(page);
 
     await loginAs(page, "ui", "何苗");
+    assertScopedRows(await collectBootstrapTickets(page), "u-ui", "UI bootstrap");
     await assertVisibleEnabledButtonsActionable(page, "ui demand");
     const uiNav = await allTexts(page.locator(".nav-button span"));
     assert(uiNav.join("|") === "需求提单", `Non-admin navigation should only include 需求提单, got ${uiNav.join(", ")}`);
@@ -459,17 +476,18 @@ async function run() {
     assert(adminRowCount > uiRows.length, "Admin demand table should show broader data than UI user");
 
     await clickSheetTab(page, "延期任务预警");
-    assertScopedRows(await collectRows(page, ".warning-row"), "u-ui", "UI warning sheet");
+    assertScopedRows(await collectRows(page, ".warning-row", { requireRows: false }), "u-ui", "UI warning sheet", { requireRows: false });
     await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "producer", "周牧");
+    assertScopedRows(await collectBootstrapTickets(page), "u-producer", "Producer bootstrap");
     const producerNav = await allTexts(page.locator(".nav-button span"));
     assert(producerNav.join("|") === "需求提单", `Producer navigation should only include 需求提单, got ${producerNav.join(", ")}`);
     const producerTabs = await allTexts(page.locator(".sheet-tabs button"));
     assert(producerTabs.join("|") === "需求提单|延期任务预警", `Producer should not see gantt tab, got ${producerTabs.join(", ")}`);
     assertScopedRows(await collectRows(page, ".task-row"), "u-producer", "Producer demand table");
     await clickSheetTab(page, "延期任务预警");
-    assertScopedRows(await collectRows(page, ".warning-row"), "u-producer", "Producer warning sheet");
+    assertScopedRows(await collectRows(page, ".warning-row", { requireRows: false }), "u-producer", "Producer warning sheet", { requireRows: false });
     await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "ui", "何苗");
@@ -495,6 +513,7 @@ async function run() {
     await assertHeaderHalfSelection(page);
 
     await loginAs(page, "model", "顾远");
+    assertScopedRows(await collectBootstrapTickets(page), "u-model", "Model bootstrap");
     const modelNav = await allTexts(page.locator(".nav-button span"));
     assert(modelNav.join("|") === "需求提单", `Model navigation should only include 需求提单, got ${modelNav.join(", ")}`);
     const modelTabs = await allTexts(page.locator(".sheet-tabs button"));
@@ -504,11 +523,13 @@ async function run() {
     await modelAssignedRow.waitFor();
     assert((await modelAssignedRow.locator(".relation-chip").innerText()).includes("指派给我"), "Model should see model ticket assigned to 顾远");
     assert((await page.locator(".task-row").filter({ hasText: createdTitle }).count()) === 0, "Model should not see unrelated non-model development ticket from the same project");
+    assert((await page.locator(".task-row").filter({ hasText: peerModelTicketTitle }).count()) === 0, "Model should not see peer modeler's model ticket");
     await clickSheetTab(page, "延期任务预警");
-    assertScopedRows(await collectRows(page, ".warning-row"), "u-model", "Model warning sheet");
+    assertScopedRows(await collectRows(page, ".warning-row", { requireRows: false }), "u-model", "Model warning sheet", { requireRows: false });
     await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "dev", "姜北");
+    assertScopedRows(await collectBootstrapTickets(page), "u-dev", "Programmer bootstrap");
     const devTabs = await allTexts(page.locator(".sheet-tabs button"));
     assert(devTabs.includes("任务甘特图"), "Programmer should see gantt tab");
     assert(!devTabs.includes("+"), "Programmer should not see add-sheet control");
@@ -519,7 +540,7 @@ async function run() {
     assert((await devCreatedRow.locator(".relation-chip").innerText()).includes("指派给我"), "Programmer should see created ticket as 指派给我");
 
     await clickSheetTab(page, "延期任务预警");
-    assertScopedRows(await collectRows(page, ".warning-row"), "u-dev", "Programmer warning sheet");
+    assertScopedRows(await collectRows(page, ".warning-row", { requireRows: false }), "u-dev", "Programmer warning sheet", { requireRows: false });
 
     await clickSheetTab(page, "任务甘特图");
     assertScopedRows(await collectRows(page, ".gantt-row"), "u-dev", "Programmer gantt sheet");

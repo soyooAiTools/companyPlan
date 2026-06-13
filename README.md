@@ -20,7 +20,7 @@ https://github.com/soyooAiTools/companyPlan
 
 - Admin can see global navigation, all rows, and admin panels.
 - Non-admin users stay inside `需求提单` and only see their relevant rows.
-- Project owners can see responsible/participating project tickets; production roles see tickets they requested, tickets assigned to them, or tickets matching their own discipline.
+- Except admins, users see only tickets they requested or tickets assigned to them; users with the same responsibility type cannot see each other's unrelated tickets.
 - All users see bottom tabs for `需求提单` and `延期任务预警`.
 - Only admin and programmer roles see `任务甘特图`.
 - Priorities are `紧急`, `优先`, `普通`, and `低优先`.
