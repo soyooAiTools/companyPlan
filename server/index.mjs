@@ -862,8 +862,9 @@ function validateWriteOrigin(request, response, next) {
 function getBootstrap(user) {
   const projects = getVisibleProjects(user);
   const projectIds = projects.map((project) => project.id);
-  const people = getVisiblePeople(user, projectIds);
   const tickets = getVisibleTickets(user, projectIds);
+  const ticketPersonIds = Array.from(new Set(tickets.flatMap((ticket) => [ticket.requesterId, ticket.ownerId])));
+  const people = getVisiblePeople(user, projectIds, ticketPersonIds);
   const config = getCompanyConfig();
 
   return {
@@ -920,35 +921,51 @@ function getVisibleProjects(user) {
   return rows.map(mapProject);
 }
 
-function getVisiblePeople(user, projectIds) {
+function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
   if (user.roleKey === "admin") {
     return db.prepare("SELECT * FROM people WHERE disabled_at IS NULL ORDER BY id").all().map((row) => mapPerson(row, getPersonProjectIds(row.id)));
   }
 
+  const allowedPersonIds = Array.from(new Set([user.id, ...ticketPersonIds]));
   const rows = db
     .prepare(
       `SELECT DISTINCT people.*
        FROM people
        LEFT JOIN project_team ON project_team.person_id = people.id
-       WHERE people.disabled_at IS NULL AND (people.id = ? OR project_team.project_id IN (${placeholders(projectIds)}))
+       WHERE people.disabled_at IS NULL
+         AND (
+           people.id IN (${placeholders(allowedPersonIds)})
+           OR project_team.project_id IN (${placeholders(projectIds)})
+         )
        ORDER BY people.id`
     )
-    .all(user.id, ...projectIds);
+    .all(...allowedPersonIds, ...projectIds);
   return rows.map((row) => mapPerson(row, getPersonProjectIds(row.id)));
 }
 
 function getVisibleTickets(user, visibleProjectIds = getVisibleProjectIds(user)) {
-  const rows =
-    user.roleKey === "admin"
-      ? db.prepare("SELECT * FROM tickets ORDER BY created_at DESC, id DESC").all()
-      : db
-          .prepare(
-            `SELECT DISTINCT *
-             FROM tickets
-             WHERE requester_id = ? OR owner_id = ? OR project_id IN (${placeholders(visibleProjectIds)})
-             ORDER BY created_at DESC, id DESC`
-          )
-          .all(user.id, user.id, ...visibleProjectIds);
+  let rows;
+  if (user.roleKey === "admin") {
+    rows = db.prepare("SELECT * FROM tickets ORDER BY created_at DESC, id DESC").all();
+  } else if (canSeeProjectScopedTickets(user)) {
+    rows = db
+      .prepare(
+        `SELECT DISTINCT *
+         FROM tickets
+         WHERE requester_id = ? OR owner_id = ? OR project_id IN (${placeholders(visibleProjectIds)})
+         ORDER BY created_at DESC, id DESC`
+      )
+      .all(user.id, user.id, ...visibleProjectIds);
+  } else {
+    rows = db
+      .prepare(
+        `SELECT DISTINCT *
+         FROM tickets
+         WHERE requester_id = ? OR owner_id = ? OR discipline = ?
+         ORDER BY created_at DESC, id DESC`
+      )
+      .all(user.id, user.id, user.discipline);
+  }
   return rows.map(mapTicket);
 }
 
@@ -968,11 +985,17 @@ function getTicketById(ticketId) {
 
 function canReadTicket(user, ticket) {
   if (user.roleKey === "admin") return true;
-  return ticket.requesterId === user.id || ticket.ownerId === user.id || getVisibleProjectIds(user).includes(ticket.projectId);
+  if (ticket.requesterId === user.id || ticket.ownerId === user.id) return true;
+  if (canSeeProjectScopedTickets(user)) return getVisibleProjectIds(user).includes(ticket.projectId);
+  return ticket.discipline === user.discipline;
 }
 
 function canMutateTicket(user, ticket) {
   return user.roleKey === "admin" || ticket.requesterId === user.id || ticket.ownerId === user.id;
+}
+
+function canSeeProjectScopedTickets(user) {
+  return user.roleKey === "producer";
 }
 
 function getDefaultDeliveryHours(typeKey) {

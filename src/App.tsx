@@ -837,11 +837,9 @@ function canEditTicketStatus(ticket: Ticket, person: Person) {
 
 function isTicketRelevantToUser(ticket: Ticket, person: Person, visibleProjectIds: string[]) {
   if (person.roleKey === "admin") return true;
-  return (
-    ticket.ownerId === person.id ||
-    ticket.requesterId === person.id ||
-    visibleProjectIds.includes(ticket.projectId)
-  );
+  if (ticket.ownerId === person.id || ticket.requesterId === person.id) return true;
+  if (person.roleKey === "producer") return visibleProjectIds.includes(ticket.projectId);
+  return ticket.discipline === person.discipline;
 }
 
 function App() {
@@ -1949,6 +1947,7 @@ function TaskManagementSheet({
                 data-project-id={ticket.projectId}
                 data-requester-id={ticket.requesterId}
                 data-owner-id={ticket.ownerId}
+                data-discipline={ticket.discipline}
                 data-status={ticket.status}
                 key={ticket.id}
                 onClick={() => setSelectedTicketId(ticket.id)}
@@ -2216,6 +2215,7 @@ function OverdueWarningSheet({
             data-project-id={ticket.projectId}
             data-requester-id={ticket.requesterId}
             data-owner-id={ticket.ownerId}
+            data-discipline={ticket.discipline}
             data-status={ticket.status}
             key={ticket.id}
           >
@@ -2364,6 +2364,7 @@ function GanttSheet({
             data-project-id={ticket.projectId}
             data-requester-id={ticket.requesterId}
             data-owner-id={ticket.ownerId}
+            data-discipline={ticket.discipline}
             data-status={ticket.status}
             data-offset-hours={offsetHours}
             data-span-hours={spanHours}
@@ -2538,7 +2539,7 @@ function AdminView({
             </div>
             <div>
               <strong>制作人员</strong>
-              <span>参与项目、自己相关提单、所在项目进度</span>
+              <span>本人发起、本人负责、或本岗位类型提单</span>
             </div>
           </div>
         </section>

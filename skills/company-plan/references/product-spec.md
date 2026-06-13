@@ -30,7 +30,9 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 
 - Admin: can see all projects, all tickets, global overview, and admin panels.
 - Non-admin: can only see the `需求提单` page.
-- Non-admin visible rows must be relevant to that user: requester, owner, or project participation depending on role.
+- Non-admin visible rows must be relevant to that user.
+- Producer/project-owner rows may include responsible/participating project tickets.
+- Production-role rows, such as model/UI/art/animation/programmer/sound, must be limited to tickets the user requested, tickets assigned to the user, or tickets whose discipline matches that user's own discipline. A model account must not see unrelated non-model tickets merely because they share a project.
 - Non-admin must not see admin navigation.
 - Clicking `需求提单` should keep the left navigation shell in place and render the table in the right workspace, not open a separate full-screen panel.
 - Inside the `需求提单` page, every account should see bottom sheet tabs for `需求提单` and `延期任务预警`.

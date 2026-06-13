@@ -31,7 +31,8 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 
 - Admin can access global views and all rows.
 - Non-admin users only navigate to `需求提单`.
-- Every non-admin sheet must render only that user's scoped/relevant tickets.
+- Project-owner sheets may render responsible/participating project tickets.
+- Production-role sheets must render only tickets the user requested, tickets assigned to the user, or tickets matching the user's own discipline.
 - All users can see `需求提单` and `延期任务预警`.
 - Only admin and programmer roles can see `任务甘特图`.
 - Only admin can drag gantt timeline bars and resize their visual length.

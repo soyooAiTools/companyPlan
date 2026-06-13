@@ -28,8 +28,9 @@ const requiredDemandColumns = [
 ];
 const accountScopes = {
   "u-producer": { name: "周牧", projects: ["p1", "p2", "p3", "p7"] },
-  "u-ui": { name: "何苗", projects: ["p1", "p2", "p5", "p8"] },
-  "u-dev": { name: "姜北", projects: ["p1", "p2", "p6", "p7"] },
+  "u-ui": { name: "何苗", discipline: "UI" },
+  "u-model": { name: "顾远", discipline: "模型" },
+  "u-dev": { name: "姜北", discipline: "研发" },
 };
 
 let assertions = 0;
@@ -155,6 +156,7 @@ async function collectRows(page, selector) {
       projectId: row.dataset.projectId,
       requesterId: row.dataset.requesterId,
       ownerId: row.dataset.ownerId,
+      discipline: row.dataset.discipline,
       status: row.dataset.status,
       offsetDays: row.dataset.offsetDays,
       startAt: row.dataset.startAt,
@@ -169,10 +171,11 @@ function assertScopedRows(rows, accountId, label) {
   assert(rows.length > 0, `${label}: expected at least one visible row for ${scope.name}`);
 
   const leakedRows = rows.filter(
-    (row) =>
-      row.ownerId !== accountId &&
-      row.requesterId !== accountId &&
-      !scope.projects.includes(row.projectId ?? "")
+    (row) => {
+      if (row.ownerId === accountId || row.requesterId === accountId) return false;
+      if (scope.projects?.includes(row.projectId ?? "")) return false;
+      return row.discipline !== scope.discipline;
+    }
   );
   assert(
     leakedRows.length === 0,
@@ -255,7 +258,7 @@ async function configureAdminDefaults(page) {
 
   const modelSetting = page.locator(".type-setting-editor > div").filter({ hasText: "模型" }).first();
   await modelSetting.locator("label").filter({ hasText: "默认交付小时" }).locator("input").fill("12");
-  await modelSetting.locator("label").filter({ hasText: "风险阈值小时" }).locator("input").fill("4");
+  await modelSetting.locator("label").filter({ hasText: "风险阈值小时" }).locator("input").fill("12");
 
   const responsePromise = page.waitForResponse((response) =>
     response.url().includes("/api/admin/config") && response.request().method() === "PATCH"
@@ -490,6 +493,20 @@ async function run() {
     await openDemandSheet(page);
     await page.locator(".task-row").filter({ hasText: createdTitle }).first().waitFor();
     await assertHeaderHalfSelection(page);
+
+    await loginAs(page, "model", "顾远");
+    const modelNav = await allTexts(page.locator(".nav-button span"));
+    assert(modelNav.join("|") === "需求提单", `Model navigation should only include 需求提单, got ${modelNav.join(", ")}`);
+    const modelTabs = await allTexts(page.locator(".sheet-tabs button"));
+    assert(modelTabs.join("|") === "需求提单|延期任务预警", `Model user should not see gantt tab, got ${modelTabs.join(", ")}`);
+    assertScopedRows(await collectRows(page, ".task-row"), "u-model", "Model demand table");
+    const modelAssignedRow = page.locator(".task-row").filter({ hasText: modelConfigTitle }).first();
+    await modelAssignedRow.waitFor();
+    assert((await modelAssignedRow.locator(".relation-chip").innerText()).includes("指派给我"), "Model should see model ticket assigned to 顾远");
+    assert((await page.locator(".task-row").filter({ hasText: createdTitle }).count()) === 0, "Model should not see unrelated non-model development ticket from the same project");
+    await clickSheetTab(page, "延期任务预警");
+    assertScopedRows(await collectRows(page, ".warning-row"), "u-model", "Model warning sheet");
+    await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "dev", "姜北");
     const devTabs = await allTexts(page.locator(".sheet-tabs button"));
