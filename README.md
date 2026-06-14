@@ -16,6 +16,38 @@ https://github.com/soyooAiTools/companyPlan
 - Demand ticket creation stores images, attachments, and files through the server.
 - Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in SQLite.
 
+## Source Package Contents
+
+The handoff source package includes both frontend and backend code:
+
+- Frontend: `src/App.tsx`, `src/main.tsx`, `src/styles.css`, `index.html`, `vite.config.ts`.
+- Backend: `server/index.mjs`, `server/seed-data.mjs`.
+- Scenario tests: `scripts/company-plan-scenarios.mjs`.
+- Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`.
+- Codex skill: `skills/company-plan/`.
+- Dependency manifests: `package.json`, `package-lock.json`.
+
+The source package intentionally does not include generated dependencies, build output, or runtime data:
+
+```text
+node_modules/
+dist/
+.git/
+data/
+uploads/
+companyplan.sqlite
+.env
+production secrets
+```
+
+After unpacking the source package, install and run with:
+
+```bash
+npm install
+npm run build
+npm run start
+```
+
 ## Current Rules
 
 - Admin can see global navigation, all rows, and admin panels.
