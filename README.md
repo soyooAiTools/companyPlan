@@ -70,6 +70,8 @@ The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_
 
 Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
 
+Team handoff guide: [docs/handoff.md](docs/handoff.md).
+
 ## Deploy
 
 Build the frontend and run the Node production server:
