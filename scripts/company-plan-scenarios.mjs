@@ -11,7 +11,7 @@ const baseUrl = process.env.COMPANY_PLAN_URL ?? `http://127.0.0.1:${scenarioPort
 const seedPassword = process.env.COMPANYPLAN_SEED_PASSWORD ?? "CompanyPlan@2026";
 const forbiddenDemandToolbarText = ["字段管理", "筛选", "排序", "分组", "公告", "行高", "导出"];
 const requiredDemandColumns = [
-  "项目名称",
+  "所属项目",
   "工作内容",
   "我的提单",
   "图片/附件/文件",
@@ -32,6 +32,10 @@ const accountNames = {
   "u-model": "顾远",
   "u-dev": "姜北",
 };
+const personNames = {
+  ...accountNames,
+  "u-admin": "林知远",
+};
 const peerModelTicketTitle = "同岗位模型师道具低模";
 
 let assertions = 0;
@@ -41,6 +45,21 @@ function assert(condition, message) {
   if (!condition) {
     throw new Error(message);
   }
+}
+
+function formatScenarioHours(hours) {
+  const normalized = Math.max(0, Math.round(hours));
+  if (normalized < 24) return `${normalized} 小时`;
+  const days = Math.floor(normalized / 24);
+  const restHours = normalized % 24;
+  return restHours ? `${days} 天 ${restHours} 小时` : `${days} 天`;
+}
+
+function formatScenarioRemainingHours(hours) {
+  const normalized = Math.round(hours);
+  if (normalized < 0) return `逾期 ${formatScenarioHours(Math.abs(normalized))}`;
+  if (normalized === 0) return "本小时到期";
+  return `剩 ${formatScenarioHours(normalized)}`;
 }
 
 function loadPlaywright() {
@@ -179,6 +198,145 @@ async function collectBootstrapTickets(page) {
   return payload.tickets;
 }
 
+async function assertCreatedTicketApiFields(page, title, expected) {
+  const tickets = await collectBootstrapTickets(page);
+  const ticket = tickets.find((item) => item.title === title);
+  assert(Boolean(ticket), `${expected.label}: created ticket should be returned by /api/bootstrap`);
+  assert(ticket.projectId === expected.projectId, `${expected.label}: API projectId should be ${expected.projectId}, got ${ticket.projectId}`);
+  assert(
+    ticket.sourceProjectName === expected.sourceProjectName,
+    `${expected.label}: API sourceProjectName should be ${expected.sourceProjectName}, got ${ticket.sourceProjectName}`
+  );
+  assert(ticket.projectName === expected.projectName, `${expected.label}: API projectName should be ${expected.projectName}, got ${ticket.projectName}`);
+  assert(ticket.ownerId === expected.ownerId, `${expected.label}: API ownerId should be ${expected.ownerId}, got ${ticket.ownerId}`);
+  assert(ticket.discipline === expected.discipline, `${expected.label}: API discipline should be ${expected.discipline}, got ${ticket.discipline}`);
+  assert(ticket.priority === expected.priority, `${expected.label}: API priority should be ${expected.priority}, got ${ticket.priority}`);
+  assert(ticket.status === "排队中", `${expected.label}: created ticket should start as 排队中`);
+  assert(ticket.needType === expected.needType, `${expected.label}: API needType should be ${expected.needType}, got ${ticket.needType}`);
+  assert(ticket.summary === expected.summary, `${expected.label}: API summary should stay in sync`);
+  assert(ticket.hyperlink === expected.hyperlink, `${expected.label}: API hyperlink should stay in sync`);
+  assert(ticket.text === expected.text, `${expected.label}: API note text should stay in sync`);
+  assert(String(ticket.startAt).match(/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}$/), `${expected.label}: API startAt should be a display datetime, got ${ticket.startAt}`);
+  assert(Number.isFinite(Number(ticket.ageHours)) && Number(ticket.ageHours) >= 0, `${expected.label}: API ageHours should be a non-negative number`);
+  assert(Number.isFinite(Number(ticket.statusAgeHours)) && Number(ticket.statusAgeHours) >= 0, `${expected.label}: API statusAgeHours should be a non-negative number`);
+  assert(Number(ticket.dueInHours) === expected.expectedDueHours, `${expected.label}: API dueInHours should be ${expected.expectedDueHours}, got ${ticket.dueInHours}`);
+  assert(Number.isFinite(Number(ticket.remainingHours)), `${expected.label}: API remainingHours should be numeric`);
+  assert(Number.isFinite(Number(ticket.riskWarningHours)) && Number(ticket.riskWarningHours) > 0, `${expected.label}: API riskWarningHours should be positive`);
+  const attachmentKinds = (ticket.attachments ?? []).map((attachment) => attachment.kind).sort().join("|");
+  assert(attachmentKinds === "图片|文件|附件", `${expected.label}: API attachments should include image, attachment, and file kinds, got ${attachmentKinds}`);
+}
+
+async function assertSheetRowProjectSync(page, selector, title, expectedProjectId, expectedSourceProjectName, expectedProjectName, label) {
+  const row = page.locator(selector).filter({ hasText: title }).first();
+  await row.waitFor();
+  assert((await row.getAttribute("data-project-id")) === expectedProjectId, `${label}: row data-project-id should be ${expectedProjectId}`);
+  const projectCell = row.locator(".task-project-cell, .project-name-stack").first();
+  const rowText = await row.innerText();
+  assert(rowText.includes(expectedSourceProjectName), `${label}: row should show 所属项目 ${expectedSourceProjectName}`);
+  assert(rowText.includes(expectedProjectName), `${label}: row should show user-filled 项目名称 ${expectedProjectName}`);
+  assert((await projectCell.locator("strong").innerText()) === expectedSourceProjectName, `${label}: project cell primary text should be 所属项目`);
+  assert((await projectCell.locator("small").innerText()) === expectedProjectName, `${label}: project cell secondary text should be user-filled 项目名称`);
+}
+
+async function assertDemandRowFieldSync(page, title, expected) {
+  const row = page.locator(".task-row").filter({ hasText: title }).first();
+  await row.waitFor();
+  const rowText = await row.innerText();
+  const ownerName = personNames[expected.ownerId] ?? expected.ownerId;
+  const link = row.locator(".link-chip").first();
+  const ageCells = await row.locator(".task-age-cell").allInnerTexts();
+
+  assert(rowText.includes(title), `${expected.label}: demand row should show title`);
+  assert((await row.locator(".relation-chip").innerText()).includes(expected.expectRelationText), `${expected.label}: demand row relation should stay in sync`);
+  assert((await link.innerText()).includes("链接"), `${expected.label}: demand row should show hyperlink action`);
+  assert((await link.getAttribute("href")) === expected.hyperlink, `${expected.label}: demand row hyperlink href should stay in sync`);
+  assert(rowText.match(/\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}/), `${expected.label}: demand row should show 开始日期`);
+  assert(rowText.includes(expected.priority), `${expected.label}: demand row should show priority ${expected.priority}`);
+  assert((await row.locator(".status-select").inputValue()) === "排队中", `${expected.label}: demand row status select should start as 排队中`);
+  assert(ageCells.length === 3, `${expected.label}: demand row should show 提单时长、状态停留、剩余时间`);
+  assert(ageCells[0].includes("小时"), `${expected.label}: demand row should show hour-based 提单时长`);
+  assert(ageCells[1].includes("小时"), `${expected.label}: demand row should show hour-based 状态停留`);
+  assert(ageCells[2].includes(formatScenarioRemainingHours(expected.expectedDueHours)), `${expected.label}: demand row should show remaining delivery hours`);
+  assert(rowText.includes(`${expected.discipline}-${ownerName}`), `${expected.label}: demand row should show owner discipline and name`);
+  assert(rowText.includes(expected.needType), `${expected.label}: demand row should show task type`);
+  assert(rowText.includes(expected.text), `${expected.label}: demand row should show note text`);
+}
+
+async function assertTicketDetailFieldSync(page, title, expected) {
+  const row = page.locator(".task-row").filter({ hasText: title }).first();
+  await row.click();
+  await page.waitForSelector(".ticket-detail-panel");
+  const detailText = await page.locator(".ticket-detail-panel").innerText();
+  const ownerName = personNames[expected.ownerId] ?? expected.ownerId;
+  const requesterName = personNames[expected.requesterId] ?? expected.requesterId;
+  const openLinks = page.locator(".ticket-detail-panel .detail-attachment-list a").filter({ hasText: "打开" });
+  const downloadLinks = page.locator(".ticket-detail-panel .detail-attachment-list a").filter({ hasText: "下载" });
+
+  assert(detailText.includes(title), `${expected.label}: detail should show title`);
+  assert(detailText.includes("所属项目"), `${expected.label}: detail should label 所属项目`);
+  assert(detailText.includes(expected.sourceProjectName), `${expected.label}: detail should show 所属项目 ${expected.sourceProjectName}`);
+  assert(detailText.includes("项目名称"), `${expected.label}: detail should label 项目名称`);
+  assert(detailText.includes(expected.projectName), `${expected.label}: detail should show user-filled 项目名称 ${expected.projectName}`);
+  assert(detailText.includes("排队中"), `${expected.label}: detail should show status`);
+  assert(detailText.includes(expected.expectRelationText), `${expected.label}: detail should show relation`);
+  assert(detailText.includes(`${expected.discipline}-${ownerName}`), `${expected.label}: detail should show owner`);
+  assert(detailText.includes(expected.needType), `${expected.label}: detail should show task type`);
+  assert(detailText.includes(requesterName), `${expected.label}: detail should show requester`);
+  assert(detailText.includes(expected.summary), `${expected.label}: detail should show summary`);
+  assert(detailText.includes("interaction-brief.txt"), `${expected.label}: detail should show uploaded attachment`);
+  assert((await openLinks.count()) >= 3, `${expected.label}: detail should expose attachment open links`);
+  assert((await downloadLinks.count()) >= 3, `${expected.label}: detail should expose attachment download links`);
+  assert((await page.locator(".ticket-detail-panel .link-chip").first().getAttribute("href")) === expected.hyperlink, `${expected.label}: detail hyperlink should stay in sync`);
+  assert(detailText.includes(`备注：${expected.text}`), `${expected.label}: detail should show note text`);
+  await page.locator(".ticket-detail-panel .icon-button").click();
+  await page.waitForSelector(".ticket-detail-panel", { state: "detached" });
+}
+
+async function assertTicketProjectApiGuards(page) {
+  const invalidSourceName = `未配置所属项目 ${Date.now()}`;
+  const invalidSource = await page.evaluate(async (sourceProjectName) => {
+    const response = await fetch("/api/tickets", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "未配置所属项目拒绝验证",
+        sourceProjectName,
+        projectName: "用户填写项目名称",
+        projectId: "p1",
+        ownerId: "u-dev",
+        discipline: "研发",
+        priority: "普通",
+        needType: "研发联调",
+        summary: "这个请求应该被服务端拒绝。",
+      }),
+    });
+    return { status: response.status, body: await response.json() };
+  }, invalidSourceName);
+  assert(invalidSource.status === 400, `Server should reject unconfigured 所属项目, got ${invalidSource.status}`);
+
+  const forbiddenProject = await page.evaluate(async () => {
+    const response = await fetch("/api/tickets", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "无权所属项目拒绝验证",
+        sourceProjectName: "Neon Chef 试玩 - p1",
+        projectName: "用户填写项目名称",
+        projectId: "p3",
+        ownerId: "u-dev",
+        discipline: "研发",
+        priority: "普通",
+        needType: "研发联调",
+        summary: "UI 账号不应能在 p3 下创建提单。",
+      }),
+    });
+    return { status: response.status, body: await response.json() };
+  });
+  assert(forbiddenProject.status === 403, `Server should reject out-of-scope 所属项目, got ${forbiddenProject.status}`);
+}
+
 function assertScopedRows(rows, accountId, label, options = {}) {
   const { requireRows = true } = options;
   const accountName = accountNames[accountId];
@@ -236,6 +394,14 @@ async function assertDemandChrome(page) {
 
   await page.locator(".sheet-toolbar button").filter({ hasText: "添加记录" }).click();
   await page.waitForSelector(".ticket-form");
+  const ticketFormText = await page.locator(".ticket-form").innerText();
+  assert(ticketFormText.includes("所属项目"), "Ticket form should expose the configured project list as 所属项目");
+  assert(ticketFormText.includes("项目名称"), "Ticket form should expose user-filled 项目名称");
+  assert(!ticketFormText.includes("项目池"), "Ticket form should not expose 项目池 as a field name");
+  assert(!ticketFormText.includes("表格项目名称"), "Ticket form should not expose 表格项目名称 as a field name");
+  assert(await ticketFormField(page, "所属项目").locator("select").count() === 1, "所属项目 should be the admin-configured select");
+  assert(await ticketFormField(page, "项目名称").locator("input").count() === 1, "项目名称 should be a user-filled text input");
+  assert(await ticketFormField(page, "项目名称").locator("select").count() === 0, "项目名称 should not be sourced from a configured select");
   const priorityOptions = await ticketFormField(page, "优先级").locator("select option").evaluateAll((options) =>
     options.map((option) => option.textContent?.trim())
   );
@@ -262,9 +428,17 @@ async function assertVisibleEnabledButtonsActionable(page, label) {
 
 async function configureAdminDefaults(page) {
   const configuredProjectName = `管理员配置项目 ${Date.now()}`;
+  const renamedProjectName = `管理员同步改名 ${Date.now()}`;
   await page.locator(".nav-button").filter({ hasText: "管理员" }).click();
   await page.waitForSelector(".admin-config-panel");
+  const adminConfigText = await page.locator(".admin-config-panel").innerText();
+  assert(adminConfigText.includes("所属项目列表"), "Admin config should expose 所属项目列表");
+  assert(!adminConfigText.includes("表格项目名称"), "Admin config should not label the field 表格项目名称");
   await assertVisibleEnabledButtonsActionable(page, "admin config");
+
+  const firstProjectNameInput = page.locator(".project-name-editor input").first();
+  const originalProjectName = await firstProjectNameInput.inputValue();
+  await firstProjectNameInput.fill(renamedProjectName);
 
   await page.locator(".project-name-add input").fill(configuredProjectName);
   await page.locator(".project-name-add button").filter({ hasText: "添加" }).click();
@@ -282,9 +456,49 @@ async function configureAdminDefaults(page) {
   await page.locator(".admin-config-panel button").filter({ hasText: "保存配置" }).click();
   const response = await responsePromise;
   assert(response.ok(), `Admin config save should succeed, got ${response.status()}`);
+  const savedPayload = await response.json();
+  assert(
+    savedPayload.config.projectNameOptions.some((option) => option.name === configuredProjectName),
+    "Admin config response should include newly added 所属项目"
+  );
+  assert(
+    savedPayload.config.projectNameOptions.some((option) => option.name === renamedProjectName),
+    "Admin config response should include renamed 所属项目"
+  );
+  assert(
+    savedPayload.bootstrap?.config?.projectNameOptions.some((option) => option.name === configuredProjectName),
+    "Admin config save should return a synced bootstrap config"
+  );
+  const renamedTicket = savedPayload.bootstrap?.tickets?.find((ticket) => ticket.title === "交互点击区修正");
+  assert(Boolean(renamedTicket), "Admin config save should return synced tickets in bootstrap");
+  assert(
+    renamedTicket.sourceProjectName === renamedProjectName,
+    `Renamed 所属项目 should sync to existing tickets, got ${renamedTicket.sourceProjectName}`
+  );
+  const modelTicket = savedPayload.bootstrap?.tickets?.find((ticket) => ticket.title === "主界面 3D 图标补模型");
+  assert(Number(modelTicket?.riskWarningHours) === 12, "Saved model risk-warning hours should sync to returned tickets immediately");
 
   await openDemandSheet(page);
-  return configuredProjectName;
+  const renamedRow = page.locator(".task-row").filter({ hasText: "交互点击区修正" }).first();
+  await renamedRow.waitFor();
+  assert((await renamedRow.locator(".task-project-cell strong").innerText()) === renamedProjectName, "Renamed 所属项目 should sync to the visible demand row");
+
+  await page.locator(".sheet-toolbar button").filter({ hasText: "添加记录" }).click();
+  await page.waitForSelector(".ticket-form");
+  const sourceOptions = await ticketFormField(page, "所属项目").locator("select option").evaluateAll((options) =>
+    options.map((option) => option.textContent?.trim())
+  );
+  assert(sourceOptions.includes(configuredProjectName), "Ticket form should include newly added 所属项目 immediately after save");
+  assert(sourceOptions.includes(renamedProjectName), "Ticket form should include renamed 所属项目 immediately after save");
+  assert(!sourceOptions.includes(originalProjectName), "Ticket form should not keep the old renamed 所属项目 after save");
+  assert(await ticketFormField(page, "项目名称").locator("input").count() === 1, "项目名称 should remain a free text input after admin config save");
+  await ticketFormField(page, "环节").locator("select").selectOption("模型");
+  const syncedDueValue = await ticketFormField(page, "期望小时").locator("input").inputValue();
+  assert(Number(syncedDueValue) === 12, `Ticket form should use saved model delivery hours immediately, got ${syncedDueValue}`);
+  await page.locator(".ticket-form button").filter({ hasText: "取消" }).click();
+  await page.waitForSelector(".ticket-form", { state: "detached" });
+
+  return { configuredProjectName, renamedProjectName };
 }
 
 async function assertAdminWorkspaceButtons(page) {
@@ -309,7 +523,9 @@ function ticketFormField(page, labelText) {
 async function createRealisticTicket(page, options = {}) {
   const {
     titlePrefix = "真实场景 UI 提研发联调",
+    projectId = "p1",
     sourceProjectName = "Neon Chef 真实联调 - ui",
+    projectName,
     discipline = "研发",
     ownerId = "u-dev",
     priority = "紧急",
@@ -317,11 +533,16 @@ async function createRealisticTicket(page, options = {}) {
     expectRelationText = "我提给 姜北",
     expectedDueHours,
   } = options;
-  const title = `${titlePrefix} ${Date.now()}`;
+  const timestamp = Date.now();
+  const title = `${titlePrefix} ${timestamp}`;
+  const projectNameText = projectName ?? `用户填写项目名称 ${timestamp}`;
   const tempDir = mkdtempSync(join(tmpdir(), "company-plan-ticket-"));
   const imagePath = join(tempDir, "cta-note.png");
   const attachmentPath = join(tempDir, "interaction-brief.txt");
   const filePath = join(tempDir, "ui-assets.zip");
+  const summaryText = `UI 完成 CTA、失败页和引导标注后，提给${discipline}同事处理。`;
+  const hyperlink = "https://example.com/company-plan/spec";
+  const noteText = "真实项目验收用例：UI 发起，程序负责。";
 
   writeFileSync(imagePath, Buffer.from("89504e470d0a1a0a", "hex"));
   writeFileSync(attachmentPath, "CTA placement and click-area notes.\n");
@@ -331,19 +552,21 @@ async function createRealisticTicket(page, options = {}) {
   await page.waitForSelector(".ticket-form");
 
   await ticketFormField(page, "需求标题").locator("input").fill(title);
-  await ticketFormField(page, "所属项目").locator("select").selectOption("p1");
-  await ticketFormField(page, "表格项目名称").locator("select").selectOption({ label: sourceProjectName });
+  await ticketFormField(page, "所属项目").locator("select").selectOption({ label: sourceProjectName });
+  await ticketFormField(page, "项目名称").locator("input").fill(projectNameText);
   await ticketFormField(page, "环节").locator("select").selectOption(discipline);
   await ticketFormField(page, "负责人").locator("select").selectOption(ownerId);
   await ticketFormField(page, "优先级").locator("select").selectOption(priority);
   await ticketFormField(page, "任务类别").locator("input").fill(needType);
+  const dueValue = Number(await ticketFormField(page, "期望小时").locator("input").inputValue());
+  assert(Number.isFinite(dueValue) && dueValue > 0, "Ticket form should expose a positive 期望小时 value");
   if (expectedDueHours) {
-    const dueValue = await ticketFormField(page, "期望小时").locator("input").inputValue();
     assert(Number(dueValue) === expectedDueHours, `Expected default due hours ${expectedDueHours}, got ${dueValue}`);
   }
-  await ticketFormField(page, "说明").locator("textarea").fill(`UI 完成 CTA、失败页和引导标注后，提给${discipline}同事处理。`);
-  await ticketFormField(page, "超链接").locator("input").fill("https://example.com/company-plan/spec");
-  await ticketFormField(page, "备注").locator("input").fill("真实项目验收用例：UI 发起，程序负责。");
+  const effectiveDueHours = expectedDueHours ?? dueValue;
+  await ticketFormField(page, "说明").locator("textarea").fill(summaryText);
+  await ticketFormField(page, "超链接").locator("input").fill(hyperlink);
+  await ticketFormField(page, "备注").locator("input").fill(noteText);
 
   await page.locator(".upload-tile").filter({ hasText: "添加图片" }).locator("input[type=file]").setInputFiles(imagePath);
   await page.locator(".upload-tile").filter({ hasText: "添加附件" }).locator("input[type=file]").setInputFiles(attachmentPath);
@@ -365,16 +588,55 @@ async function createRealisticTicket(page, options = {}) {
   await createdRow.waitFor();
   const relationText = await createdRow.locator(".relation-chip").innerText();
   assert(relationText.includes(expectRelationText), `Creator should see the new ticket as ${expectRelationText}`);
-  assert((await createdRow.innerText()).includes(sourceProjectName), "Created ticket should use configured project name");
-  if (expectedDueHours) {
-    assert((await createdRow.innerText()).includes(`剩 ${expectedDueHours} 小时`), "Created ticket should use admin default delivery hours");
-  }
+  await assertSheetRowProjectSync(page, ".task-row", title, projectId, sourceProjectName, projectNameText, "Created demand table");
+  await assertDemandRowFieldSync(page, title, {
+    label: "Created demand table fields",
+    ownerId,
+    requesterId: "u-ui",
+    discipline,
+    priority,
+    needType,
+    expectRelationText,
+    expectedDueHours: effectiveDueHours,
+    hyperlink,
+    text: noteText,
+  });
+  assert((await createdRow.locator(".task-project-cell strong").innerText()) === sourceProjectName, "Demand table should use configured 所属项目 as the primary project cell");
+  assert((await createdRow.locator(".task-project-cell small").innerText()) === projectNameText, "Demand table should use user-filled 项目名称 as the secondary project cell");
+  assert((await createdRow.innerText()).includes(formatScenarioRemainingHours(effectiveDueHours)), "Created ticket should use configured default delivery hours");
 
   const attachmentSummary = await createdRow.locator(".attachment-summary").innerText();
   assert(attachmentSummary.includes("图1"), "Created ticket should summarize one image");
   assert(attachmentSummary.includes("附1"), "Created ticket should summarize one attachment");
   assert(attachmentSummary.includes("文1"), "Created ticket should summarize one file");
   assert((await createdRow.locator(".status-select").inputValue()) === "排队中", "Created ticket should start as 排队中");
+  await assertCreatedTicketApiFields(page, title, {
+    label: "Created ticket API",
+    projectId,
+    sourceProjectName,
+    projectName: projectNameText,
+    ownerId,
+    discipline,
+    priority,
+    needType,
+    summary: summaryText,
+    hyperlink,
+    text: noteText,
+    expectedDueHours: effectiveDueHours,
+  });
+  await assertTicketDetailFieldSync(page, title, {
+    label: "Created ticket detail fields",
+    sourceProjectName,
+    projectName: projectNameText,
+    ownerId,
+    requesterId: "u-ui",
+    discipline,
+    needType,
+    expectRelationText,
+    summary: summaryText,
+    hyperlink,
+    text: noteText,
+  });
 
   return title;
 }
@@ -500,7 +762,7 @@ async function run() {
     }
     const adminRowCount = await page.locator(".task-row").count();
     await assertAdminWorkspaceButtons(page);
-    const configuredProjectName = await configureAdminDefaults(page);
+    const { configuredProjectName } = await configureAdminDefaults(page);
 
     await loginAs(page, "ui", "何苗");
     assertScopedRows(await collectBootstrapTickets(page), "u-ui", "UI bootstrap");
@@ -530,9 +792,12 @@ async function run() {
     await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "ui", "何苗");
+    await assertTicketProjectApiGuards(page);
+    const modelProjectName = "用户填写模型项目名称";
     const modelConfigTitle = await createRealisticTicket(page, {
       titlePrefix: "后台默认模型交付小时",
       sourceProjectName: configuredProjectName,
+      projectName: modelProjectName,
       discipline: "模型",
       ownerId: "u-model",
       priority: "优先",
@@ -542,13 +807,30 @@ async function run() {
     });
     await assertCreatedAttachmentOpenAndDownload(page, modelConfigTitle);
 
+    const createdProjectName = "用户填写研发联调项目名称";
     const createdTitle = await createRealisticTicket(page, {
       sourceProjectName: configuredProjectName,
+      projectName: createdProjectName,
     });
     await assertCreatedAttachmentOpenAndDownload(page, createdTitle);
     await page.reload({ waitUntil: "networkidle" });
     await openDemandSheet(page);
     await page.locator(".task-row").filter({ hasText: createdTitle }).first().waitFor();
+    await assertSheetRowProjectSync(page, ".task-row", createdTitle, "p1", configuredProjectName, createdProjectName, "Reloaded demand table");
+    await assertCreatedTicketApiFields(page, createdTitle, {
+      label: "Reloaded ticket API",
+      projectId: "p1",
+      sourceProjectName: configuredProjectName,
+      projectName: createdProjectName,
+      ownerId: "u-dev",
+      discipline: "研发",
+      priority: "紧急",
+      needType: "研发联调",
+      summary: "UI 完成 CTA、失败页和引导标注后，提给研发同事处理。",
+      hyperlink: "https://example.com/company-plan/spec",
+      text: "真实项目验收用例：UI 发起，程序负责。",
+      expectedDueHours: 32,
+    });
     await assertHeaderHalfSelection(page);
 
     await loginAs(page, "model", "顾远");
@@ -565,6 +847,7 @@ async function run() {
     assert((await page.locator(".task-row").filter({ hasText: peerModelTicketTitle }).count()) === 0, "Model should not see peer modeler's model ticket");
     await clickSheetTab(page, "延期任务预警");
     assertScopedRows(await collectRows(page, ".warning-row", { requireRows: false }), "u-model", "Model warning sheet", { requireRows: false });
+    await assertSheetRowProjectSync(page, ".warning-row", modelConfigTitle, "p1", configuredProjectName, modelProjectName, "Model warning sheet project fields");
     await clickSheetTab(page, "需求提单");
 
     await loginAs(page, "dev", "姜北");
@@ -585,6 +868,7 @@ async function run() {
     assertScopedRows(await collectRows(page, ".gantt-row"), "u-dev", "Programmer gantt sheet");
     const devGanttRow = page.locator(".gantt-row").filter({ hasText: createdTitle }).first();
     await devGanttRow.waitFor();
+    await assertSheetRowProjectSync(page, ".gantt-row", createdTitle, "p1", configuredProjectName, createdProjectName, "Programmer gantt project fields");
     const readonlyOffsetBefore = await devGanttRow.getAttribute("data-offset-hours");
     const readonlySpanBefore = await devGanttRow.getAttribute("data-span-hours");
     assert((await devGanttRow.locator(".gantt-bar").getAttribute("aria-disabled")) === "true", "Programmer gantt bar should be aria-disabled");
@@ -599,6 +883,7 @@ async function run() {
     const adminGanttRowsBefore = await page.locator(".gantt-row").evaluateAll((rows) => rows.map((row) => row.dataset.ticketId));
     const adminGanttRow = page.locator(".gantt-row").filter({ hasText: createdTitle }).first();
     await adminGanttRow.waitFor();
+    await assertSheetRowProjectSync(page, ".gantt-row", createdTitle, "p1", configuredProjectName, createdProjectName, "Admin gantt project fields");
     const ticketId = await adminGanttRow.getAttribute("data-ticket-id");
     const beforeOffset = Number(await adminGanttRow.getAttribute("data-offset-hours"));
     const beforeSpan = Number(await adminGanttRow.getAttribute("data-span-hours"));

@@ -61,7 +61,7 @@ Before handing off:
 - Toolbar does not contain `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, or `导出`.
 - Bottom sheet tabs stay pinned to the bottom of the page while the table body scrolls.
 - Demand table includes project, content, `我的提单`, attachments, link, start date, priority, status, ticket age in hours, status age in hours, remaining time in hours, owner, type, and notes.
-- Admin can configure the selectable project-name list and per-ticket-type default delivery/risk hours.
+- Admin can configure the selectable `所属项目` list and per-ticket-type default delivery/risk hours; new-demand `项目名称` remains user-entered text.
 - Priorities are `紧急`, `优先`, `普通`, and `低优先`.
 - Stored attachments can be opened and downloaded from the ticket detail panel.
 - Row selection still supports half-selected header state.

@@ -1527,6 +1527,7 @@ button {
 }
 
 .task-project-cell strong,
+.task-project-cell small,
 .task-content-cell strong,
 .task-text-cell small {
   display: block;
@@ -1543,6 +1544,12 @@ button {
   background: #e1f3f5;
   color: #205f69;
   font-size: 13px;
+}
+
+.task-project-cell small,
+.project-name-stack small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .task-text-cell small {
@@ -1822,6 +1829,21 @@ button {
 .warning-row:hover,
 .gantt-row:hover {
   background: #f9fcff;
+}
+
+.project-name-stack {
+  display: grid !important;
+  align-content: center;
+  gap: 2px;
+}
+
+.project-name-stack strong,
+.project-name-stack small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .warning-detail-button {

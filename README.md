@@ -14,7 +14,7 @@ https://github.com/soyooAiTools/companyPlan
 - The frontend never decides row-level permissions by itself. `/api/bootstrap` returns only data scoped to the logged-in account.
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
 - Demand ticket creation stores images, attachments, and files through the server.
-- Admin configuration stores selectable project names and per-ticket-type delivery/risk hours in SQLite.
+- Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in SQLite.
 
 ## Current Rules
 
@@ -24,6 +24,7 @@ https://github.com/soyooAiTools/companyPlan
 - All users see bottom tabs for `需求提单` and `延期任务预警`.
 - Only admin and programmer roles see `任务甘特图`.
 - Priorities are `紧急`, `优先`, `普通`, and `低优先`.
+- In new-demand creation, `所属项目` is selected from the admin-managed list; `项目名称` is user-entered free text and is not sourced from that list or from the internal project pool.
 - Ticket age, status stay, remaining delivery time, warnings, and type defaults are calculated in hours.
 - Only admin can drag gantt timeline bars and resize their visual length.
 - Programmer can view scoped gantt rows but cannot drag them.

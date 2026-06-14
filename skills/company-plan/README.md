@@ -20,7 +20,7 @@ This skill documents the companyPlan production SaaS rules for future Codex sess
 - `需求提单` stays in the right workspace; it does not open as a separate full-screen panel.
 - Demand toolbar shows only `添加记录` and `查找`.
 - Bottom tabs are fixed at the page bottom.
-- Admin can configure the selectable `表格项目名称` list and per-type default delivery/risk hours.
+- Admin can configure the selectable `所属项目` list and per-type default delivery/risk hours; demand-ticket `项目名称` remains user-entered text.
 - Demand tickets use four priority labels: `紧急`, `优先`, `普通`, `低优先`.
 - Demand-ticket age, status stay, remaining delivery time, warnings, and type defaults are calculated in hours.
 - `排班表` and `负责人看板` are removed.
@@ -78,4 +78,4 @@ python /root/.codex/skills/.system/skill-creator/scripts/quick_validate.py /root
 
 For UI changes, also run browser checks across admin, programmer, and a non-programmer account. For deployment changes, verify the public `/companyPlan/` URL, unauthenticated API rejection, login, and `pm2 status companyplan`.
 
-The scenario test currently covers admin project-name/type-hour configuration, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, seeded attachment open, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.
+The scenario test currently covers admin `所属项目`/type-hour configuration, user-entered `项目名称`, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, seeded attachment open, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.

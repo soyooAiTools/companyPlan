@@ -126,7 +126,7 @@ app.patch("/api/admin/config", requireAuth, requireAdmin, (request, response) =>
   }
 
   if (!sanitizedNames.length) {
-    return response.status(400).json({ error: "项目名称列表至少需要保留一个项目名称" });
+    return response.status(400).json({ error: "所属项目列表至少需要保留一个所属项目" });
   }
 
   const knownTypes = new Set(db.prepare("SELECT type_key FROM ticket_type_settings").all().map((row) => row.type_key));
@@ -143,6 +143,18 @@ app.patch("/api/admin/config", requireAuth, requireAdmin, (request, response) =>
   }
 
   const now = new Date().toISOString();
+  const existingProjectNames = db
+    .prepare("SELECT id, name FROM project_name_options")
+    .all()
+    .reduce((items, row) => items.set(row.id, row.name), new Map());
+  const renamedProjectNames = sanitizedNames
+    .map((option) => ({
+      id: option.id,
+      from: existingProjectNames.get(option.id),
+      to: option.name,
+    }))
+    .filter((item) => item.from && item.from !== item.to);
+
   const updateConfig = db.transaction(() => {
     db.prepare("DELETE FROM project_name_options").run();
     const insertProjectName = db.prepare(
@@ -162,14 +174,24 @@ app.patch("/api/admin/config", requireAuth, requireAdmin, (request, response) =>
       updateType.run(setting.defaultDeliveryHours, setting.riskWarningHours, now, setting.typeKey);
     });
 
+    const renameTicketSourceProject = db.prepare(
+      `UPDATE tickets
+       SET source_project_name = ?, updated_at = ?
+       WHERE source_project_name = ?`
+    );
+    renamedProjectNames.forEach((item) => {
+      renameTicketSourceProject.run(item.to, now, item.from);
+    });
+
     audit(request.user.id, "admin_config_updated", "system", "companyplan_config", request, {
       projectNameOptions: sanitizedNames.length,
       ticketTypeSettings: sanitizedTypeSettings.length,
+      renamedProjectNames: renamedProjectNames.map(({ id, from, to }) => ({ id, from, to })),
     });
   });
 
   updateConfig();
-  response.json({ config: getCompanyConfig() });
+  response.json({ config: getCompanyConfig(), bootstrap: getBootstrap(request.user) });
 });
 
 app.post("/api/tickets", requireAuth, (request, response) => {
@@ -189,8 +211,11 @@ app.post("/api/tickets", requireAuth, (request, response) => {
   }
 
   const sourceProjectName = cleanText(payload.sourceProjectName, 160);
-  if (sourceProjectName && !isConfiguredProjectName(sourceProjectName)) {
-    return response.status(400).json({ error: "项目名称不在管理员配置列表中" });
+  if (!sourceProjectName) {
+    return response.status(400).json({ error: "所属项目不能为空" });
+  }
+  if (!isConfiguredProjectName(sourceProjectName)) {
+    return response.status(400).json({ error: "所属项目不在管理员配置列表中" });
   }
 
   const ticketId = nextTicketId();
@@ -199,6 +224,7 @@ app.post("/api/tickets", requireAuth, (request, response) => {
     id: ticketId,
     title: cleanText(payload.title, 120) || "未命名需求",
     sourceProjectName: sourceProjectName || null,
+    projectName: cleanText(payload.projectName, 160) || null,
     projectId: String(payload.projectId),
     requesterId: request.user.id,
     ownerId: owner.id,
@@ -222,12 +248,12 @@ app.post("/api/tickets", requireAuth, (request, response) => {
   const createTransaction = db.transaction(() => {
     db.prepare(
       `INSERT INTO tickets (
-        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
+        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
         age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
         need_type, summary, hyperlink, text,
         created_at, updated_at, status_updated_at
       ) VALUES (
-        @id, @title, @sourceProjectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
+        @id, @title, @sourceProjectName, @projectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
         @ageDays, @statusAgeDays, @dueInDays, @dueInHours, @timelineOffsetDays, @timelineOffsetHours, @timelineSpanHours,
         @needType, @summary, @hyperlink, @text,
         @createdAt, @updatedAt, @statusUpdatedAt
@@ -418,6 +444,7 @@ function initializeSchema() {
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
       source_project_name TEXT,
+      project_name TEXT,
       project_id TEXT NOT NULL REFERENCES projects(id),
       requester_id TEXT NOT NULL REFERENCES people(id),
       owner_id TEXT NOT NULL REFERENCES people(id),
@@ -527,12 +554,12 @@ function seedDatabase() {
     const insertTeam = db.prepare("INSERT INTO project_team (project_id, person_id) VALUES (?, ?)");
     const insertTicket = db.prepare(
       `INSERT INTO tickets (
-        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
+        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
         age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
         need_type, summary, hyperlink, text,
         created_at, updated_at, status_updated_at
       ) VALUES (
-        @id, @title, @sourceProjectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
+        @id, @title, @sourceProjectName, @projectName, @projectId, @requesterId, @ownerId, @discipline, @startAt, @status, @priority,
         @ageDays, @statusAgeDays, @dueInDays, @dueInHours, @timelineOffsetDays, @timelineOffsetHours, @timelineSpanHours,
         @needType, @summary, @hyperlink, @text,
         @createdAt, @updatedAt, @statusUpdatedAt
@@ -565,6 +592,7 @@ function seedDatabase() {
       insertTicket.run({
         ...ticket,
         sourceProjectName: ticket.sourceProjectName ?? null,
+        projectName: ticket.projectName ?? ticket.sourceProjectName ?? null,
         dueInHours,
         timelineOffsetDays: ticket.timelineOffsetDays ?? ticket.ageDays,
         timelineOffsetHours,
@@ -606,9 +634,14 @@ function seedDatabase() {
 }
 
 function migrateSchema() {
+  ensureColumn("tickets", "project_name", "TEXT");
   ensureColumn("tickets", "due_in_hours", "INTEGER NOT NULL DEFAULT 72");
   ensureColumn("tickets", "timeline_offset_hours", "INTEGER DEFAULT 0");
   ensureColumn("tickets", "timeline_span_hours", "INTEGER DEFAULT 72");
+
+  db.prepare(
+    "UPDATE tickets SET project_name = source_project_name WHERE (project_name IS NULL OR trim(project_name) = '') AND source_project_name IS NOT NULL"
+  ).run();
 
   db.prepare(
     "UPDATE tickets SET due_in_hours = due_in_days * 24 WHERE due_in_hours = 72 AND due_in_days > 0 AND due_in_days != 3"
@@ -656,6 +689,7 @@ function rebuildTicketsForChinesePriorities() {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         source_project_name TEXT,
+        project_name TEXT,
         project_id TEXT NOT NULL REFERENCES projects(id),
         requester_id TEXT NOT NULL REFERENCES people(id),
         owner_id TEXT NOT NULL REFERENCES people(id),
@@ -680,12 +714,12 @@ function rebuildTicketsForChinesePriorities() {
       );
 
       INSERT INTO tickets (
-        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
+        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
         age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
         need_type, summary, hyperlink, text, created_at, updated_at, status_updated_at
       )
       SELECT
-        id, title, source_project_name, project_id, requester_id, owner_id, discipline, start_at, status,
+        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status,
         CASE priority
           WHEN 'P0' THEN '紧急'
           WHEN 'P1' THEN '优先'
@@ -1410,6 +1444,7 @@ function mapTicket(row) {
     id: row.id,
     title: row.title,
     sourceProjectName: row.source_project_name ?? undefined,
+    projectName: row.project_name ?? undefined,
     projectId: row.project_id,
     requesterId: row.requester_id,
     ownerId: row.owner_id,

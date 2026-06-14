@@ -84,6 +84,7 @@ type Ticket = {
   id: string;
   title: string;
   sourceProjectName?: string;
+  projectName?: string;
   projectId: string;
   requesterId: string;
   ownerId: string;
@@ -891,6 +892,17 @@ function App() {
     void loadBootstrap();
   }, []);
 
+  function applyBootstrap(data: BootstrapPayload) {
+    setCurrentUser(data.currentUser);
+    setPeopleData(data.people);
+    setProjects(data.projects);
+    setCompanyConfig(data.config ?? fallbackCompanyConfig);
+    setTickets(data.tickets);
+    setSelectedProjectId((current) =>
+      data.projects.some((project) => project.id === current) ? current : data.projects[0]?.id ?? ""
+    );
+  }
+
   async function loadBootstrap() {
     setIsBootstrapping(true);
     setAppError("");
@@ -903,14 +915,7 @@ function App() {
       }
       if (!response.ok) throw new Error(await readApiError(response));
       const data = (await response.json()) as BootstrapPayload;
-      setCurrentUser(data.currentUser);
-      setPeopleData(data.people);
-      setProjects(data.projects);
-      setCompanyConfig(data.config ?? fallbackCompanyConfig);
-      setTickets(data.tickets);
-      setSelectedProjectId((current) =>
-        data.projects.some((project) => project.id === current) ? current : data.projects[0]?.id ?? ""
-      );
+      applyBootstrap(data);
     } catch (error) {
       setAppError(error instanceof Error ? error.message : "加载生产数据失败");
     } finally {
@@ -989,6 +994,7 @@ function App() {
         ticket.id.toLowerCase().includes(lowered) ||
         project?.name.toLowerCase().includes(lowered) ||
         ticket.sourceProjectName?.toLowerCase().includes(lowered) ||
+        ticket.projectName?.toLowerCase().includes(lowered) ||
         owner?.name.toLowerCase().includes(lowered);
 
       return (
@@ -1078,8 +1084,13 @@ function App() {
       setAppError(await readApiError(response));
       return;
     }
-    const data = (await response.json()) as { config: CompanyConfig };
-    setCompanyConfig(data.config);
+    const data = (await response.json()) as { config: CompanyConfig; bootstrap?: BootstrapPayload };
+    if (data.bootstrap) {
+      applyBootstrap(data.bootstrap);
+    } else {
+      setCompanyConfig(data.config);
+      await loadBootstrap();
+    }
   }
 
   if (isBootstrapping) {
@@ -1945,7 +1956,7 @@ function TaskManagementSheet({
             />
             <span className="sheet-row-number-label">#</span>
           </span>
-          <span>项目名称</span>
+          <span>所属项目</span>
           <span>工作内容</span>
           <span>我的提单</span>
           <span>图片/附件/文件</span>
@@ -1980,6 +1991,8 @@ function TaskManagementSheet({
               </button>
               {!isCollapsed && group.items.map((ticket, index) => {
             const project = resolveTicketProject(ticket, projects);
+            const configuredProjectName = getConfiguredProjectName(ticket, project);
+            const userProjectName = getTicketProjectName(ticket);
             const owner = people.find((person) => person.id === ticket.ownerId);
             const requester = people.find((person) => person.id === ticket.requesterId);
             const relation = getTicketRelation(ticket, currentUser, people);
@@ -2012,9 +2025,10 @@ function TaskManagementSheet({
                 </span>
                 <span
                   className="task-project-cell"
-                  title={`${ticket.sourceProjectName ?? project.name} · ${ticket.id} · ${requester?.name ?? "-"}`}
+                  title={`所属项目：${configuredProjectName} · 项目名称：${userProjectName || "-"} · ${ticket.id} · ${requester?.name ?? "-"}`}
                 >
-                  <strong>{ticket.sourceProjectName ?? project.name}</strong>
+                  <strong>{configuredProjectName}</strong>
+                  <small>{userProjectName || "-"}</small>
                 </span>
                 <span className="task-content-cell" title={ticket.summary}>
                   <strong>{ticket.title}</strong>
@@ -2127,6 +2141,7 @@ function TicketDetailPanel({
   onClose: () => void;
 }) {
   const project = resolveTicketProject(ticket, projects);
+  const userProjectName = getTicketProjectName(ticket);
   const requester = people.find((person) => person.id === ticket.requesterId);
   const owner = people.find((person) => person.id === ticket.ownerId);
   const relation = getTicketRelation(ticket, currentUser, people);
@@ -2146,8 +2161,12 @@ function TicketDetailPanel({
 
       <div className="ticket-detail-grid">
         <span>
-          项目
-          <strong>{ticket.sourceProjectName ?? project.name}</strong>
+          所属项目
+          <strong>{getConfiguredProjectName(ticket, project)}</strong>
+        </span>
+        <span>
+          项目名称
+          <strong>{userProjectName || "-"}</strong>
         </span>
         <span>
           状态
@@ -2243,7 +2262,7 @@ function OverdueWarningSheet({
   return (
     <div className="sheet-alt-table warning-table">
       <div className="warning-head">
-        <span>项目名称</span>
+        <span>所属项目</span>
         <span>工作内容</span>
         <span>负责人</span>
         <span>状态</span>
@@ -2255,6 +2274,8 @@ function OverdueWarningSheet({
       </div>
       {warningTickets.length === 0 && <div className="sheet-empty-row">暂无延期或临近风险</div>}
       {warningTickets.map((ticket) => {
+        const project = resolveTicketProject(ticket, projects);
+        const userProjectName = getTicketProjectName(ticket);
         const owner = people.find((person) => person.id === ticket.ownerId);
         return (
           <article
@@ -2267,7 +2288,10 @@ function OverdueWarningSheet({
             data-status={ticket.status}
             key={ticket.id}
           >
-            <span className="sheet-long-cell">{getTicketProjectName(ticket, projects)}</span>
+            <span className="sheet-long-cell project-name-stack">
+              <strong>{getConfiguredProjectName(ticket, project)}</strong>
+              <small>{userProjectName || "-"}</small>
+            </span>
             <span className="sheet-long-cell">{ticket.title}</span>
             <span>
               <strong className={`owner-chip owner-${ticket.discipline}`}>{ticket.discipline}-{owner?.name ?? "-"}</strong>
@@ -2398,7 +2422,7 @@ function GanttSheet({
   return (
     <div className="sheet-alt-table gantt-sheet">
       <div className="gantt-head">
-        <span>项目名称</span>
+        <span>所属项目</span>
         <span>工作内容</span>
         <span>负责人</span>
         <span>开始日期</span>
@@ -2407,6 +2431,8 @@ function GanttSheet({
       </div>
       {rows.length === 0 && <div className="sheet-empty-row">暂无甘特图数据</div>}
       {rows.map((ticket) => {
+        const project = resolveTicketProject(ticket, projects);
+        const userProjectName = getTicketProjectName(ticket);
         const owner = people.find((person) => person.id === ticket.ownerId);
         const spanHours = getPreviewSpanHours(ticket);
         const offsetHours = getPreviewOffsetHours(ticket);
@@ -2428,7 +2454,10 @@ function GanttSheet({
             data-start-at={ticket.startAt}
             key={ticket.id}
           >
-            <span className="sheet-long-cell">{getTicketProjectName(ticket, projects)}</span>
+            <span className="sheet-long-cell project-name-stack">
+              <strong>{getConfiguredProjectName(ticket, project)}</strong>
+              <small>{userProjectName || "-"}</small>
+            </span>
             <span className="sheet-long-cell">{ticket.title}</span>
             <span>
               <strong className={`owner-chip owner-${ticket.discipline}`}>{owner?.name ?? "-"}</strong>
@@ -2617,8 +2646,8 @@ function AdminView({
         <div className="admin-config-grid">
           <div className="admin-config-block">
             <div className="config-block-head">
-              <strong>项目名称列表</strong>
-              <small>新建提单时的“表格项目名称”候选项</small>
+              <strong>所属项目列表</strong>
+              <small>新建提单时的“所属项目”候选项</small>
             </div>
             <div className="project-name-editor">
               {projectNameDrafts.map((option) => (
@@ -2631,7 +2660,7 @@ function AdminView({
                       )
                     }
                   />
-                  <button type="button" title="移除项目名称" onClick={() => removeProjectName(option.id)}>
+                  <button type="button" title="移除所属项目" onClick={() => removeProjectName(option.id)}>
                     <Trash2 size={15} />
                   </button>
                 </span>
@@ -2641,7 +2670,7 @@ function AdminView({
               <input
                 value={newProjectName}
                 onChange={(event) => setNewProjectName(event.target.value)}
-                placeholder="新增项目名称"
+                placeholder="新增所属项目"
               />
               <button type="button" className="ghost-button" onClick={addProjectName}>
                 <Plus size={16} />
@@ -2801,11 +2830,12 @@ function TicketForm({
   onCreate: (ticket: TicketCreatePayload) => void | Promise<void>;
 }) {
   const [title, setTitle] = useState("");
-  const [projectId, setProjectId] = useState(projects[0]?.id ?? "p1");
+  const [projectId] = useState(projects[0]?.id ?? "p1");
   const configuredProjectNames = config.projectNameOptions.length
     ? config.projectNameOptions
     : projects.map((project) => ({ id: project.id, name: project.name }));
   const [sourceProjectName, setSourceProjectName] = useState(configuredProjectNames[0]?.name ?? projects[0]?.name ?? "");
+  const [projectName, setProjectName] = useState("");
   const [discipline, setDiscipline] = useState<Discipline>(
     currentUser.discipline !== "管理" && currentUser.discipline !== "项目" ? currentUser.discipline : "美术"
   );
@@ -2838,6 +2868,7 @@ function TicketForm({
     onCreate({
       title: title.trim() || "未命名需求",
       sourceProjectName: sourceProjectName.trim() || undefined,
+      projectName: projectName.trim() || undefined,
       projectId,
       requesterId: currentUser.id,
       ownerId,
@@ -2882,10 +2913,6 @@ function TicketForm({
     }
   }
 
-  function changeProject(value: string) {
-    setProjectId(value);
-  }
-
   return (
     <div className="modal-backdrop" role="presentation">
       <form className="ticket-form" onSubmit={submit}>
@@ -2907,16 +2934,6 @@ function TicketForm({
         <div className="form-grid">
           <label>
             <span>所属项目</span>
-            <select value={projectId} onChange={(event) => changeProject(event.target.value)}>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>表格项目名称</span>
             <select value={sourceProjectName} onChange={(event) => setSourceProjectName(event.target.value)}>
               {configuredProjectNames.map((option) => (
                 <option key={option.id} value={option.name}>
@@ -2924,6 +2941,14 @@ function TicketForm({
                 </option>
               ))}
             </select>
+          </label>
+          <label>
+            <span>项目名称</span>
+            <input
+              value={projectName}
+              onChange={(event) => setProjectName(event.target.value)}
+              placeholder="用户填写项目名称"
+            />
           </label>
           <label>
             <span>环节</span>
@@ -3103,7 +3128,7 @@ function TicketMiniCard({ ticket, projects, people }: { ticket: Ticket; projects
     <article className="ticket-mini">
       <div>
         <strong>{ticket.title}</strong>
-        <span>{project.name} · {owner?.name ?? "-"}</span>
+        <span>{getConfiguredProjectName(ticket, project)} · {owner?.name ?? "-"}</span>
       </div>
       <div>
         <span className={`pill ${statusTone[ticket.status]}`}>{ticket.status}</span>
@@ -3167,8 +3192,12 @@ function resolveTicketProject(ticket: Ticket, projects: Project[]) {
   return projects.find((item) => item.id === ticket.projectId) ?? initialProjects.find((item) => item.id === ticket.projectId) ?? initialProjects[0];
 }
 
-function getTicketProjectName(ticket: Ticket, projects: Project[]) {
-  return ticket.sourceProjectName ?? resolveTicketProject(ticket, projects).name;
+function getConfiguredProjectName(ticket: Ticket, project: Project) {
+  return ticket.sourceProjectName ?? project.name;
+}
+
+function getTicketProjectName(ticket: Ticket) {
+  return ticket.projectName?.trim() ?? "";
 }
 
 function getTicketRelation(ticket: Ticket, currentUser: Person, people: Person[]) {

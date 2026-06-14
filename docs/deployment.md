@@ -10,6 +10,7 @@ companyPlan now runs as a production data service, not a static GitHub Pages sit
 - Attachments: local files under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`.
 - Auth: username/password login with HttpOnly session cookie.
 - Permissions: enforced on the server for project, ticket, warning, gantt, attachment, and audit endpoints.
+- Demand-ticket field storage: `source_project_name` stores the admin-managed `所属项目`; `project_name` stores the user-entered `项目名称`; `project_id` remains the internal permission mapping.
 
 ## Required Commands
 
@@ -59,6 +60,8 @@ uploads/
 
 For SQLite, prefer filesystem snapshots or `sqlite3 .backup` while the service is running. The database uses WAL mode, so backup procedures must account for `companyplan.sqlite-wal` and `companyplan.sqlite-shm` if copying raw files.
 
+Schema migrations run at server startup. Back up the database before deploying changes that alter ticket fields, including the `tickets.project_name` column used for user-entered `项目名称`.
+
 ## Reverse Proxy
 
 Serve the Node process behind HTTPS. The API remains under `/api/*`; the app serves built assets under both `/` and `/companyPlan/` because Vite production assets use the GitHub Pages base path.
@@ -80,11 +83,12 @@ npm run build
 npm run test:scenarios
 ```
 
-`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, seeded attachment open, admin project-name/type-hour configuration, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
+`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary data directory and verifies real login, scoped rows, persisted tickets, seeded attachment open, admin `所属项目`/type-hour configuration, user-entered `项目名称` persistence, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
 
 Manual smoke checks:
 
 - Unauthenticated `/api/bootstrap` returns `401`.
+- New-demand form shows `所属项目` as the admin-configured select and `项目名称` as a text input, with no `项目池` field.
 - Admin can see global navigation and all ticket rows.
 - Non-admin users only see `需求提单` navigation and scoped rows.
 - Non-programmer users do not see `任务甘特图`.
