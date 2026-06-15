@@ -15,6 +15,7 @@ https://github.com/soyooAiTools/companyPlan
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
 - Demand ticket creation stores images, attachments, and files through the server.
 - Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in MySQL.
+- Directory data can be synced from the external Ops `/ops` API so usernames, role tags, tenants, project names, and project membership come from the production project system instead of seed fixtures.
 
 ## Source Package Contents
 
@@ -59,7 +60,7 @@ npm run start
 - All users see bottom tabs for `需求提单` and `延期任务预警`.
 - Only admin and programmer roles see `任务甘特图`.
 - Priorities are `紧急`, `优先`, `普通`, and `低优先`.
-- In new-demand creation, `所属项目` is selected from the admin-managed list; `项目名称` is user-entered free text and is not sourced from that list or from the internal project pool.
+- In new-demand creation with Ops sync enabled, `所属项目` is selected from `/ops/tenants` and `项目名称` is selected from the user's visible `/ops/projects`. In seeded local mode, `项目名称` remains a free text input for deterministic scenario tests.
 - Ticket age, status stay, remaining delivery time, warnings, and type defaults are calculated in hours.
 - Only admin can drag gantt timeline bars and resize their visual length.
 - Programmer can view scoped gantt rows but cannot drag them.
@@ -82,6 +83,8 @@ Default seed usernames:
 admin, producer, artist, ui, model, animator, dev, sound
 ```
 
+With Ops sync enabled, imported Ops usernames are also valid companyPlan usernames. Because the Ops API does not provide passwords, first-time imported users use `COMPANYPLAN_SEED_PASSWORD`; existing MySQL user passwords are preserved.
+
 Attachments are stored under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`. Persistent application data is stored in MySQL:
 
 ```text
@@ -90,9 +93,14 @@ COMPANYPLAN_MYSQL_PORT=3306
 COMPANYPLAN_MYSQL_USER=companyplan
 COMPANYPLAN_MYSQL_PASSWORD=<password>
 COMPANYPLAN_MYSQL_DATABASE=companyplan
+COMPANYPLAN_OPS_ENABLED=1
+COMPANYPLAN_OPS_BASE_URL=https://helperapi.soyootech.com
+COMPANYPLAN_OPS_CACHE_TTL_MS=600000
 ```
 
 Set `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` only for local setup or tests when the configured MySQL user is allowed to create the schema database.
+
+Set `COMPANYPLAN_OPS_ENABLED=0` to run only against seeded local directory data. In production, leaving it enabled syncs `/ops/users`, `/ops/tenants`, `/ops/projects`, `/ops/projects/:id/members`, `/ops/users/:id/projects`, `/ops/users/:id/project-stats`, and `/ops/tags`. When `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA` is not set, successful Ops sync hides legacy seed users/projects from bootstrap responses.
 
 To migrate an existing legacy SQLite database into an empty MySQL database:
 
@@ -112,7 +120,7 @@ npm run build
 npm run test:scenarios
 ```
 
-The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary upload directory and isolated MySQL database name, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
+The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary upload directory and isolated MySQL database name, disables Ops sync for deterministic fixtures, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
 
 Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
 

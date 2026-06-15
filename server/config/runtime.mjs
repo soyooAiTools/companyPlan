@@ -23,6 +23,16 @@ export const priorityOptions = new Set(["紧急", "优先", "普通", "低优先
 export const attachmentKinds = new Set(["图片", "附件", "文件"]);
 export const defaultDeliveryHours = 72;
 export const defaultRiskWarningHours = 8;
+export const opsIntegration = {
+  enabled: process.env.COMPANYPLAN_OPS_ENABLED !== "0",
+  baseUrl: process.env.COMPANYPLAN_OPS_BASE_URL ?? "https://helperapi.soyootech.com",
+  timeoutMs: Number(process.env.COMPANYPLAN_OPS_TIMEOUT_MS ?? "12000"),
+  cacheTtlMs: Number(process.env.COMPANYPLAN_OPS_CACHE_TTL_MS ?? `${10 * 60 * 1000}`),
+  concurrency: Number(process.env.COMPANYPLAN_OPS_CONCURRENCY ?? "8"),
+  projectMemberLimit: Number(process.env.COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT ?? "0"),
+  includeLocalData: process.env.COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA === "1",
+  adminUsernames: splitEnvSet(process.env.COMPANYPLAN_OPS_ADMIN_USERNAMES ?? ""),
+};
 export const crc32Table = Array.from({ length: 256 }, (_, value) => {
   let crc = value;
   for (let index = 0; index < 8; index += 1) {
@@ -30,3 +40,12 @@ export const crc32Table = Array.from({ length: 256 }, (_, value) => {
   }
   return crc >>> 0;
 });
+
+function splitEnvSet(value) {
+  return new Set(
+    String(value)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  );
+}

@@ -46,14 +46,14 @@ PM2 entry: `/srv/companyplan/start-companyplan.sh` sources `/srv/companyplan/com
 
 | 用户可见字段 | 数据来源 | 数据库存储 | 说明 |
 | --- | --- | --- | --- |
-| 所属项目 | 管理员页的 `所属项目列表` | `tickets.source_project_name` | 新建需求时是下拉框，服务端会校验必须在管理员配置列表里 |
-| 项目名称 | 用户自己填写 | `tickets.project_name` | 新建需求时是文本输入框，不能来自管理员列表，也不能来自内部项目池 |
-| 内部项目映射 | 服务端权限映射 | `tickets.project_id` | 用于权限和 scoped rows，不作为新建需求里的可见字段 |
+| 所属项目 | Ops 模式来自 `/ops/tenants`；seed 模式来自管理员页 `所属项目列表` | `tickets.source_project_name` | 新建需求时是下拉框，服务端会校验必须在当前启用列表里 |
+| 项目名称 | Ops 模式来自当前用户可见 `/ops/projects`；seed 模式用户自己填写 | `tickets.project_name` | Ops 模式是项目下拉；seed 模式是文本输入框 |
+| 内部项目映射 | Ops 模式来自所选 `/ops/projects[].id`；seed 模式来自服务端权限映射 | `tickets.project_id` | 用于权限和 scoped rows，不显示旧 `项目池` 字段 |
 
 前端展示规则：
 
 - 需求表第一列主文本显示 `所属项目`。
-- 第一列副文本显示用户填写的 `项目名称`。
+- 第一列副文本显示 `项目名称`；Ops 模式为所选 `/ops/projects[].name`，seed 模式为用户填写文本。
 - 新建需求表单不能出现 `项目池` 字段。
 - 新建需求表单不能出现旧字段名 `表格项目名称`。
 
@@ -222,7 +222,7 @@ UI 字段变更后建议用浏览器再确认：
 
 - 非管理员登录后只能看到 `需求提单`。
 - 新建需求里 `所属项目` 是 select。
-- 新建需求里 `项目名称` 是 input。
+- Ops 模式新建需求里 `项目名称` 是 project select；seed 模式仍是 input。
 - 新建需求里没有 `项目池`、没有 `表格项目名称`。
 
 ## 数据库迁移
@@ -232,9 +232,9 @@ schema 在 `server/db/company-plan-store.mjs` 里由 `initializeSchema()` 和 `m
 当前重要 ticket 字段：
 
 ```text
-source_project_name VARCHAR(160)  -- 所属项目，管理员配置列表
-project_name VARCHAR(160)         -- 项目名称，用户手填
-project_id VARCHAR(64)            -- 内部权限项目映射
+source_project_name VARCHAR(160)  -- 所属项目；Ops 模式来自 /ops/tenants
+project_name VARCHAR(160)         -- 项目名称；Ops 模式来自 /ops/projects，seed 模式用户手填
+project_id VARCHAR(64)            -- 内部权限项目映射；Ops 模式为 ops-project-{id}
 ```
 
 生产库迁移后可这样检查：

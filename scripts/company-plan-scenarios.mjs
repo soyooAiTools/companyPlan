@@ -132,6 +132,7 @@ async function ensureServer() {
       COMPANYPLAN_MYSQL_DATABASE: scenarioDatabaseName,
       COMPANYPLAN_MYSQL_CREATE_DATABASE: process.env.COMPANYPLAN_MYSQL_CREATE_DATABASE ?? "1",
       COMPANYPLAN_SEED_PASSWORD: seedPassword,
+      COMPANYPLAN_OPS_ENABLED: "0",
     },
     stdio: ["ignore", "pipe", "pipe"],
   });

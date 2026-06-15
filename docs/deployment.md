@@ -18,7 +18,7 @@ companyPlan now runs as a production data service, not a static GitHub Pages sit
 - Attachments: local files under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`.
 - Auth: username/password login with HttpOnly session cookie.
 - Permissions: enforced on the server for project, ticket, warning, gantt, attachment, and audit endpoints.
-- Demand-ticket field storage: `source_project_name` stores the admin-managed `所属项目`; `project_name` stores the user-entered `项目名称`; `project_id` remains the internal permission mapping.
+- Demand-ticket field storage: `source_project_name` stores `所属项目`; with Ops sync enabled this comes from `/ops/tenants`. `project_name` stores `项目名称`; with Ops sync enabled this comes from `/ops/projects`. `project_id` remains the internal permission mapping for the selected Ops project.
 
 ## Required Commands
 
@@ -47,11 +47,29 @@ COMPANYPLAN_SEED_PASSWORD=change-this-before-first-run
 COMPANYPLAN_COOKIE_SECURE=1
 COMPANYPLAN_SESSION_DAYS=7
 COMPANYPLAN_MAX_ATTACHMENT_BYTES=10485760
+COMPANYPLAN_OPS_ENABLED=1
+COMPANYPLAN_OPS_BASE_URL=https://helperapi.soyootech.com
+COMPANYPLAN_OPS_CACHE_TTL_MS=600000
+COMPANYPLAN_OPS_TIMEOUT_MS=12000
+COMPANYPLAN_OPS_CONCURRENCY=8
+COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT=0
+COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=0
+COMPANYPLAN_OPS_ADMIN_USERNAMES=
 ```
 
 Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS is terminated by a reverse proxy, keep `X-Forwarded-Proto` configured correctly because the server trusts one proxy hop.
 
 For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` lets the app create the configured database when the MySQL user has permission. Do not rely on that privilege for production unless it is part of the database operations policy.
+
+## Ops Directory Integration
+
+By default the server syncs directory data from `COMPANYPLAN_OPS_BASE_URL` under the `/ops` API described in `/nickTemp/ops-api.md`. The sync imports Ops users, tenants, projects, project membership, user project stats, and tags into the companyPlan directory tables, then uses those rows for bootstrap people, project pools, owner choices, role labels, `所属项目` options from tenants, and `项目名称` options from projects.
+
+Ops does not provide passwords, so newly imported Ops users are created with the current `COMPANYPLAN_SEED_PASSWORD` unless they already exist in MySQL. Set `COMPANYPLAN_OPS_ADMIN_USERNAMES` to a comma-separated list when specific Ops usernames should receive companyPlan admin permissions in addition to users tagged as `管理员`.
+
+When an Ops sync succeeds and `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=0`, bootstrap hides legacy seed directory data so fake users/projects do not mix into production views. Set `COMPANYPLAN_OPS_ENABLED=0` for fully isolated local tests, or set `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=1` only when deliberately comparing imported Ops data against existing local directory rows.
+
+`COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT=0` means fetch project members for all Ops projects. Use a positive number only as a temporary throttle during API debugging.
 
 The current production host keeps these values in `/srv/companyplan/companyplan.env` with `0600` permissions. PM2 starts `/srv/companyplan/start-companyplan.sh`, which sources that env file and then runs `node server/index.mjs`; this keeps database credentials out of PM2 command arguments.
 
@@ -87,7 +105,7 @@ uploads/
 
 Use `mysqldump` or managed MySQL snapshots for the database, and back up `uploads/` separately. Keep MySQL credentials out of git and PM2 dumps.
 
-Schema migrations run at server startup. Back up the database before deploying changes that alter ticket fields, including the `tickets.project_name` column used for user-entered `项目名称`.
+Schema migrations run at server startup. Back up the database before deploying changes that alter ticket fields, including the `tickets.project_name` column used for `项目名称`.
 
 ## SQLite Migration
 
@@ -128,12 +146,12 @@ npm run test:scenarios
 git diff --check
 ```
 
-`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary upload directory and isolated MySQL database name. It verifies real login, scoped rows, persisted tickets, seeded attachment open, admin `所属项目`/type-hour configuration, user-entered `项目名称` persistence, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
+`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary upload directory and isolated MySQL database name. It sets `COMPANYPLAN_OPS_ENABLED=0` for deterministic seeded fixtures, then verifies real login, scoped rows, persisted tickets, seeded attachment open, admin `所属项目`/type-hour configuration, user-entered `项目名称` persistence, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
 
 Manual smoke checks:
 
 - Unauthenticated `/api/bootstrap` returns `401`.
-- New-demand form shows `所属项目` as the admin-configured select and `项目名称` as a text input, with no `项目池` field.
+- With Ops sync enabled, the new-demand form shows `所属项目` as a tenant-backed select and `项目名称` as a project-backed select, with no `项目池` field.
 - Admin can see global navigation and all ticket rows.
 - Non-admin users only see `需求提单` navigation and scoped rows.
 - Non-programmer users do not see `任务甘特图`.

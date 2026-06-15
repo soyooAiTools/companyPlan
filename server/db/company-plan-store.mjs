@@ -16,11 +16,13 @@ import {
   defaultDeliveryHours,
   defaultRiskWarningHours,
   maxAttachmentBytes,
+  opsIntegration,
   sessionCookieName,
   uploadDir,
 } from "../config/runtime.mjs";
 
 let db;
+let externalDirectoryActive = false;
 
 export function bindCompanyPlanStore(database) {
   db = database;
@@ -263,6 +265,120 @@ async function seedDatabase() {
   await backfillStoredAttachments();
 }
 
+async function syncOpsDirectory(directory) {
+  const now = new Date().toISOString();
+  const passwordHash = hashPassword(seedPassword);
+  const knownPersonIds = new Set(directory.people.map((person) => person.id));
+  knownPersonIds.add("u-admin");
+
+  await db.transaction(async () => {
+    const upsertPerson = db.prepare(
+      `INSERT INTO people (id, username, password_hash, name, role_key, title, discipline, capacity, completion, disabled_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+       ON DUPLICATE KEY UPDATE
+         username = VALUES(username),
+         name = VALUES(name),
+         role_key = VALUES(role_key),
+         title = VALUES(title),
+         discipline = VALUES(discipline),
+         capacity = VALUES(capacity),
+         completion = VALUES(completion),
+         disabled_at = NULL`
+    );
+    for (const person of directory.people) {
+      await upsertPerson.run(
+        person.id,
+        person.username,
+        passwordHash,
+        person.name,
+        person.roleKey,
+        person.title,
+        person.discipline,
+        person.capacity,
+        person.completion
+      );
+    }
+
+    const upsertProject = db.prepare(
+      `INSERT INTO projects (
+        id, name, client, genre, channel, owner_id, status, phase, health, progress, due_in_days,
+        ticket_count, open_ticket_count, discipline_progress_json, blocker
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        client = VALUES(client),
+        genre = VALUES(genre),
+        channel = VALUES(channel),
+        owner_id = VALUES(owner_id),
+        status = VALUES(status),
+        phase = VALUES(phase),
+        health = VALUES(health),
+        progress = VALUES(progress),
+        due_in_days = VALUES(due_in_days),
+        ticket_count = VALUES(ticket_count),
+        open_ticket_count = VALUES(open_ticket_count),
+        discipline_progress_json = VALUES(discipline_progress_json),
+        blocker = VALUES(blocker)`
+    );
+    for (const project of directory.projects) {
+      await upsertProject.run(
+        project.id,
+        project.name,
+        project.client,
+        project.genre,
+        project.channel,
+        knownPersonIds.has(project.ownerId) ? project.ownerId : "u-admin",
+        project.status,
+        project.phase,
+        project.health,
+        project.progress,
+        project.dueInDays,
+        project.ticketCount,
+        project.openTicketCount,
+        JSON.stringify(project.disciplineProgress),
+        project.blocker
+      );
+    }
+
+    const deleteTeam = db.prepare("DELETE FROM project_team WHERE project_id = ?");
+    const insertTeam = db.prepare("INSERT IGNORE INTO project_team (project_id, person_id) VALUES (?, ?)");
+    for (const project of directory.projects) {
+      await deleteTeam.run(project.id);
+      for (const personId of project.teamIds) {
+        if (knownPersonIds.has(personId)) {
+          await insertTeam.run(project.id, personId);
+        }
+      }
+    }
+
+    const insertProjectName = db.prepare(
+      `INSERT INTO project_name_options (id, name, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, 1, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         name = VALUES(name),
+         is_active = 1,
+         sort_order = VALUES(sort_order),
+         updated_at = VALUES(updated_at)`
+    );
+    if (!opsIntegration.includeLocalData) {
+      await db.prepare("DELETE FROM project_name_options").run();
+    }
+    for (const [index, option] of directory.projectNameOptions.entries()) {
+      await insertProjectName.run(option.id, option.name, index, now, now);
+    }
+
+    await audit(null, "ops_directory_synced", "system", "ops", null, {
+      people: directory.people.length,
+      projects: directory.projects.length,
+      tenants: directory.tenants.length,
+      tags: directory.tags.length,
+      includeLocalData: opsIntegration.includeLocalData,
+    });
+  });
+
+  externalDirectoryActive = true;
+}
+
 async function migrateSchema() {
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
   await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
@@ -367,6 +483,8 @@ async function getCompanyConfig() {
       .map((row) => ({
         id: row.id,
         name: row.name,
+        projectId: String(row.id).startsWith("ops-project-") ? row.id : undefined,
+        source: getProjectNameOptionSource(row.id),
       })),
     ticketTypeSettings: (await db
       .prepare("SELECT * FROM ticket_type_settings WHERE is_active = 1 ORDER BY sort_order, label")
@@ -382,15 +500,18 @@ async function getCompanyConfig() {
 
 async function getVisibleProjectIds(user) {
   if (user.roleKey === "admin") {
-    return (await db.prepare("SELECT id FROM projects ORDER BY id").all()).map((row) => row.id);
+    const where = shouldUseExternalDirectoryOnly() ? "WHERE id LIKE 'ops-project-%'" : "";
+    return (await db.prepare(`SELECT id FROM projects ${where} ORDER BY id`).all()).map((row) => row.id);
   }
 
+  const externalProjectFilter = shouldUseExternalDirectoryOnly() ? "AND projects.id LIKE 'ops-project-%'" : "";
   return (await db
     .prepare(
       `SELECT DISTINCT projects.id
        FROM projects
        LEFT JOIN project_team ON project_team.project_id = projects.id
-       WHERE projects.owner_id = ? OR project_team.person_id = ?
+       WHERE (projects.owner_id = ? OR project_team.person_id = ?)
+       ${externalProjectFilter}
        ORDER BY projects.id`
     )
     .all(user.id, user.id))
@@ -406,7 +527,10 @@ async function getVisibleProjects(user) {
 
 async function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
   if (user.roleKey === "admin") {
-    const rows = await db.prepare("SELECT * FROM people WHERE disabled_at IS NULL ORDER BY id").all();
+    const where = shouldUseExternalDirectoryOnly()
+      ? "WHERE disabled_at IS NULL AND (id = 'u-admin' OR id LIKE 'ops-user-%')"
+      : "WHERE disabled_at IS NULL";
+    const rows = await db.prepare(`SELECT * FROM people ${where} ORDER BY id`).all();
     return Promise.all(rows.map(async (row) => mapPerson(row, await getPersonProjectIds(row.id))));
   }
 
@@ -429,14 +553,20 @@ async function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
 
 async function getVisibleTickets(user) {
   let rows;
+  const externalTicketFilter = shouldUseExternalDirectoryOnly()
+    ? "(project_id LIKE 'ops-project-%' OR requester_id LIKE 'ops-user-%' OR owner_id LIKE 'ops-user-%')"
+    : "";
   if (user.roleKey === "admin") {
-    rows = await db.prepare("SELECT * FROM tickets ORDER BY created_at DESC, id DESC").all();
+    const where = externalTicketFilter ? `WHERE ${externalTicketFilter}` : "";
+    rows = await db.prepare(`SELECT * FROM tickets ${where} ORDER BY created_at DESC, id DESC`).all();
   } else {
+    const andExternal = externalTicketFilter ? `AND ${externalTicketFilter}` : "";
     rows = await db
       .prepare(
         `SELECT DISTINCT *
          FROM tickets
-         WHERE requester_id = ? OR owner_id = ?
+         WHERE (requester_id = ? OR owner_id = ?)
+         ${andExternal}
          ORDER BY created_at DESC, id DESC`
       )
       .all(user.id, user.id);
@@ -1004,6 +1134,17 @@ function formatFileSize(bytes) {
   return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
 }
 
+function shouldUseExternalDirectoryOnly() {
+  return externalDirectoryActive && opsIntegration.enabled && !opsIntegration.includeLocalData;
+}
+
+function getProjectNameOptionSource(id) {
+  const value = String(id);
+  if (value.startsWith("ops-tenant-")) return "ops-tenant";
+  if (value.startsWith("ops-project-")) return "ops-project";
+  return "local";
+}
+
 export {
   audit,
   canMutateTicket,
@@ -1023,6 +1164,7 @@ export {
   mapPerson,
   nextTicketId,
   seedDatabase,
+  syncOpsDirectory,
   storeAttachment,
   verifyPassword,
 };

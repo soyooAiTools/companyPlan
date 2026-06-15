@@ -7,6 +7,7 @@ import {
   defaultDeliveryHours,
   defaultRiskWarningHours,
   mysqlConfig,
+  opsIntegration,
   port,
   priorityOptions,
   repoRoot,
@@ -38,9 +39,11 @@ import {
   mapPerson,
   nextTicketId,
   seedDatabase,
+  syncOpsDirectory,
   storeAttachment,
   verifyPassword,
 } from "./db/company-plan-store.mjs";
+import { createOpsDirectorySync } from "./integration/ops-directory.mjs";
 import { clearSessionCookie, createAuthMiddleware, setSessionCookie } from "./middleware/auth.mjs";
 import { securityHeaders, validateWriteOrigin } from "./middleware/security.mjs";
 import { registerCompanyPlanRoutes } from "./router/company-plan-routes.mjs";
@@ -54,6 +57,13 @@ const db = await createDatabase(mysqlConfig);
 bindCompanyPlanStore(db);
 await initializeSchema();
 await seedDatabase();
+
+const opsDirectorySync = createOpsDirectorySync({
+  config: opsIntegration,
+  logger,
+  syncDirectory: syncOpsDirectory,
+});
+await opsDirectorySync.sync({ force: true, reason: "startup" });
 
 const { attachSession, requireAuth, requireAdmin } = createAuthMiddleware({
   db,
@@ -96,6 +106,8 @@ const companyPlanService = createCompanyPlanService({
   cleanText,
   clampNumber,
   formatDateTime,
+  syncExternalDirectory: opsDirectorySync.sync,
+  getExternalDirectoryStatus: opsDirectorySync.getStatus,
 });
 const companyPlanController = createCompanyPlanController(companyPlanService, {
   setSessionCookie,

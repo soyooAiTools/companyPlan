@@ -111,6 +111,8 @@ export type BootstrapPayload = {
 export type ProjectNameOption = {
   id: string;
   name: string;
+  projectId?: string;
+  source?: "local" | "ops-project" | "ops-tenant";
 };
 
 export type TicketTypeSetting = {

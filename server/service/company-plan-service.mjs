@@ -37,7 +37,15 @@ export function createCompanyPlanService(deps) {
     cleanText,
     clampNumber,
     formatDateTime,
+    syncExternalDirectory = null,
+    getExternalDirectoryStatus = null,
   } = deps;
+
+  async function refreshExternalDirectory(reason) {
+    if (syncExternalDirectory) {
+      await syncExternalDirectory({ reason });
+    }
+  }
 
   return {
     getHealth() {
@@ -45,6 +53,7 @@ export function createCompanyPlanService(deps) {
         ok: true,
         database: databaseLabel,
         uploadDir,
+        ops: getExternalDirectoryStatus ? getExternalDirectoryStatus() : { enabled: false },
         startedAt: process.uptime(),
       };
     },
@@ -52,6 +61,7 @@ export function createCompanyPlanService(deps) {
     async login(payload, auditContext) {
       const username = String(payload?.username ?? "").trim();
       const password = String(payload?.password ?? "");
+      await refreshExternalDirectory("login");
       const user = await dao.findActivePersonByUsername(username);
 
       if (!user || !verifyPassword(password, user.password_hash)) {
@@ -85,6 +95,7 @@ export function createCompanyPlanService(deps) {
     },
 
     async bootstrap(user) {
+      await refreshExternalDirectory("bootstrap");
       return ok(await getBootstrap(user));
     },
 
@@ -149,6 +160,7 @@ export function createCompanyPlanService(deps) {
     },
 
     async createTicket(payload, user, auditContext) {
+      await refreshExternalDirectory("create_ticket");
       const visibleProjectIds = await getVisibleProjectIds(user);
 
       if (!visibleProjectIds.includes(payload?.projectId)) {

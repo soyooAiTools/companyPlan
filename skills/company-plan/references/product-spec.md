@@ -21,7 +21,7 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Use real login sessions with HttpOnly cookies.
 - Enforce permission scoping on the server for tickets, bootstrap data, attachments, and audit history.
 - Store uploaded attachments on disk and metadata in MySQL.
-- Store admin configuration for selectable `所属项目` names and per-ticket-type delivery/risk hours in MySQL.
+- Store selectable `所属项目` names and per-ticket-type delivery/risk hours in MySQL. In Ops production mode, `所属项目` names are synced from `/ops/tenants` and `项目名称` choices are synced from visible `/ops/projects`; seeded local mode keeps admin-managed `所属项目` configuration and free-text `项目名称` for deterministic tests.
 - Keep runtime data, uploaded files, cookies, and passwords out of git.
 
 Do not revert to frontend-only happy-path behavior, localStorage persistence, or account switching as a permission substitute unless the user explicitly asks for a separate prototype.
@@ -59,10 +59,10 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 
 ## Admin Configuration
 
-- Admin can configure the selectable `所属项目` list used by demand-ticket creation.
+- In seeded local mode, admin can configure the selectable `所属项目` list used by demand-ticket creation. In Ops production mode, the selectable `所属项目` list is synced from `/ops/tenants`.
 - The server must reject ticket creation when `所属项目` is not in the configured active list.
 - New tickets must store the configured `所属项目` display name separately from the internal project-pool mapping (`projectId`) used for permissions.
-- `项目名称` on the new-demand form is user-entered free text. It must not be populated from the admin `所属项目` list and must not display the internal project-pool mapping.
+- In Ops production mode, `项目名称` on the new-demand form is selected from the current user's visible `/ops/projects`; the selected project supplies both `tickets.project_name` and the internal `projectId` permission mapping. In seeded local mode, `项目名称` remains user-entered free text and must not be populated from the admin `所属项目` list or display the internal project-pool mapping.
 - Admin can configure default delivery hours and risk-warning hours for every ticket type/discipline, including `模型`.
 - New tickets must use the server-side type configuration to calculate expected delivery hours, remaining hours, and risk state.
 - Time calculations for ticket age, status stay, remaining delivery time, and warnings are hour-based, not day-based.

@@ -2076,12 +2076,38 @@ function TicketForm({
   onCreate: (ticket: TicketCreatePayload) => void | Promise<void>;
 }) {
   const [title, setTitle] = useState("");
-  const [projectId] = useState(projects[0]?.id ?? "p1");
-  const configuredProjectNames = config.projectNameOptions.length
-    ? config.projectNameOptions
-    : projects.map((project) => ({ id: project.id, name: project.name }));
-  const [sourceProjectName, setSourceProjectName] = useState(configuredProjectNames[0]?.name ?? projects[0]?.name ?? "");
-  const [projectName, setProjectName] = useState("");
+  const hasOpsProjects = useMemo(() => projects.some((project) => isOpsProjectId(project.id)), [projects]);
+  const configuredProjectNames = useMemo(
+    () => {
+      if (!config.projectNameOptions.length) {
+        return projects.map((project) => ({ id: project.id, name: project.name, projectId: project.id }));
+      }
+      if (!hasOpsProjects) return config.projectNameOptions;
+      const visibleClients = new Set(projects.map((project) => project.client));
+      const scopedOptions = config.projectNameOptions.filter((option) => option.source !== "ops-tenant" || visibleClients.has(option.name));
+      return scopedOptions.length ? scopedOptions : config.projectNameOptions;
+    },
+    [config.projectNameOptions, hasOpsProjects, projects]
+  );
+  const [sourceProjectOptionId, setSourceProjectOptionId] = useState(configuredProjectNames[0]?.id ?? "");
+  const selectedSourceProject =
+    configuredProjectNames.find((option) => option.id === sourceProjectOptionId) ?? configuredProjectNames[0];
+  const sourceProjectName = selectedSourceProject?.name ?? projects[0]?.name ?? "";
+  const projectNameCandidates = useMemo(() => {
+    if (!hasOpsProjects) return [];
+    const matchingProjects = projects.filter((project) => project.client === sourceProjectName);
+    return matchingProjects.length ? matchingProjects : projects;
+  }, [hasOpsProjects, projects, sourceProjectName]);
+  const [selectedProjectNameId, setSelectedProjectNameId] = useState(projectNameCandidates[0]?.id ?? projects[0]?.id ?? "p1");
+  const selectedProjectName =
+    projectNameCandidates.find((project) => project.id === selectedProjectNameId) ?? projectNameCandidates[0];
+  const projectId = hasOpsProjects
+    ? selectedProjectName?.id ?? projects[0]?.id ?? "p1"
+    : selectedSourceProject
+      ? resolveProjectNameOptionProjectId(selectedSourceProject, projects)
+      : projects[0]?.id ?? "p1";
+  const [manualProjectName, setManualProjectName] = useState("");
+  const projectName = hasOpsProjects ? selectedProjectName?.name ?? "" : manualProjectName;
   const [discipline, setDiscipline] = useState<Discipline>(
     currentUser.discipline !== "管理" && currentUser.discipline !== "项目" ? currentUser.discipline : "美术"
   );
@@ -2107,6 +2133,19 @@ function TicketForm({
       setOwnerId(ownerCandidates[0]?.id ?? "");
     }
   }, [canSubmitTicket, ownerCandidates]);
+
+  useEffect(() => {
+    if (!configuredProjectNames.some((option) => option.id === sourceProjectOptionId)) {
+      setSourceProjectOptionId(configuredProjectNames[0]?.id ?? "");
+    }
+  }, [configuredProjectNames, sourceProjectOptionId]);
+
+  useEffect(() => {
+    if (!hasOpsProjects) return;
+    if (!projectNameCandidates.some((project) => project.id === selectedProjectNameId)) {
+      setSelectedProjectNameId(projectNameCandidates[0]?.id ?? projects[0]?.id ?? "");
+    }
+  }, [hasOpsProjects, projectNameCandidates, projects, selectedProjectNameId]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2180,9 +2219,9 @@ function TicketForm({
         <div className="form-grid">
           <label>
             <span>所属项目</span>
-            <select value={sourceProjectName} onChange={(event) => setSourceProjectName(event.target.value)}>
+            <select value={selectedSourceProject?.id ?? ""} onChange={(event) => setSourceProjectOptionId(event.target.value)}>
               {configuredProjectNames.map((option) => (
-                <option key={option.id} value={option.name}>
+                <option key={option.id} value={option.id}>
                   {option.name}
                 </option>
               ))}
@@ -2190,11 +2229,21 @@ function TicketForm({
           </label>
           <label>
             <span>项目名称</span>
-            <input
-              value={projectName}
-              onChange={(event) => setProjectName(event.target.value)}
-              placeholder="用户填写项目名称"
-            />
+            {hasOpsProjects ? (
+              <select value={selectedProjectName?.id ?? ""} onChange={(event) => setSelectedProjectNameId(event.target.value)}>
+                {projectNameCandidates.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                value={manualProjectName}
+                onChange={(event) => setManualProjectName(event.target.value)}
+                placeholder="用户填写项目名称"
+              />
+            )}
           </label>
           <label>
             <span>环节</span>
@@ -2436,6 +2485,20 @@ function stageIndex(progress: number) {
 
 function resolveTicketProject(ticket: Ticket, projects: Project[]) {
   return projects.find((item) => item.id === ticket.projectId) ?? initialProjects.find((item) => item.id === ticket.projectId) ?? initialProjects[0];
+}
+
+function resolveProjectNameOptionProjectId(option: ProjectNameOption, projects: Project[]) {
+  return (
+    option.projectId ??
+    projects.find((project) => project.id === option.id)?.id ??
+    projects.find((project) => project.name === option.name)?.id ??
+    projects[0]?.id ??
+    "p1"
+  );
+}
+
+function isOpsProjectId(id: string) {
+  return id.startsWith("ops-project-");
 }
 
 function getConfiguredProjectName(ticket: Ticket, project: Project) {
