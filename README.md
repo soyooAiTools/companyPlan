@@ -20,8 +20,11 @@ https://github.com/soyooAiTools/companyPlan
 
 The handoff source package includes both frontend and backend code:
 
-- Frontend: `src/App.tsx`, `src/main.tsx`, `src/styles.css`, `index.html`, `vite.config.ts`.
-- Backend: `server/index.mjs`, `server/seed-data.mjs`.
+- Frontend entry: `src/App.tsx`, `src/main.tsx`, `index.html`, `vite.config.ts`.
+- Frontend layers: `src/api/`, `src/types/`, `src/layer/`, `src/view/CompanyPlan/`.
+- Backend entry: `server/index.mjs`.
+- Backend layers: `server/config/`, `server/db/`, `server/dao/`, `server/service/`, `server/controller/`, `server/router/`, `server/middleware/`, `server/core/`.
+- Seed data: `server/seed-data.mjs`.
 - Scenario tests: `scripts/company-plan-scenarios.mjs`.
 - Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`.
 - Codex skill: `skills/company-plan/`.
@@ -126,3 +129,16 @@ Before changing product behavior, read:
 - [skills/company-plan/SKILL.md](skills/company-plan/SKILL.md)
 - [skills/company-plan/references/product-spec.md](skills/company-plan/references/product-spec.md)
 - [skills/company-plan/README.md](skills/company-plan/README.md)
+
+## Architecture Notes
+
+- `src/api/request.ts` is the only frontend module that calls `fetch`; views call `src/api/modules/companyPlan.ts`.
+- `src/types/` owns shared TypeScript entities for people, projects, tickets, attachments, bootstrap data, and admin config.
+- `src/layer/` owns reusable frontend utilities and global styles.
+- `src/view/CompanyPlan/` owns the companyPlan page composition and page-private demo fallback data.
+- `server/index.mjs` wires the app, static serving, middleware, service, controller, router, and PM2 entrypoint.
+- `server/router/` only binds URLs to controller functions.
+- `server/controller/` handles Express request/response details.
+- `server/service/` handles business rules, permission-sensitive mutations, and audit orchestration.
+- `server/dao/` contains transactional write/read helpers used by services.
+- `server/db/company-plan-store.mjs` contains schema migration, seed materialization, scoped bootstrap reads, mapping helpers, attachment persistence, and audit storage.

@@ -207,7 +207,6 @@ button {
   background: var(--surface-soft);
 }
 
-.scope-panel select,
 .filters select,
 .ticket-form select,
 .ticket-form input,
@@ -222,7 +221,6 @@ button {
   outline: none;
 }
 
-.scope-panel select,
 .filters select,
 .ticket-form select,
 .ticket-form input,
@@ -230,7 +228,6 @@ button {
   padding: 8px 10px;
 }
 
-.scope-panel select:focus,
 .filters select:focus,
 .ticket-form select:focus,
 .ticket-form input:focus,

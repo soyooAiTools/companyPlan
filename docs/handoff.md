@@ -1,6 +1,6 @@
 # companyPlan 交接文档
 
-日期：2026-06-14
+日期：2026-06-15
 
 ## 项目概览
 
@@ -62,10 +62,21 @@ README.md                         项目说明
 docs/deployment.md                部署和运维说明
 docs/demand-ticket-readiness.md   生产交付审计
 docs/handoff.md                   本交接文档
-server/index.mjs                  Express API、SQLite schema、迁移、权限、审计
+server/index.mjs                  Express 入口、依赖装配、静态资源和 PM2 入口
+server/config/                    运行环境、端口、数据目录和常量
+server/db/                        SQLite 连接、schema、迁移、种子、scoped reads、映射、附件、审计
+server/dao/                       服务层使用的 SQL 读写和事务 helper
+server/service/                   业务规则、权限敏感变更、审计编排
+server/controller/                Express request/response 适配
+server/router/                    API URL 注册
+server/middleware/                session/auth、安全响应头和写请求 origin 校验
+server/core/                      日志等基础能力
 server/seed-data.mjs              种子用户、项目、提单、配置
-src/App.tsx                       主要 React 应用和页面逻辑
-src/styles.css                    样式
+src/App.tsx                       React 根挂载壳
+src/api/                          前端请求层，只有 request.ts 直接调用 fetch
+src/types/                        全局 TypeScript 类型
+src/layer/                        通用样式和工具
+src/view/CompanyPlan/             companyPlan 页面组合和页面私有 fallback 数据
 scripts/company-plan-scenarios.mjs 端到端生产场景测试
 skills/company-plan/              仓库内 Codex skill
 ```
@@ -197,7 +208,7 @@ UI 字段变更后建议用浏览器再确认：
 
 ## 数据库迁移
 
-schema 在 `server/index.mjs` 里由 `initializeSchema()` 和 `migrateSchema()` 管理。服务启动时自动迁移。
+schema 在 `server/db/company-plan-store.mjs` 里由 `initializeSchema()` 和 `migrateSchema()` 管理。服务启动时自动迁移。
 
 当前重要 ticket 字段：
 
@@ -276,10 +287,13 @@ other bars
 最近一次交接前已完成：
 
 ```text
-Commit: 38d8c74 fix: sync demand project fields
 Branch: main
 Remote: origin/main
+npm run build: passed
 npm run test:scenarios: passed, 349 assertions
+node --check server modules: passed
+quick_validate.py skills/company-plan: passed
+quick_validate.py /root/.codex/skills/company-plan: passed
 Production PM2 companyplan: online
 Public URL: https://playcools.top/companyPlan/
 ```
@@ -296,7 +310,7 @@ Public URL: https://playcools.top/companyPlan/
 
 1. 先读 `README.md`、`docs/deployment.md`、本文件和 `skills/company-plan/references/product-spec.md`。
 2. 本地跑 `npm install`、`npm run build`、`npm run test:scenarios`。
-3. 熟悉 `server/index.mjs` 的 schema、权限函数和 API。
-4. 熟悉 `src/App.tsx` 的主页面、TicketForm、表格、详情、预警和甘特。
+3. 熟悉 `server/index.mjs` 的装配方式，再看 `server/router/`、`server/controller/`、`server/service/`、`server/dao/`、`server/db/company-plan-store.mjs`。
+4. 熟悉 `src/view/CompanyPlan/index.tsx` 的主页面、TicketForm、表格、详情、预警和甘特。
 5. 每次改字段或权限，必须补场景测试。
 6. 每次部署前备份 `/srv/companyplan/data/companyplan.sqlite` 和 `/srv/companyplan/data/uploads`。

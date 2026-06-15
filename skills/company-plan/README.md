@@ -13,6 +13,8 @@ This skill documents the companyPlan production SaaS rules for future Codex sess
 - Production SaaS for playable-ad demand tickets and project visibility.
 - React/Vite frontend with a Node/Express API.
 - SQLite persistence, HttpOnly cookie sessions, server-side role scoping, local attachment storage, and audit logs.
+- Frontend is layered into `src/api`, `src/types`, `src/layer`, and `src/view/CompanyPlan`.
+- Backend is layered into `server/config`, `server/db`, `server/dao`, `server/service`, `server/controller`, `server/router`, `server/middleware`, and `server/core`; keep `server/index.mjs` as wiring/entrypoint.
 - Live URL: `https://playcools.top/companyPlan/`.
 - Production process: PM2 service `companyplan`, proxied by Nginx.
 - Runtime data path on the deployment server: `/srv/companyplan/data`.
@@ -50,6 +52,8 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 - Admin configuration changes and gantt timeline updates should also be audited.
 - Keep runtime data, SQLite files, uploads, cookies, and secrets out of git.
 - For deployment changes, update `docs/deployment.md` and verify PM2/Nginx behavior.
+- Do not collapse the frontend back into a single `src/App.tsx` implementation.
+- Do not collapse backend API handlers back into `server/index.mjs`; preserve Router -> Controller -> Service -> DAO/DB responsibilities.
 
 ## Gantt Rule
 
@@ -79,3 +83,21 @@ python /root/.codex/skills/.system/skill-creator/scripts/quick_validate.py /root
 For UI changes, also run browser checks across admin, programmer, and a non-programmer account. For deployment changes, verify the public `/companyPlan/` URL, unauthenticated API rejection, login, and `pm2 status companyplan`.
 
 The scenario test currently covers admin `所属项目`/type-hour configuration, user-entered `项目名称`, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, seeded attachment open, attachment open/download, read-only programmer gantt access, and admin gantt move/resize.
+
+## Current Code Map
+
+- `src/api/request.ts`: shared frontend request wrapper; the only frontend file that should call `fetch`.
+- `src/api/modules/companyPlan.ts`: companyPlan API functions used by views.
+- `src/types/companyPlan.ts`: shared frontend entity and API payload types.
+- `src/layer/style/reset.css`: global app styles.
+- `src/layer/utils/file.ts`: reusable file helpers.
+- `src/view/CompanyPlan/index.tsx`: companyPlan page composition.
+- `server/index.mjs`: runtime assembly, static asset serving, PM2 entrypoint.
+- `server/config/runtime.mjs`: env-derived paths, ports, constants.
+- `server/db/connection.mjs`: SQLite connection setup.
+- `server/db/company-plan-store.mjs`: schema, migrations, seed data materialization, scoped reads, mappers, attachments, audit persistence.
+- `server/dao/company-plan-dao.mjs`: SQL helpers for service mutations.
+- `server/service/company-plan-service.mjs`: business rules and mutation orchestration.
+- `server/controller/company-plan-controller.mjs`: Express request/response adaptation.
+- `server/router/company-plan-routes.mjs`: API route registration.
+- `server/middleware/auth.mjs` and `server/middleware/security.mjs`: session/auth and safety middleware.
