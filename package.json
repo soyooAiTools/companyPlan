@@ -7,15 +7,16 @@
     "dev": "vite --host 0.0.0.0",
     "dev:api": "node server/index.mjs",
     "build": "tsc -b && vite build",
+    "migrate:sqlite:mysql": "node scripts/migrate-sqlite-to-mysql.mjs",
     "start": "node server/index.mjs",
     "test:scenarios": "npm run build && node scripts/company-plan-scenarios.mjs",
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.1",
-    "better-sqlite3": "^12.10.0",
     "express": "^5.2.1",
     "lucide-react": "^0.468.0",
+    "mysql2": "^3.22.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "vite": "^7.2.7"

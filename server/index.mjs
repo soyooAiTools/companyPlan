@@ -3,9 +3,10 @@ import { join } from "node:path";
 import express from "express";
 import {
   dataDir,
-  databasePath,
+  databaseLabel,
   defaultDeliveryHours,
   defaultRiskWarningHours,
+  mysqlConfig,
   port,
   priorityOptions,
   repoRoot,
@@ -48,11 +49,11 @@ import { createCompanyPlanService } from "./service/company-plan-service.mjs";
 mkdirSync(dataDir, { recursive: true });
 mkdirSync(uploadDir, { recursive: true });
 
-const db = createDatabase(databasePath);
+const db = await createDatabase(mysqlConfig);
 
 bindCompanyPlanStore(db);
-initializeSchema();
-seedDatabase();
+await initializeSchema();
+await seedDatabase();
 
 const { attachSession, requireAuth, requireAdmin } = createAuthMiddleware({
   db,
@@ -70,7 +71,7 @@ app.use(validateWriteOrigin);
 const companyPlanDao = createCompanyPlanDao(db);
 const companyPlanService = createCompanyPlanService({
   dao: companyPlanDao,
-  databasePath,
+  databaseLabel,
   uploadDir,
   sessionTtlDays,
   statusOptions,

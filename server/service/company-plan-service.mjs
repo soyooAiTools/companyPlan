@@ -12,7 +12,7 @@ function fail(status, error) {
 export function createCompanyPlanService(deps) {
   const {
     dao,
-    databasePath,
+    databaseLabel,
     uploadDir,
     sessionTtlDays,
     statusOptions,
@@ -43,39 +43,39 @@ export function createCompanyPlanService(deps) {
     getHealth() {
       return {
         ok: true,
-        database: databasePath,
+        database: databaseLabel,
         uploadDir,
         startedAt: process.uptime(),
       };
     },
 
-    login(payload, auditContext) {
+    async login(payload, auditContext) {
       const username = String(payload?.username ?? "").trim();
       const password = String(payload?.password ?? "");
-      const user = dao.findActivePersonByUsername(username);
+      const user = await dao.findActivePersonByUsername(username);
 
       if (!user || !verifyPassword(password, user.password_hash)) {
-        audit(null, "login_failed", "person", username || "unknown", auditContext, { username });
+        await audit(null, "login_failed", "person", username || "unknown", auditContext, { username });
         return fail(401, "用户名或密码不正确");
       }
 
       const sessionId = crypto.randomBytes(32).toString("hex");
       const now = new Date();
       const expiresAt = new Date(now.getTime() + sessionTtlDays * 24 * 60 * 60 * 1000);
-      dao.insertSession(sessionId, user.id, now.toISOString(), expiresAt.toISOString());
+      await dao.insertSession(sessionId, user.id, now.toISOString(), expiresAt.toISOString());
 
-      audit(user.id, "login", "person", user.id, auditContext);
+      await audit(user.id, "login", "person", user.id, auditContext);
       return ok({
-        currentUser: mapPerson(user, getPersonProjectIds(user.id)),
+        currentUser: mapPerson(user, await getPersonProjectIds(user.id)),
         sessionId,
         expiresAt,
       });
     },
 
-    logout(sessionId, user, auditContext) {
+    async logout(sessionId, user, auditContext) {
       if (sessionId) {
-        dao.revokeSession(sessionId, new Date().toISOString());
-        audit(user?.id ?? null, "logout", "session", sessionId, auditContext);
+        await dao.revokeSession(sessionId, new Date().toISOString());
+        await audit(user?.id ?? null, "logout", "session", sessionId, auditContext);
       }
       return ok({ ok: true });
     },
@@ -84,11 +84,11 @@ export function createCompanyPlanService(deps) {
       return ok({ currentUser: user });
     },
 
-    bootstrap(user) {
-      return ok(getBootstrap(user));
+    async bootstrap(user) {
+      return ok(await getBootstrap(user));
     },
 
-    saveAdminConfig(payload, user, auditContext) {
+    async saveAdminConfig(payload, user, auditContext) {
       const projectNameOptions = Array.isArray(payload?.projectNameOptions) ? payload.projectNameOptions : null;
       const ticketTypeSettings = Array.isArray(payload?.ticketTypeSettings) ? payload.ticketTypeSettings : null;
 
@@ -112,7 +112,7 @@ export function createCompanyPlanService(deps) {
         return fail(400, "所属项目列表至少需要保留一个所属项目");
       }
 
-      const knownTypes = new Set(dao.listTicketTypeKeys());
+      const knownTypes = new Set(await dao.listTicketTypeKeys());
       const sanitizedTypeSettings = ticketTypeSettings
         .map((item) => ({
           typeKey: cleanText(item?.typeKey, 80),
@@ -126,7 +126,7 @@ export function createCompanyPlanService(deps) {
       }
 
       const now = new Date().toISOString();
-      const existingProjectNames = dao.listProjectNameMap();
+      const existingProjectNames = await dao.listProjectNameMap();
       const renamedProjectNames = sanitizedNames
         .map((option) => ({
           id: option.id,
@@ -135,27 +135,27 @@ export function createCompanyPlanService(deps) {
         }))
         .filter((item) => item.from && item.from !== item.to);
 
-      dao.transaction(() => {
-        dao.replaceProjectNameOptions(sanitizedNames, now);
-        dao.updateTicketTypeSettings(sanitizedTypeSettings, now);
-        dao.renameTicketSourceProjects(renamedProjectNames, now);
-        audit(user.id, "admin_config_updated", "system", "companyplan_config", auditContext, {
+      await dao.transaction(async () => {
+        await dao.replaceProjectNameOptions(sanitizedNames, now);
+        await dao.updateTicketTypeSettings(sanitizedTypeSettings, now);
+        await dao.renameTicketSourceProjects(renamedProjectNames, now);
+        await audit(user.id, "admin_config_updated", "system", "companyplan_config", auditContext, {
           projectNameOptions: sanitizedNames.length,
           ticketTypeSettings: sanitizedTypeSettings.length,
           renamedProjectNames: renamedProjectNames.map(({ id, from, to }) => ({ id, from, to })),
         });
       });
-      return ok({ config: getCompanyConfig(), bootstrap: getBootstrap(user) });
+      return ok({ config: await getCompanyConfig(), bootstrap: await getBootstrap(user) });
     },
 
-    createTicket(payload, user, auditContext) {
-      const visibleProjectIds = getVisibleProjectIds(user);
+    async createTicket(payload, user, auditContext) {
+      const visibleProjectIds = await getVisibleProjectIds(user);
 
       if (!visibleProjectIds.includes(payload?.projectId)) {
         return fail(403, "无权在该项目下创建提单");
       }
 
-      const owner = getPerson(payload?.ownerId);
+      const owner = await getPerson(payload?.ownerId);
       if (!owner) return fail(400, "负责人不存在");
       if (owner.discipline !== payload?.discipline) {
         return fail(400, "负责人岗位与提单环节不匹配");
@@ -163,12 +163,13 @@ export function createCompanyPlanService(deps) {
 
       const sourceProjectName = cleanText(payload?.sourceProjectName, 160);
       if (!sourceProjectName) return fail(400, "所属项目不能为空");
-      if (!isConfiguredProjectName(sourceProjectName)) {
+      if (!(await isConfiguredProjectName(sourceProjectName))) {
         return fail(400, "所属项目不在管理员配置列表中");
       }
 
-      const ticketId = nextTicketId();
+      const ticketId = await nextTicketId();
       const now = new Date();
+      const deliveryHours = await getDefaultDeliveryHours(payload.discipline);
       const ticket = {
         id: ticketId,
         title: cleanText(payload?.title, 120) || "未命名需求",
@@ -184,34 +185,34 @@ export function createCompanyPlanService(deps) {
         ageDays: 0,
         statusAgeDays: 0,
         dueInDays: 0,
-        dueInHours: getDefaultDeliveryHours(payload.discipline),
+        dueInHours: deliveryHours,
         timelineOffsetDays: 0,
         timelineOffsetHours: 0,
-        timelineSpanHours: getDefaultDeliveryHours(payload.discipline),
+        timelineSpanHours: deliveryHours,
         needType: cleanText(payload.needType, 80) || "资产补充",
         summary: cleanText(payload.summary, 2000) || "待补充说明",
         hyperlink: cleanText(payload.hyperlink, 500) || null,
         text: cleanText(payload.text, 500) || null,
       };
 
-      dao.transaction(() => {
-        dao.insertTicket(ticket, now);
+      await dao.transaction(async () => {
+        await dao.insertTicket(ticket, now);
         const attachments = Array.isArray(payload.attachments) ? payload.attachments.slice(0, 10) : [];
         for (const attachment of attachments) {
-          storeAttachment(ticketId, attachment, user.id, auditContext);
+          await storeAttachment(ticketId, attachment, user.id, auditContext);
         }
 
-        audit(user.id, "ticket_created", "ticket", ticketId, auditContext, {
+        await audit(user.id, "ticket_created", "ticket", ticketId, auditContext, {
           projectId: ticket.projectId,
           ownerId: ticket.ownerId,
           attachmentCount: attachments.length,
         });
       });
-      return ok({ ticket: getTicketById(ticketId) }, 201);
+      return ok({ ticket: await getTicketById(ticketId) }, 201);
     },
 
-    updateTicketStatus(ticketId, payload, user, auditContext) {
-      const ticket = getTicketById(ticketId);
+    async updateTicketStatus(ticketId, payload, user, auditContext) {
+      const ticket = await getTicketById(ticketId);
       if (!ticket) return fail(404, "提单不存在");
       if (!canReadTicket(user, ticket)) return fail(403, "无权访问该提单");
       if (!canMutateTicket(user, ticket)) return fail(403, "无权修改该提单状态");
@@ -220,16 +221,16 @@ export function createCompanyPlanService(deps) {
       if (!statusOptions.has(nextStatus)) return fail(400, "状态不合法");
 
       const now = new Date().toISOString();
-      dao.updateTicketStatus(ticket.id, nextStatus, now);
-      audit(user.id, "ticket_status_updated", "ticket", ticket.id, auditContext, {
+      await dao.updateTicketStatus(ticket.id, nextStatus, now);
+      await audit(user.id, "ticket_status_updated", "ticket", ticket.id, auditContext, {
         from: ticket.status,
         to: nextStatus,
       });
-      return ok({ ticket: getTicketById(ticket.id) });
+      return ok({ ticket: await getTicketById(ticket.id) });
     },
 
-    updateTicketTimeline(ticketId, payload, user, auditContext) {
-      const ticket = getTicketById(ticketId);
+    async updateTicketTimeline(ticketId, payload, user, auditContext) {
+      const ticket = await getTicketById(ticketId);
       if (!ticket) return fail(404, "提单不存在");
       if (user.roleKey !== "admin") return fail(403, "只有管理员可以调整甘特视觉时间线");
 
@@ -240,8 +241,8 @@ export function createCompanyPlanService(deps) {
       const offsetHours = clampNumber(requestedOffset, 0, 24 * 30, fallbackOffsetHours);
       const spanHours = clampNumber(requestedSpan, 1, 24 * 45, fallbackSpanHours);
 
-      dao.updateTicketTimeline(ticket.id, offsetHours, spanHours, new Date().toISOString());
-      audit(user.id, "ticket_timeline_updated", "ticket", ticket.id, auditContext, {
+      await dao.updateTicketTimeline(ticket.id, offsetHours, spanHours, new Date().toISOString());
+      await audit(user.id, "ticket_timeline_updated", "ticket", ticket.id, auditContext, {
         from: {
           offsetHours: fallbackOffsetHours,
           spanHours: fallbackSpanHours,
@@ -251,13 +252,13 @@ export function createCompanyPlanService(deps) {
           spanHours,
         },
       });
-      return ok({ ticket: getTicketById(ticket.id) });
+      return ok({ ticket: await getTicketById(ticket.id) });
     },
 
-    getAttachmentFile(attachmentId, user, mode) {
-      const attachment = dao.findAttachmentById(attachmentId);
+    async getAttachmentFile(attachmentId, user, mode) {
+      const attachment = await dao.findAttachmentById(attachmentId);
       if (!attachment) return fail(404, "附件不存在");
-      const ticket = getTicketById(attachment.ticket_id);
+      const ticket = await getTicketById(attachment.ticket_id);
       if (!ticket || !canReadTicket(user, ticket)) {
         return fail(403, mode === "download" ? "无权下载该附件" : "无权打开该附件");
       }
@@ -267,9 +268,9 @@ export function createCompanyPlanService(deps) {
       return ok({ attachment, mode });
     },
 
-    listAudit(query, user) {
+    async listAudit(query, user) {
       if (user.roleKey !== "admin") return fail(403, "只有管理员可以查看审计日志");
-      const rows = dao.listAuditEvents(clampNumber(query?.limit, 1, 200, 100));
+      const rows = await dao.listAuditEvents(clampNumber(query?.limit, 1, 200, 100));
       return ok({
         events: rows.map((row) => ({
           id: row.id,

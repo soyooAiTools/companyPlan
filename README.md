@@ -10,11 +10,11 @@ https://github.com/soyooAiTools/companyPlan
 
 ## Scope
 
-- Production data system with a Node API, SQLite database, HttpOnly session cookies, server-side row permissions, local attachment storage, and audit logging.
+- Production data system with a Node API, MySQL database, HttpOnly session cookies, server-side row permissions, local attachment storage, and audit logging.
 - The frontend never decides row-level permissions by itself. `/api/bootstrap` returns only data scoped to the logged-in account.
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
 - Demand ticket creation stores images, attachments, and files through the server.
-- Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in SQLite.
+- Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in MySQL.
 
 ## Source Package Contents
 
@@ -26,6 +26,7 @@ The handoff source package includes both frontend and backend code:
 - Backend layers: `server/config/`, `server/db/`, `server/dao/`, `server/service/`, `server/controller/`, `server/router/`, `server/middleware/`, `server/core/`.
 - Seed data: `server/seed-data.mjs`.
 - Scenario tests: `scripts/company-plan-scenarios.mjs`.
+- SQLite-to-MySQL migration: `scripts/migrate-sqlite-to-mysql.mjs`.
 - Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`.
 - Codex skill: `skills/company-plan/`.
 - Dependency manifests: `package.json`, `package-lock.json`.
@@ -38,7 +39,6 @@ dist/
 .git/
 data/
 uploads/
-companyplan.sqlite
 .env
 production secrets
 ```
@@ -82,11 +82,22 @@ Default seed usernames:
 admin, producer, artist, ui, model, animator, dev, sound
 ```
 
-Data is stored under `COMPANYPLAN_DATA_DIR` or `./data`:
+Attachments are stored under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`. Persistent application data is stored in MySQL:
 
 ```text
-companyplan.sqlite
-uploads/
+COMPANYPLAN_MYSQL_HOST=127.0.0.1
+COMPANYPLAN_MYSQL_PORT=3306
+COMPANYPLAN_MYSQL_USER=companyplan
+COMPANYPLAN_MYSQL_PASSWORD=<password>
+COMPANYPLAN_MYSQL_DATABASE=companyplan
+```
+
+Set `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` only for local setup or tests when the configured MySQL user is allowed to create the schema database.
+
+To migrate an existing legacy SQLite database into an empty MySQL database:
+
+```bash
+COMPANYPLAN_SQLITE_PATH=/srv/companyplan/data/companyplan.sqlite npm run migrate:sqlite:mysql
 ```
 
 ## Build
@@ -101,7 +112,7 @@ npm run build
 npm run test:scenarios
 ```
 
-The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary SQLite data directory, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
+The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary upload directory and isolated MySQL database name, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
 
 Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
 
@@ -116,7 +127,7 @@ npm run build
 npm run start
 ```
 
-Set `COMPANYPLAN_DATA_DIR` to a persistent volume and back it up. Put the server behind HTTPS and set `COMPANYPLAN_COOKIE_SECURE=1` when TLS is terminated before the app.
+Set the `COMPANYPLAN_MYSQL_*` variables to a persistent MySQL database and set `COMPANYPLAN_DATA_DIR` or `COMPANYPLAN_UPLOAD_DIR` to a persistent uploads volume. Put the server behind HTTPS and set `COMPANYPLAN_COOKIE_SECURE=1` when TLS is terminated before the app.
 
 More deployment notes: [docs/deployment.md](docs/deployment.md).
 

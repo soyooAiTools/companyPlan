@@ -7,7 +7,7 @@
 当前版本已经从前端 happy-path 原型升级为可真实承载业务数据的单节点生产数据系统：
 
 - Node/Express API 提供真实数据写入接口。
-- SQLite 持久化用户、项目、项目成员、提单、附件元数据、会话和审计日志。
+- MySQL 持久化用户、项目、项目成员、提单、附件元数据、会话和审计日志。
 - 附件文件落盘到服务端 `uploads/`。
 - 种子演示附件也会生成真实文件，避免只有文件名和大小但无法打开。
 - 登录使用服务端账号和 HttpOnly 会话 Cookie。
@@ -47,7 +47,7 @@ npm run build
 npm run test:scenarios
 ```
 
-`test:scenarios` 会自动构建前端，在 `COMPANYPLAN_SCENARIO_PORT` 或 `4274` 启动隔离的生产 Node 服务，使用临时 SQLite 数据库和真实 Chromium 浏览器验证。只有显式设置 `COMPANY_PLAN_URL` 时才会测试已有服务：
+`test:scenarios` 会自动构建前端，在 `COMPANYPLAN_SCENARIO_PORT` 或 `4274` 启动隔离的生产 Node 服务，使用隔离 MySQL database 名称、临时上传目录和真实 Chromium 浏览器验证。只有显式设置 `COMPANY_PLAN_URL` 时才会测试已有服务：
 
 - 未登录访问 `/api/bootstrap` 返回 `401`。
 - 管理员通过真实用户名/密码登录后可见全局导航、三张底部工作表和新增工作表入口。
@@ -72,14 +72,14 @@ npm run test:scenarios
 
 ## 当前生产边界
 
-- 当前实现是单节点 SQLite + 本地磁盘附件，适合内网小团队和单实例部署。
-- 生产数据必须备份 `companyplan.sqlite`、WAL/SHM 文件和 `uploads/`。
+- 当前实现是 Node/Express + MySQL + 本地磁盘附件，适合内网小团队和单实例服务部署。
+- 生产数据必须备份 MySQL database 和 `uploads/`。
 - 首次启动的种子密码必须通过 `COMPANYPLAN_SEED_PASSWORD` 改掉。
 - 对公网或企业正式域名部署时必须使用 HTTPS，并设置 `COMPANYPLAN_COOKIE_SECURE=1`。
 
 ## 后续增强
 
-- 多节点部署：迁移数据库到 PostgreSQL，附件迁移到 S3/OSS/MinIO。
+- 多节点部署：保留 MySQL 托管/主从或迁移到 PostgreSQL，附件迁移到 S3/OSS/MinIO。
 - 企业身份：接入 SSO/OIDC/LDAP，并支持账号禁用、强制改密和密码策略。
 - 运维保障：增加健康检查探针、结构化日志、指标、备份恢复演练和容量告警。
 - 数据治理：增加可配置角色、字段级审计、附件病毒扫描和保留策略。

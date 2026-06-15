@@ -18,15 +18,15 @@ export function createCompanyPlanController(service, { setSessionCookie, clearSe
       response.json(service.getHealth());
     },
 
-    login(request, response) {
-      const result = service.login(request.body, auditContext(request));
+    async login(request, response) {
+      const result = await service.login(request.body, auditContext(request));
       if (!result.ok) return sendResult(response, result);
       setSessionCookie(response, result.body.sessionId, result.body.expiresAt);
       return response.json({ currentUser: result.body.currentUser });
     },
 
-    logout(request, response) {
-      const result = service.logout(request.sessionId, request.user, auditContext(request));
+    async logout(request, response) {
+      const result = await service.logout(request.sessionId, request.user, auditContext(request));
       clearSessionCookie(response);
       return sendResult(response, result);
     },
@@ -35,34 +35,34 @@ export function createCompanyPlanController(service, { setSessionCookie, clearSe
       return sendResult(response, service.getSession(request.user));
     },
 
-    bootstrap(request, response) {
-      return sendResult(response, service.bootstrap(request.user));
+    async bootstrap(request, response) {
+      return sendResult(response, await service.bootstrap(request.user));
     },
 
-    saveAdminConfig(request, response) {
-      return sendResult(response, service.saveAdminConfig(request.body, request.user, auditContext(request)));
+    async saveAdminConfig(request, response) {
+      return sendResult(response, await service.saveAdminConfig(request.body, request.user, auditContext(request)));
     },
 
-    createTicket(request, response) {
-      return sendResult(response, service.createTicket(request.body ?? {}, request.user, auditContext(request)));
+    async createTicket(request, response) {
+      return sendResult(response, await service.createTicket(request.body ?? {}, request.user, auditContext(request)));
     },
 
-    updateTicketStatus(request, response) {
+    async updateTicketStatus(request, response) {
       return sendResult(
         response,
-        service.updateTicketStatus(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
+        await service.updateTicketStatus(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
       );
     },
 
-    updateTicketTimeline(request, response) {
+    async updateTicketTimeline(request, response) {
       return sendResult(
         response,
-        service.updateTicketTimeline(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
+        await service.updateTicketTimeline(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
       );
     },
 
-    openAttachment(request, response) {
-      const result = service.getAttachmentFile(request.params.attachmentId, request.user, "open");
+    async openAttachment(request, response) {
+      const result = await service.getAttachmentFile(request.params.attachmentId, request.user, "open");
       if (!result.ok) return sendResult(response, result);
       const { attachment } = result.body;
       response.setHeader("Content-Type", attachment.mime_type || "application/octet-stream");
@@ -70,15 +70,15 @@ export function createCompanyPlanController(service, { setSessionCookie, clearSe
       return response.sendFile(attachment.storage_path);
     },
 
-    downloadAttachment(request, response) {
-      const result = service.getAttachmentFile(request.params.attachmentId, request.user, "download");
+    async downloadAttachment(request, response) {
+      const result = await service.getAttachmentFile(request.params.attachmentId, request.user, "download");
       if (!result.ok) return sendResult(response, result);
       const { attachment } = result.body;
       return response.download(attachment.storage_path, attachment.name);
     },
 
-    audit(request, response) {
-      return sendResult(response, service.listAudit(request.query, request.user));
+    async audit(request, response) {
+      return sendResult(response, await service.listAudit(request.query, request.user));
     },
   };
 }

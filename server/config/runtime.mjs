@@ -4,7 +4,16 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 export const dataDir = process.env.COMPANYPLAN_DATA_DIR ?? join(repoRoot, "data");
 export const uploadDir = process.env.COMPANYPLAN_UPLOAD_DIR ?? join(dataDir, "uploads");
-export const databasePath = process.env.COMPANYPLAN_DB_PATH ?? join(dataDir, "companyplan.sqlite");
+export const mysqlConfig = {
+  host: process.env.COMPANYPLAN_MYSQL_HOST ?? "127.0.0.1",
+  port: Number(process.env.COMPANYPLAN_MYSQL_PORT ?? "3306"),
+  user: process.env.COMPANYPLAN_MYSQL_USER ?? "companyplan",
+  password: process.env.COMPANYPLAN_MYSQL_PASSWORD ?? "",
+  database: process.env.COMPANYPLAN_MYSQL_DATABASE ?? "companyplan",
+  connectionLimit: Number(process.env.COMPANYPLAN_MYSQL_CONNECTION_LIMIT ?? "10"),
+  createDatabase: process.env.COMPANYPLAN_MYSQL_CREATE_DATABASE === "1",
+};
+export const databaseLabel = `mysql://${mysqlConfig.user}@${mysqlConfig.host}:${mysqlConfig.port}/${mysqlConfig.database}`;
 export const sessionCookieName = "companyplan_session";
 export const sessionTtlDays = Number(process.env.COMPANYPLAN_SESSION_DAYS ?? "7");
 export const maxAttachmentBytes = Number(process.env.COMPANYPLAN_MAX_ATTACHMENT_BYTES ?? `${10 * 1024 * 1024}`);

@@ -1,6 +1,6 @@
 ---
 name: company-plan
-description: Design, build, deploy, or refine the companyPlan playable-ad production SaaS with WPS/KDocs-style demand-ticket tables, Node/SQLite persistence, real login sessions, role-scoped permissions, project/person/task tracking, attachments, audit logs, admin overview, PM2/Nginx deployment, and production validation. Use when the user asks about companyPlan, 试玩广告项目管理, 需求提单, 金山表格复刻, SaaS, 权限隔离, 部署, or continuing this repo.
+description: Design, build, deploy, or refine the companyPlan playable-ad production SaaS with WPS/KDocs-style demand-ticket tables, Node/MySQL persistence, real login sessions, role-scoped permissions, project/person/task tracking, attachments, audit logs, admin overview, PM2/Nginx deployment, and production validation. Use when the user asks about companyPlan, 试玩广告项目管理, 需求提单, 金山表格复刻, SaaS, 权限隔离, 部署, or continuing this repo.
 ---
 
 # companyPlan
@@ -9,7 +9,7 @@ description: Design, build, deploy, or refine the companyPlan playable-ad produc
 
 Use this skill for companyPlan work: a production SaaS for a playable-ad studio that manages many concurrent projects, cross-discipline demand tickets, owner progress, attachments, audit history, and admin/global visibility.
 
-The current app is a React/Vite frontend backed by a Node/Express API, SQLite persistence, HttpOnly cookie sessions, local attachment storage, and server-side permission checks. Do not treat it as a frontend-only prototype unless the user explicitly asks to create a separate prototype.
+The current app is a React/Vite frontend backed by a Node/Express API, MySQL persistence, HttpOnly cookie sessions, local attachment storage, and server-side permission checks. Do not treat it as a frontend-only prototype unless the user explicitly asks to create a separate prototype.
 
 For detailed product rules, read `references/product-spec.md` before changing behavior or UI.
 
@@ -31,7 +31,7 @@ For repo setup and deployment notes, read `README.md` in this skill folder and t
 - Do not reintroduce WPS controls the user rejected, especially `字段管理`, `筛选`, `排序`, `分组`, `公告`, `行高`, and `导出`.
 - Do not show the document-style top title bar on the `需求提单` page.
 - Do not bypass the backend with localStorage writes, static in-memory seed edits, or client-only permission filtering.
-- Do not commit runtime data, SQLite files, uploaded attachments, PM2 dumps, cookies, or passwords.
+- Do not commit runtime data, MySQL dumps, uploaded attachments, PM2 dumps, cookies, or passwords.
 - Do not make a marketing landing page. The first screen should be the usable table experience.
 - Keep demand tickets capable of representing images, attachments, and files.
 - Keep `我的提单` visible so users can distinguish requests they created from tasks assigned to them.

@@ -1,15 +1,15 @@
 import { sessionCookieName } from "../config/runtime.mjs";
 
 export function createAuthMiddleware({ db, mapPerson, getPersonProjectIds }) {
-  function attachSession(request, _response, next) {
+  async function loadSession(request) {
     const cookies = parseCookies(request.headers.cookie ?? "");
     const sessionId = cookies[sessionCookieName];
     request.sessionId = sessionId;
     request.user = null;
 
-    if (!sessionId) return next();
+    if (!sessionId) return;
 
-    const session = db
+    const session = await db
       .prepare(
         `SELECT sessions.*, people.*
          FROM sessions
@@ -19,16 +19,27 @@ export function createAuthMiddleware({ db, mapPerson, getPersonProjectIds }) {
       .get(sessionId, new Date().toISOString());
 
     if (session) {
-      request.user = mapPerson(session, getPersonProjectIds(session.person_id));
+      request.user = mapPerson(session, await getPersonProjectIds(session.person_id));
     }
-    return next();
   }
 
-  function requireAuth(request, response, next) {
-    attachSession(request, response, () => {
+  async function attachSession(request, _response, next) {
+    try {
+      await loadSession(request);
+      return next();
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  async function requireAuth(request, response, next) {
+    try {
+      await loadSession(request);
       if (!request.user) return response.status(401).json({ error: "请先登录" });
       return next();
-    });
+    } catch (error) {
+      return next(error);
+    }
   }
 
   function requireAdmin(request, response, next) {

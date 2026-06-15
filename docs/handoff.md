@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-companyPlan 是试玩广告制作团队的需求提单和项目协作 SaaS。当前版本不是静态原型，而是 React/Vite 前端 + Node/Express API + SQLite 持久化的单节点生产服务。
+companyPlan 是试玩广告制作团队的需求提单和项目协作 SaaS。当前版本不是静态原型，而是 React/Vite 前端 + Node/Express API + MySQL 持久化的生产服务。
 
 线上地址：
 
@@ -24,7 +24,7 @@ https://github.com/soyooAiTools/companyPlan
 PM2 process: companyplan
 Port: 4174
 Production data: /srv/companyplan/data
-SQLite: /srv/companyplan/data/companyplan.sqlite
+Database: MySQL database `companyplan`
 Uploads: /srv/companyplan/data/uploads
 ```
 
@@ -64,7 +64,7 @@ docs/demand-ticket-readiness.md   生产交付审计
 docs/handoff.md                   本交接文档
 server/index.mjs                  Express 入口、依赖装配、静态资源和 PM2 入口
 server/config/                    运行环境、端口、数据目录和常量
-server/db/                        SQLite 连接、schema、迁移、种子、scoped reads、映射、附件、审计
+server/db/                        MySQL 连接池、schema、迁移、种子、scoped reads、映射、附件、审计
 server/dao/                       服务层使用的 SQL 读写和事务 helper
 server/service/                   业务规则、权限敏感变更、审计编排
 server/controller/                Express request/response 适配
@@ -78,6 +78,7 @@ src/types/                        全局 TypeScript 类型
 src/layer/                        通用样式和工具
 src/view/CompanyPlan/             companyPlan 页面组合和页面私有 fallback 数据
 scripts/company-plan-scenarios.mjs 端到端生产场景测试
+scripts/migrate-sqlite-to-mysql.mjs 旧 SQLite 数据一次性迁移到 MySQL
 skills/company-plan/              仓库内 Codex skill
 ```
 
@@ -143,15 +144,20 @@ COMPANYPLAN_SEED_PASSWORD
 ```text
 PORT=4174
 COMPANYPLAN_DATA_DIR=/srv/companyplan/data
-COMPANYPLAN_DB_PATH=/srv/companyplan/data/companyplan.sqlite
 COMPANYPLAN_UPLOAD_DIR=/srv/companyplan/data/uploads
+COMPANYPLAN_MYSQL_HOST=127.0.0.1
+COMPANYPLAN_MYSQL_PORT=3306
+COMPANYPLAN_MYSQL_USER=companyplan
+COMPANYPLAN_MYSQL_PASSWORD=<生产 MySQL 密码>
+COMPANYPLAN_MYSQL_DATABASE=companyplan
+COMPANYPLAN_MYSQL_CONNECTION_LIMIT=10
 COMPANYPLAN_COOKIE_SECURE=1
 COMPANYPLAN_SESSION_DAYS=7
 COMPANYPLAN_MAX_ATTACHMENT_BYTES=10485760
 COMPANYPLAN_SEED_PASSWORD=<生产种子密码>
 ```
 
-不要把生产密码、cookie、SQLite 数据库、uploads 打包进代码仓库或源码交接包。
+不要把生产密码、cookie、MySQL dump、uploads 打包进代码仓库或源码交接包。
 
 ## 部署流程
 
@@ -160,7 +166,7 @@ COMPANYPLAN_SEED_PASSWORD=<生产种子密码>
 ```bash
 backup_dir=/srv/companyplan/backups/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$backup_dir"
-sqlite3 /srv/companyplan/data/companyplan.sqlite ".backup '$backup_dir/companyplan.sqlite'"
+mysqldump -h "$COMPANYPLAN_MYSQL_HOST" -P "$COMPANYPLAN_MYSQL_PORT" -u "$COMPANYPLAN_MYSQL_USER" -p "$COMPANYPLAN_MYSQL_DATABASE" > "$backup_dir/companyplan.sql"
 tar -C /srv/companyplan/data -czf "$backup_dir/uploads.tar.gz" uploads
 ```
 
@@ -168,6 +174,7 @@ tar -C /srv/companyplan/data -czf "$backup_dir/uploads.tar.gz" uploads
 
 ```bash
 npm run build
+COMPANYPLAN_SQLITE_PATH=/srv/companyplan/data/companyplan.sqlite npm run migrate:sqlite:mysql  # 仅旧 SQLite 首次迁移时执行
 pm2 restart companyplan --update-env
 ```
 
@@ -213,23 +220,21 @@ schema 在 `server/db/company-plan-store.mjs` 里由 `initializeSchema()` 和 `m
 当前重要 ticket 字段：
 
 ```text
-source_project_name TEXT  -- 所属项目，管理员配置列表
-project_name TEXT         -- 项目名称，用户手填
-project_id TEXT           -- 内部权限项目映射
+source_project_name VARCHAR(160)  -- 所属项目，管理员配置列表
+project_name VARCHAR(160)         -- 项目名称，用户手填
+project_id VARCHAR(64)            -- 内部权限项目映射
 ```
 
 生产库迁移后可这样检查：
 
 ```bash
-sqlite3 /srv/companyplan/data/companyplan.sqlite "PRAGMA table_info(tickets);"
-sqlite3 /srv/companyplan/data/companyplan.sqlite "SELECT COUNT(*) FROM pragma_foreign_key_check;"
-sqlite3 /srv/companyplan/data/companyplan.sqlite "SELECT COUNT(*) FROM tickets WHERE project_name IS NULL OR trim(project_name) = '';"
+mysql -h "$COMPANYPLAN_MYSQL_HOST" -P "$COMPANYPLAN_MYSQL_PORT" -u "$COMPANYPLAN_MYSQL_USER" -p "$COMPANYPLAN_MYSQL_DATABASE" -e "SHOW COLUMNS FROM tickets;"
+mysql -h "$COMPANYPLAN_MYSQL_HOST" -P "$COMPANYPLAN_MYSQL_PORT" -u "$COMPANYPLAN_MYSQL_USER" -p "$COMPANYPLAN_MYSQL_DATABASE" -e "SELECT COUNT(*) AS missing_project_name FROM tickets WHERE project_name IS NULL OR trim(project_name) = '';"
 ```
 
 期望：
 
 ```text
-foreign_key_check = 0
 missing project_name = 0
 ```
 
@@ -313,4 +318,4 @@ Public URL: https://playcools.top/companyPlan/
 3. 熟悉 `server/index.mjs` 的装配方式，再看 `server/router/`、`server/controller/`、`server/service/`、`server/dao/`、`server/db/company-plan-store.mjs`。
 4. 熟悉 `src/view/CompanyPlan/index.tsx` 的主页面、TicketForm、表格、详情、预警和甘特。
 5. 每次改字段或权限，必须补场景测试。
-6. 每次部署前备份 `/srv/companyplan/data/companyplan.sqlite` 和 `/srv/companyplan/data/uploads`。
+6. 每次部署前备份 MySQL database 和 `/srv/companyplan/data/uploads`。

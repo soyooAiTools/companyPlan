@@ -17,11 +17,11 @@ The company is a playable-ad production studio with about 100 people, about 150 
 
 - Use React/Vite patterns already in the repo for the frontend.
 - Use the Node/Express API for all mutable data and bootstrap reads.
-- Persist data in SQLite with a configured production data directory.
+- Persist data in MySQL with configured production database credentials.
 - Use real login sessions with HttpOnly cookies.
 - Enforce permission scoping on the server for tickets, bootstrap data, attachments, and audit history.
-- Store uploaded attachments on disk and metadata in SQLite.
-- Store admin configuration for selectable `所属项目` names and per-ticket-type delivery/risk hours in SQLite.
+- Store uploaded attachments on disk and metadata in MySQL.
+- Store admin configuration for selectable `所属项目` names and per-ticket-type delivery/risk hours in MySQL.
 - Keep runtime data, uploaded files, cookies, and passwords out of git.
 
 Do not revert to frontend-only happy-path behavior, localStorage persistence, or account switching as a permission substitute unless the user explicitly asks for a separate prototype.
@@ -51,7 +51,7 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - Login should use username/password against seeded or persisted users.
 - Sessions should be server-issued and stored in HttpOnly cookies.
 - `/api/bootstrap` must reject unauthenticated requests.
-- Ticket create/update flows must write to SQLite and remain visible after reload and process restart.
+- Ticket create/update flows must write to MySQL and remain visible after reload and process restart.
 - Attachment upload must persist file content and metadata.
 - Seeded/demo attachments must materialize real stored files, not metadata-only placeholders.
 - Attachment detail actions should support opening and downloading stored files when file content exists.
@@ -66,7 +66,7 @@ Do not revert to frontend-only happy-path behavior, localStorage persistence, or
 - Admin can configure default delivery hours and risk-warning hours for every ticket type/discipline, including `模型`.
 - New tickets must use the server-side type configuration to calculate expected delivery hours, remaining hours, and risk state.
 - Time calculations for ticket age, status stay, remaining delivery time, and warnings are hour-based, not day-based.
-- Configuration changes must persist in SQLite and be returned through authenticated bootstrap data.
+- Configuration changes must persist in MySQL and be returned through authenticated bootstrap data.
 
 ## Demand Ticket Table
 

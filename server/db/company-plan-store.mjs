@@ -26,143 +26,150 @@ export function bindCompanyPlanStore(database) {
   db = database;
 }
 
-function initializeSchema() {
-  db.exec(`
+async function initializeSchema() {
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS people (
-      id TEXT PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL,
-      name TEXT NOT NULL,
-      role_key TEXT NOT NULL,
-      title TEXT NOT NULL,
-      discipline TEXT NOT NULL,
-      capacity INTEGER NOT NULL,
-      completion INTEGER NOT NULL,
-      disabled_at TEXT
-    );
+      id VARCHAR(64) PRIMARY KEY,
+      username VARCHAR(80) NOT NULL UNIQUE,
+      password_hash VARCHAR(255) NOT NULL,
+      name VARCHAR(120) NOT NULL,
+      role_key VARCHAR(40) NOT NULL,
+      title VARCHAR(120) NOT NULL,
+      discipline VARCHAR(80) NOT NULL,
+      capacity INT NOT NULL,
+      completion INT NOT NULL,
+      disabled_at VARCHAR(40)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS projects (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      client TEXT NOT NULL,
-      genre TEXT NOT NULL,
-      channel TEXT NOT NULL,
-      owner_id TEXT NOT NULL REFERENCES people(id),
-      status TEXT NOT NULL,
-      phase TEXT NOT NULL,
-      health TEXT NOT NULL,
-      progress INTEGER NOT NULL,
-      due_in_days INTEGER NOT NULL,
-      ticket_count INTEGER NOT NULL,
-      open_ticket_count INTEGER NOT NULL,
+      id VARCHAR(64) PRIMARY KEY,
+      name VARCHAR(160) NOT NULL,
+      client VARCHAR(160) NOT NULL,
+      genre VARCHAR(120) NOT NULL,
+      channel VARCHAR(120) NOT NULL,
+      owner_id VARCHAR(64) NOT NULL,
+      status VARCHAR(80) NOT NULL,
+      phase VARCHAR(80) NOT NULL,
+      health VARCHAR(80) NOT NULL,
+      progress INT NOT NULL,
+      due_in_days INT NOT NULL,
+      ticket_count INT NOT NULL,
+      open_ticket_count INT NOT NULL,
       discipline_progress_json TEXT NOT NULL,
-      blocker TEXT NOT NULL
-    );
+      blocker TEXT NOT NULL,
+      CONSTRAINT fk_projects_owner FOREIGN KEY (owner_id) REFERENCES people(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS project_team (
-      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-      PRIMARY KEY (project_id, person_id)
-    );
+      project_id VARCHAR(64) NOT NULL,
+      person_id VARCHAR(64) NOT NULL,
+      PRIMARY KEY (project_id, person_id),
+      CONSTRAINT fk_project_team_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      CONSTRAINT fk_project_team_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS tickets (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      source_project_name TEXT,
-      project_name TEXT,
-      project_id TEXT NOT NULL REFERENCES projects(id),
-      requester_id TEXT NOT NULL REFERENCES people(id),
-      owner_id TEXT NOT NULL REFERENCES people(id),
-      discipline TEXT NOT NULL,
-      start_at TEXT NOT NULL,
-      status TEXT NOT NULL CHECK(status IN ('排队中', '进行中', '阻塞', '已完成')),
-      priority TEXT NOT NULL CHECK(priority IN ('紧急', '优先', '普通', '低优先')),
-      age_days INTEGER NOT NULL DEFAULT 0,
-      status_age_days INTEGER NOT NULL DEFAULT 0,
-      due_in_days INTEGER NOT NULL DEFAULT 3,
-      due_in_hours INTEGER NOT NULL DEFAULT 72,
-      timeline_offset_days INTEGER DEFAULT 0,
-      timeline_offset_hours INTEGER DEFAULT 0,
-      timeline_span_hours INTEGER DEFAULT 72,
-      need_type TEXT NOT NULL,
+      id VARCHAR(64) PRIMARY KEY,
+      title VARCHAR(160) NOT NULL,
+      source_project_name VARCHAR(160),
+      project_name VARCHAR(160),
+      project_id VARCHAR(64) NOT NULL,
+      requester_id VARCHAR(64) NOT NULL,
+      owner_id VARCHAR(64) NOT NULL,
+      discipline VARCHAR(80) NOT NULL,
+      start_at VARCHAR(40) NOT NULL,
+      status VARCHAR(20) NOT NULL CHECK(status IN ('排队中', '进行中', '阻塞', '已完成')),
+      priority VARCHAR(20) NOT NULL CHECK(priority IN ('紧急', '优先', '普通', '低优先')),
+      age_days INT NOT NULL DEFAULT 0,
+      status_age_days INT NOT NULL DEFAULT 0,
+      due_in_days INT NOT NULL DEFAULT 3,
+      due_in_hours INT NOT NULL DEFAULT 72,
+      timeline_offset_days INT DEFAULT 0,
+      timeline_offset_hours INT DEFAULT 0,
+      timeline_span_hours INT DEFAULT 72,
+      need_type VARCHAR(120) NOT NULL,
       summary TEXT NOT NULL,
-      hyperlink TEXT,
+      hyperlink VARCHAR(500),
       text TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      status_updated_at TEXT NOT NULL
-    );
+      created_at VARCHAR(40) NOT NULL,
+      updated_at VARCHAR(40) NOT NULL,
+      status_updated_at VARCHAR(40) NOT NULL,
+      CONSTRAINT fk_tickets_project FOREIGN KEY (project_id) REFERENCES projects(id),
+      CONSTRAINT fk_tickets_requester FOREIGN KEY (requester_id) REFERENCES people(id),
+      CONSTRAINT fk_tickets_owner FOREIGN KEY (owner_id) REFERENCES people(id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS attachments (
-      id TEXT PRIMARY KEY,
-      ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      kind TEXT NOT NULL CHECK(kind IN ('图片', '附件', '文件')),
-      mime_type TEXT,
-      size_bytes INTEGER,
-      size_label TEXT NOT NULL,
+      id VARCHAR(64) PRIMARY KEY,
+      ticket_id VARCHAR(64) NOT NULL,
+      name VARCHAR(200) NOT NULL,
+      kind VARCHAR(20) NOT NULL CHECK(kind IN ('图片', '附件', '文件')),
+      mime_type VARCHAR(160),
+      size_bytes BIGINT,
+      size_label VARCHAR(80) NOT NULL,
       storage_path TEXT,
-      sha256 TEXT,
-      created_at TEXT NOT NULL
-    );
+      sha256 VARCHAR(64),
+      created_at VARCHAR(40) NOT NULL,
+      CONSTRAINT fk_attachments_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS sessions (
-      id TEXT PRIMARY KEY,
-      person_id TEXT NOT NULL REFERENCES people(id) ON DELETE CASCADE,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL,
-      revoked_at TEXT
-    );
+      id VARCHAR(128) PRIMARY KEY,
+      person_id VARCHAR(64) NOT NULL,
+      created_at VARCHAR(40) NOT NULL,
+      expires_at VARCHAR(40) NOT NULL,
+      revoked_at VARCHAR(40),
+      CONSTRAINT fk_sessions_person FOREIGN KEY (person_id) REFERENCES people(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS audit_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      actor_id TEXT,
-      action TEXT NOT NULL,
-      entity_type TEXT NOT NULL,
-      entity_id TEXT NOT NULL,
-      ip TEXT,
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      actor_id VARCHAR(64),
+      action VARCHAR(80) NOT NULL,
+      entity_type VARCHAR(80) NOT NULL,
+      entity_id VARCHAR(128) NOT NULL,
+      ip VARCHAR(80),
       user_agent TEXT,
       metadata_json TEXT,
-      created_at TEXT NOT NULL
-    );
+      created_at VARCHAR(40) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS project_name_options (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+      id VARCHAR(80) PRIMARY KEY,
+      name VARCHAR(160) NOT NULL UNIQUE,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at VARCHAR(40) NOT NULL,
+      updated_at VARCHAR(40) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
     CREATE TABLE IF NOT EXISTS ticket_type_settings (
-      type_key TEXT PRIMARY KEY,
-      label TEXT NOT NULL,
-      default_delivery_hours INTEGER NOT NULL,
-      risk_warning_hours INTEGER NOT NULL DEFAULT 8,
-      is_active INTEGER NOT NULL DEFAULT 1,
-      sort_order INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
-    CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets(requester_id);
-    CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(owner_id);
-    CREATE INDEX IF NOT EXISTS idx_sessions_person ON sessions(person_id);
-    CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_events(entity_type, entity_id);
+      type_key VARCHAR(80) PRIMARY KEY,
+      label VARCHAR(120) NOT NULL,
+      default_delivery_hours INT NOT NULL,
+      risk_warning_hours INT NOT NULL DEFAULT 8,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      sort_order INT NOT NULL DEFAULT 0,
+      updated_at VARCHAR(40) NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
-  migrateSchema();
+  await ensureIndex("idx_tickets_project", "tickets", "project_id");
+  await ensureIndex("idx_tickets_requester", "tickets", "requester_id");
+  await ensureIndex("idx_tickets_owner", "tickets", "owner_id");
+  await ensureIndex("idx_sessions_person", "sessions", "person_id");
+  await ensureIndex("idx_audit_entity", "audit_events", "entity_type, entity_id");
+  await migrateSchema();
 }
 
-function seedDatabase() {
-  const count = db.prepare("SELECT COUNT(*) AS count FROM people").get().count;
+async function seedDatabase() {
+  const count = (await db.prepare("SELECT COUNT(*) AS count FROM people").get()).count;
   if (count > 0) {
-    seedConfigIfMissing();
-    backfillStoredAttachments();
+    await seedConfigIfMissing();
+    await backfillStoredAttachments();
     return;
   }
 
-  const insertAll = db.transaction(() => {
+  await db.transaction(async () => {
     const insertPerson = db.prepare(
       `INSERT INTO people (id, username, password_hash, name, role_key, title, discipline, capacity, completion)
        VALUES (@id, @username, @passwordHash, @name, @roleKey, @title, @discipline, @capacity, @completion)`
@@ -192,11 +199,11 @@ function seedDatabase() {
     );
 
     for (const person of seedPeople) {
-      insertPerson.run({ ...person, passwordHash: hashPassword(seedPassword) });
+      await insertPerson.run({ ...person, passwordHash: hashPassword(seedPassword) });
     }
 
     for (const project of seedProjects) {
-      insertProject.run({
+      await insertProject.run({
         ...project,
         ownerId: project.ownerId,
         dueInDays: project.dueInDays,
@@ -205,16 +212,16 @@ function seedDatabase() {
         disciplineProgressJson: JSON.stringify(project.disciplineProgress),
       });
       for (const personId of project.teamIds) {
-        insertTeam.run(project.id, personId);
+        await insertTeam.run(project.id, personId);
       }
     }
 
     const now = new Date().toISOString();
-    seedConfigRows(now);
+    await seedConfigRows(now);
     for (const ticket of seedTickets) {
       const dueInHours = ticket.dueInHours ?? Math.max(1, (ticket.dueInDays ?? 3) * 24);
       const timelineOffsetHours = ticket.timelineOffsetHours ?? Math.max(0, (ticket.timelineOffsetDays ?? ticket.ageDays ?? 0) * 24);
-      insertTicket.run({
+      await insertTicket.run({
         ...ticket,
         sourceProjectName: ticket.sourceProjectName ?? null,
         projectName: ticket.projectName ?? ticket.sourceProjectName ?? null,
@@ -229,7 +236,7 @@ function seedDatabase() {
       for (const attachment of ticket.attachments ?? []) {
         const id = crypto.randomUUID();
         const storedAttachment = materializeAttachmentFile(ticket.id, attachment, id);
-        db.prepare(
+        await db.prepare(
           `INSERT INTO attachments (id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).run(
@@ -247,195 +254,84 @@ function seedDatabase() {
       }
     }
 
-    audit(null, "database_seeded", "system", "companyplan", null, {
+    await audit(null, "database_seeded", "system", "companyplan", null, {
       people: seedPeople.length,
       projects: seedProjects.length,
       tickets: seedTickets.length,
     });
   });
-
-  insertAll();
-  backfillStoredAttachments();
+  await backfillStoredAttachments();
 }
 
-function migrateSchema() {
-  ensureColumn("tickets", "project_name", "TEXT");
-  ensureColumn("tickets", "due_in_hours", "INTEGER NOT NULL DEFAULT 72");
-  ensureColumn("tickets", "timeline_offset_hours", "INTEGER DEFAULT 0");
-  ensureColumn("tickets", "timeline_span_hours", "INTEGER DEFAULT 72");
+async function migrateSchema() {
+  await ensureColumn("tickets", "project_name", "VARCHAR(160)");
+  await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
+  await ensureColumn("tickets", "timeline_offset_hours", "INT DEFAULT 0");
+  await ensureColumn("tickets", "timeline_span_hours", "INT DEFAULT 72");
 
-  db.prepare(
+  await db.prepare(
     "UPDATE tickets SET project_name = source_project_name WHERE (project_name IS NULL OR trim(project_name) = '') AND source_project_name IS NOT NULL"
   ).run();
 
-  db.prepare(
+  await db.prepare(
     "UPDATE tickets SET due_in_hours = due_in_days * 24 WHERE due_in_hours = 72 AND due_in_days > 0 AND due_in_days != 3"
   ).run();
-  db.prepare(
+  await db.prepare(
     "UPDATE tickets SET timeline_offset_hours = COALESCE(timeline_offset_days, age_days, 0) * 24 WHERE timeline_offset_hours IS NULL OR timeline_offset_hours = 0"
   ).run();
-  db.prepare(
-    "UPDATE tickets SET timeline_span_hours = MAX(4, due_in_hours) WHERE timeline_span_hours IS NULL"
+  await db.prepare(
+    "UPDATE tickets SET timeline_span_hours = GREATEST(4, due_in_hours) WHERE timeline_span_hours IS NULL"
   ).run();
 
-  const ticketSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tickets'").get()?.sql ?? "";
-  if (ticketSchema.includes("'P0'") || ticketSchema.includes("'P1'") || ticketSchema.includes("'P2'")) {
-    rebuildTicketsForChinesePriorities();
-  } else {
-    db.prepare(
-      `UPDATE tickets
-       SET priority = CASE priority
-         WHEN 'P0' THEN '紧急'
-         WHEN 'P1' THEN '优先'
-         WHEN 'P2' THEN '普通'
-         ELSE priority
-       END`
-    ).run();
-  }
-
-  repairAttachmentForeignKey();
+  await db.prepare(
+    `UPDATE tickets
+     SET priority = CASE priority
+       WHEN 'P0' THEN '紧急'
+       WHEN 'P1' THEN '优先'
+       WHEN 'P2' THEN '普通'
+       ELSE priority
+     END`
+  ).run();
 }
 
-function ensureColumn(tableName, columnName, definition) {
-  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all().map((column) => column.name);
-  if (!columns.includes(columnName)) {
-    db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
+async function ensureColumn(tableName, columnName, definition) {
+  if (!(await db.columnExists(tableName, columnName))) {
+    await db.prepare(`ALTER TABLE ${safeIdentifier(tableName)} ADD COLUMN ${safeIdentifier(columnName)} ${definition}`).run();
   }
 }
 
-function rebuildTicketsForChinesePriorities() {
-  db.pragma("foreign_keys = OFF");
-  try {
-    db.exec(`
-      DROP TABLE IF EXISTS tickets_next;
-      ALTER TABLE tickets RENAME TO tickets_old;
-
-      CREATE TABLE tickets (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        source_project_name TEXT,
-        project_name TEXT,
-        project_id TEXT NOT NULL REFERENCES projects(id),
-        requester_id TEXT NOT NULL REFERENCES people(id),
-        owner_id TEXT NOT NULL REFERENCES people(id),
-        discipline TEXT NOT NULL,
-        start_at TEXT NOT NULL,
-        status TEXT NOT NULL CHECK(status IN ('排队中', '进行中', '阻塞', '已完成')),
-        priority TEXT NOT NULL CHECK(priority IN ('紧急', '优先', '普通', '低优先')),
-        age_days INTEGER NOT NULL DEFAULT 0,
-        status_age_days INTEGER NOT NULL DEFAULT 0,
-        due_in_days INTEGER NOT NULL DEFAULT 3,
-        due_in_hours INTEGER NOT NULL DEFAULT 72,
-        timeline_offset_days INTEGER DEFAULT 0,
-        timeline_offset_hours INTEGER DEFAULT 0,
-        timeline_span_hours INTEGER DEFAULT 72,
-        need_type TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        hyperlink TEXT,
-        text TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        status_updated_at TEXT NOT NULL
-      );
-
-      INSERT INTO tickets (
-        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status, priority,
-        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
-        need_type, summary, hyperlink, text, created_at, updated_at, status_updated_at
-      )
-      SELECT
-        id, title, source_project_name, project_name, project_id, requester_id, owner_id, discipline, start_at, status,
-        CASE priority
-          WHEN 'P0' THEN '紧急'
-          WHEN 'P1' THEN '优先'
-          WHEN 'P2' THEN '普通'
-          WHEN '低优先' THEN '低优先'
-          WHEN '普通' THEN '普通'
-          WHEN '优先' THEN '优先'
-          WHEN '紧急' THEN '紧急'
-          ELSE '普通'
-        END,
-        age_days, status_age_days, due_in_days, due_in_hours, timeline_offset_days, timeline_offset_hours, timeline_span_hours,
-        need_type, summary, hyperlink, text, created_at, updated_at, status_updated_at
-      FROM tickets_old;
-
-      DROP TABLE tickets_old;
-      CREATE INDEX IF NOT EXISTS idx_tickets_project ON tickets(project_id);
-      CREATE INDEX IF NOT EXISTS idx_tickets_requester ON tickets(requester_id);
-      CREATE INDEX IF NOT EXISTS idx_tickets_owner ON tickets(owner_id);
-    `);
-  } finally {
-    db.pragma("foreign_keys = ON");
+async function ensureIndex(indexName, tableName, columns) {
+  if (!(await db.indexExists(tableName, indexName))) {
+    await db.prepare(`CREATE INDEX ${safeIdentifier(indexName)} ON ${safeIdentifier(tableName)} (${columns})`).run();
   }
 }
 
-function repairAttachmentForeignKey() {
-  const foreignKeys = db.prepare("PRAGMA foreign_key_list(attachments)").all();
-  if (!foreignKeys.every((item) => item.table === "tickets")) {
-    db.pragma("foreign_keys = OFF");
-    try {
-      db.exec(`
-        DROP TABLE IF EXISTS attachments_next;
-        CREATE TABLE attachments_next (
-          id TEXT PRIMARY KEY,
-          ticket_id TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
-          name TEXT NOT NULL,
-          kind TEXT NOT NULL CHECK(kind IN ('图片', '附件', '文件')),
-          mime_type TEXT,
-          size_bytes INTEGER,
-          size_label TEXT NOT NULL,
-          storage_path TEXT,
-          sha256 TEXT,
-          created_at TEXT NOT NULL
-        );
-
-        INSERT INTO attachments_next (
-          id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at
-        )
-        SELECT id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at
-        FROM attachments;
-
-        DROP TABLE attachments;
-        ALTER TABLE attachments_next RENAME TO attachments;
-      `);
-    } finally {
-      db.pragma("foreign_keys = ON");
-    }
-  }
-
-  const violations = db.prepare("PRAGMA foreign_key_check").all();
-  if (violations.length) {
-    throw new Error(`Migration left ${violations.length} foreign key violation(s)`);
-  }
-}
-
-function seedConfigIfMissing() {
+async function seedConfigIfMissing() {
   const now = new Date().toISOString();
-  const insertDefaults = db.transaction(() => {
-    seedConfigRows(now);
+  await db.transaction(async () => {
+    await seedConfigRows(now);
   });
-  insertDefaults();
 }
 
-function seedConfigRows(now) {
-  const projectNameCount = db.prepare("SELECT COUNT(*) AS count FROM project_name_options").get().count;
+async function seedConfigRows(now) {
+  const projectNameCount = (await db.prepare("SELECT COUNT(*) AS count FROM project_name_options").get()).count;
   if (projectNameCount === 0) {
     const insertProjectName = db.prepare(
       `INSERT INTO project_name_options (id, name, is_active, sort_order, created_at, updated_at)
        VALUES (?, ?, 1, ?, ?, ?)`
     );
-    seedProjectNameOptions.forEach((option, index) => {
-      insertProjectName.run(option.id, option.name, index, now, now);
-    });
+    for (const [index, option] of seedProjectNameOptions.entries()) {
+      await insertProjectName.run(option.id, option.name, index, now, now);
+    }
   }
 
   const insertType = db.prepare(
-    `INSERT OR IGNORE INTO ticket_type_settings (
+    `INSERT IGNORE INTO ticket_type_settings (
       type_key, label, default_delivery_hours, risk_warning_hours, is_active, sort_order, updated_at
     ) VALUES (?, ?, ?, ?, 1, ?, ?)`
   );
-  seedTicketTypeSettings.forEach((setting, index) => {
-    insertType.run(
+  for (const [index, setting] of seedTicketTypeSettings.entries()) {
+    await insertType.run(
       setting.typeKey,
       setting.label,
       setting.defaultDeliveryHours,
@@ -443,16 +339,16 @@ function seedConfigRows(now) {
       index,
       now
     );
-  });
+  }
 }
 
-function getBootstrap(user) {
-  const projects = getVisibleProjects(user);
+async function getBootstrap(user) {
+  const projects = await getVisibleProjects(user);
   const projectIds = projects.map((project) => project.id);
-  const tickets = getVisibleTickets(user);
+  const tickets = await getVisibleTickets(user);
   const ticketPersonIds = Array.from(new Set(tickets.flatMap((ticket) => [ticket.requesterId, ticket.ownerId])));
-  const people = getVisiblePeople(user, projectIds, ticketPersonIds);
-  const config = getCompanyConfig();
+  const people = await getVisiblePeople(user, projectIds, ticketPersonIds);
+  const config = await getCompanyConfig();
 
   return {
     currentUser: user,
@@ -463,18 +359,18 @@ function getBootstrap(user) {
   };
 }
 
-function getCompanyConfig() {
+async function getCompanyConfig() {
   return {
-    projectNameOptions: db
+    projectNameOptions: (await db
       .prepare("SELECT * FROM project_name_options WHERE is_active = 1 ORDER BY sort_order, name")
-      .all()
+      .all())
       .map((row) => ({
         id: row.id,
         name: row.name,
       })),
-    ticketTypeSettings: db
+    ticketTypeSettings: (await db
       .prepare("SELECT * FROM ticket_type_settings WHERE is_active = 1 ORDER BY sort_order, label")
-      .all()
+      .all())
       .map((row) => ({
         typeKey: row.type_key,
         label: row.label,
@@ -484,12 +380,12 @@ function getCompanyConfig() {
   };
 }
 
-function getVisibleProjectIds(user) {
+async function getVisibleProjectIds(user) {
   if (user.roleKey === "admin") {
-    return db.prepare("SELECT id FROM projects ORDER BY id").all().map((row) => row.id);
+    return (await db.prepare("SELECT id FROM projects ORDER BY id").all()).map((row) => row.id);
   }
 
-  return db
+  return (await db
     .prepare(
       `SELECT DISTINCT projects.id
        FROM projects
@@ -497,24 +393,25 @@ function getVisibleProjectIds(user) {
        WHERE projects.owner_id = ? OR project_team.person_id = ?
        ORDER BY projects.id`
     )
-    .all(user.id, user.id)
+    .all(user.id, user.id))
     .map((row) => row.id);
 }
 
-function getVisibleProjects(user) {
-  const ids = getVisibleProjectIds(user);
+async function getVisibleProjects(user) {
+  const ids = await getVisibleProjectIds(user);
   if (!ids.length) return [];
-  const rows = db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders(ids)}) ORDER BY id`).all(...ids);
-  return rows.map(mapProject);
+  const rows = await db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders(ids)}) ORDER BY id`).all(...ids);
+  return Promise.all(rows.map(mapProject));
 }
 
-function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
+async function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
   if (user.roleKey === "admin") {
-    return db.prepare("SELECT * FROM people WHERE disabled_at IS NULL ORDER BY id").all().map((row) => mapPerson(row, getPersonProjectIds(row.id)));
+    const rows = await db.prepare("SELECT * FROM people WHERE disabled_at IS NULL ORDER BY id").all();
+    return Promise.all(rows.map(async (row) => mapPerson(row, await getPersonProjectIds(row.id))));
   }
 
   const allowedPersonIds = Array.from(new Set([user.id, ...ticketPersonIds]));
-  const rows = db
+  const rows = await db
     .prepare(
       `SELECT DISTINCT people.*
        FROM people
@@ -527,15 +424,15 @@ function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
        ORDER BY people.id`
     )
     .all(...allowedPersonIds, ...projectIds);
-  return rows.map((row) => mapPerson(row, getPersonProjectIds(row.id)));
+  return Promise.all(rows.map(async (row) => mapPerson(row, await getPersonProjectIds(row.id))));
 }
 
-function getVisibleTickets(user) {
+async function getVisibleTickets(user) {
   let rows;
   if (user.roleKey === "admin") {
-    rows = db.prepare("SELECT * FROM tickets ORDER BY created_at DESC, id DESC").all();
+    rows = await db.prepare("SELECT * FROM tickets ORDER BY created_at DESC, id DESC").all();
   } else {
-    rows = db
+    rows = await db
       .prepare(
         `SELECT DISTINCT *
          FROM tickets
@@ -544,20 +441,20 @@ function getVisibleTickets(user) {
       )
       .all(user.id, user.id);
   }
-  return rows.map(mapTicket);
+  return Promise.all(rows.map(mapTicket));
 }
 
-function getPerson(id) {
-  const row = db.prepare("SELECT * FROM people WHERE id = ? AND disabled_at IS NULL").get(id);
-  return row ? mapPerson(row, getPersonProjectIds(row.id)) : null;
+async function getPerson(id) {
+  const row = await db.prepare("SELECT * FROM people WHERE id = ? AND disabled_at IS NULL").get(id);
+  return row ? mapPerson(row, await getPersonProjectIds(row.id)) : null;
 }
 
-function getPersonProjectIds(personId) {
-  return db.prepare("SELECT project_id FROM project_team WHERE person_id = ? ORDER BY project_id").all(personId).map((row) => row.project_id);
+async function getPersonProjectIds(personId) {
+  return (await db.prepare("SELECT project_id FROM project_team WHERE person_id = ? ORDER BY project_id").all(personId)).map((row) => row.project_id);
 }
 
-function getTicketById(ticketId) {
-  const row = db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticketId);
+async function getTicketById(ticketId) {
+  const row = await db.prepare("SELECT * FROM tickets WHERE id = ?").get(ticketId);
   return row ? mapTicket(row) : null;
 }
 
@@ -570,32 +467,32 @@ function canMutateTicket(user, ticket) {
   return user.roleKey === "admin" || ticket.requesterId === user.id || ticket.ownerId === user.id;
 }
 
-function getDefaultDeliveryHours(typeKey) {
-  const row = db.prepare("SELECT default_delivery_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
+async function getDefaultDeliveryHours(typeKey) {
+  const row = await db.prepare("SELECT default_delivery_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
   return row ? row.default_delivery_hours : defaultDeliveryHours;
 }
 
-function isConfiguredProjectName(name) {
-  return Boolean(db.prepare("SELECT 1 FROM project_name_options WHERE name = ? AND is_active = 1").get(name));
+async function isConfiguredProjectName(name) {
+  return Boolean(await db.prepare("SELECT 1 FROM project_name_options WHERE name = ? AND is_active = 1").get(name));
 }
 
-function getRiskWarningHours(typeKey) {
-  const row = db.prepare("SELECT risk_warning_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
+async function getRiskWarningHours(typeKey) {
+  const row = await db.prepare("SELECT risk_warning_hours FROM ticket_type_settings WHERE type_key = ?").get(typeKey);
   return row ? row.risk_warning_hours : defaultRiskWarningHours;
 }
 
-function backfillStoredAttachments() {
-  const rows = db.prepare("SELECT * FROM attachments ORDER BY created_at, id").all();
+async function backfillStoredAttachments() {
+  const rows = await db.prepare("SELECT * FROM attachments ORDER BY created_at, id").all();
   const updateAttachment = db.prepare(
     `UPDATE attachments
      SET name = ?, kind = ?, mime_type = ?, size_bytes = ?, size_label = ?, storage_path = ?, sha256 = ?
      WHERE id = ?`
   );
-  const backfill = db.transaction(() => {
+  await db.transaction(async () => {
     for (const row of rows) {
       if (row.storage_path && existsSync(row.storage_path)) continue;
       const storedAttachment = materializeAttachmentFile(row.ticket_id, row, row.id);
-      updateAttachment.run(
+      await updateAttachment.run(
         storedAttachment.name,
         storedAttachment.kind,
         storedAttachment.mimeType,
@@ -607,7 +504,6 @@ function backfillStoredAttachments() {
       );
     }
   });
-  backfill();
 }
 
 function materializeAttachmentFile(ticketId, attachment, id) {
@@ -886,16 +782,16 @@ function escapeXml(value) {
     .replace(/"/g, "&quot;");
 }
 
-function nextTicketId() {
+async function nextTicketId() {
   const date = new Date();
   const yymm = `${String(date.getFullYear()).slice(2)}${String(date.getMonth() + 1).padStart(2, "0")}`;
   const prefix = `REQ-${yymm}-`;
-  const row = db.prepare("SELECT id FROM tickets WHERE id LIKE ? ORDER BY id DESC LIMIT 1").get(`${prefix}%`);
+  const row = await db.prepare("SELECT id FROM tickets WHERE id LIKE ? ORDER BY id DESC LIMIT 1").get(`${prefix}%`);
   const next = row ? Number(row.id.slice(prefix.length)) + 1 : 1;
   return `${prefix}${String(next).padStart(3, "0")}`;
 }
 
-function storeAttachment(ticketId, attachment, actorId, request) {
+async function storeAttachment(ticketId, attachment, actorId, request) {
   const name = cleanFilename(attachment?.name ?? "attachment.bin");
   const kind = attachmentKinds.has(attachment?.kind) ? attachment.kind : "附件";
   const mimeType = cleanText(attachment?.mimeType, 160) || null;
@@ -923,12 +819,12 @@ function storeAttachment(ticketId, attachment, actorId, request) {
     sizeLabel = formatFileSize(data.byteLength);
   }
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO attachments (id, ticket_id, name, kind, mime_type, size_bytes, size_label, storage_path, sha256, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, ticketId, name, kind, mimeType, sizeBytes, sizeLabel, storagePath, sha256, createdAt);
 
-  audit(actorId, "attachment_uploaded", "attachment", id, request, {
+  await audit(actorId, "attachment_uploaded", "attachment", id, request, {
     ticketId,
     name,
     kind,
@@ -950,8 +846,10 @@ function mapPerson(row, projectIds = []) {
   };
 }
 
-function mapProject(row) {
-  const teamIds = db.prepare("SELECT person_id FROM project_team WHERE project_id = ? ORDER BY person_id").all(row.id).map((item) => item.person_id);
+async function mapProject(row) {
+  const teamIds = (await db.prepare("SELECT person_id FROM project_team WHERE project_id = ? ORDER BY person_id").all(row.id)).map(
+    (item) => item.person_id
+  );
   return {
     id: row.id,
     name: row.name,
@@ -972,13 +870,13 @@ function mapProject(row) {
   };
 }
 
-function mapTicket(row) {
-  const attachments = db.prepare("SELECT * FROM attachments WHERE ticket_id = ? ORDER BY created_at, id").all(row.id).map(mapAttachment);
+async function mapTicket(row) {
+  const attachments = (await db.prepare("SELECT * FROM attachments WHERE ticket_id = ? ORDER BY created_at, id").all(row.id)).map(mapAttachment);
   const ageHours = getElapsedHours(row.start_at);
   const statusAgeHours = getElapsedHours(row.status_updated_at);
   const dueInHours = Number(row.due_in_hours ?? defaultDeliveryHours);
   const remainingHours = row.status === "已完成" ? 0 : dueInHours - ageHours;
-  const riskWarningHours = getRiskWarningHours(row.discipline);
+  const riskWarningHours = await getRiskWarningHours(row.discipline);
   const timelineOffsetHours = Number(row.timeline_offset_hours ?? (row.timeline_offset_days ?? row.age_days ?? 0) * 24);
   const timelineSpanHours = Number(row.timeline_span_hours ?? dueInHours);
   return {
@@ -1024,8 +922,8 @@ function mapAttachment(row) {
   };
 }
 
-function audit(actorId, action, entityType, entityId, request, metadata = null) {
-  db.prepare(
+async function audit(actorId, action, entityType, entityId, request, metadata = null) {
+  await db.prepare(
     `INSERT INTO audit_events (actor_id, action, entity_type, entity_id, ip, user_agent, metadata_json, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -1055,6 +953,14 @@ function verifyPassword(password, stored) {
 
 function placeholders(values) {
   return values.length ? values.map(() => "?").join(",") : "NULL";
+}
+
+function safeIdentifier(value) {
+  const identifier = String(value);
+  if (!/^[A-Za-z0-9_]+$/.test(identifier)) {
+    throw new Error(`Invalid SQL identifier: ${identifier}`);
+  }
+  return `\`${identifier}\``;
 }
 
 function cleanText(value, limit) {

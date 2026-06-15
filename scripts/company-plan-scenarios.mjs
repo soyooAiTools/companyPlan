@@ -9,6 +9,8 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const scenarioPort = process.env.COMPANYPLAN_SCENARIO_PORT ?? process.env.PORT ?? "4274";
 const baseUrl = process.env.COMPANY_PLAN_URL ?? `http://127.0.0.1:${scenarioPort}`;
 const seedPassword = process.env.COMPANYPLAN_SEED_PASSWORD ?? "CompanyPlan@2026";
+const scenarioDatabaseName =
+  process.env.COMPANYPLAN_SCENARIO_MYSQL_DATABASE ?? `companyplan_scenario_${process.pid}_${Date.now()}`;
 const forbiddenDemandToolbarText = ["字段管理", "筛选", "排序", "分组", "公告", "行高", "导出"];
 const requiredDemandColumns = [
   "所属项目",
@@ -127,6 +129,8 @@ async function ensureServer() {
       ...process.env,
       PORT: port,
       COMPANYPLAN_DATA_DIR: testDataDir,
+      COMPANYPLAN_MYSQL_DATABASE: scenarioDatabaseName,
+      COMPANYPLAN_MYSQL_CREATE_DATABASE: process.env.COMPANYPLAN_MYSQL_CREATE_DATABASE ?? "1",
       COMPANYPLAN_SEED_PASSWORD: seedPassword,
     },
     stdio: ["ignore", "pipe", "pipe"],

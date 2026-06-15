@@ -12,7 +12,7 @@ This skill documents the companyPlan production SaaS rules for future Codex sess
 
 - Production SaaS for playable-ad demand tickets and project visibility.
 - React/Vite frontend with a Node/Express API.
-- SQLite persistence, HttpOnly cookie sessions, server-side role scoping, local attachment storage, and audit logs.
+- MySQL persistence, HttpOnly cookie sessions, server-side role scoping, local attachment storage, and audit logs.
 - Frontend is layered into `src/api`, `src/types`, `src/layer`, and `src/view/CompanyPlan`.
 - Backend is layered into `server/config`, `server/db`, `server/dao`, `server/service`, `server/controller`, `server/router`, `server/middleware`, and `server/core`; keep `server/index.mjs` as wiring/entrypoint.
 - Live URL: `https://playcools.top/companyPlan/`.
@@ -45,12 +45,12 @@ Do not return the app to a frontend-only/static-data implementation unless the u
 ## Runtime Rules
 
 - Persist mutable data through the backend API.
-- Store uploaded files under the configured upload directory and keep file metadata in SQLite.
+- Store uploaded files under the configured upload directory and keep file metadata in MySQL.
 - Seeded demo attachments must also materialize real files under the upload directory, not metadata-only placeholders.
 - Attachment detail actions must support both browser open and download for stored files.
 - Record meaningful ticket create/update and attachment events in audit logs.
 - Admin configuration changes and gantt timeline updates should also be audited.
-- Keep runtime data, SQLite files, uploads, cookies, and secrets out of git.
+- Keep runtime data, MySQL dumps, uploads, cookies, and secrets out of git.
 - For deployment changes, update `docs/deployment.md` and verify PM2/Nginx behavior.
 - Do not collapse the frontend back into a single `src/App.tsx` implementation.
 - Do not collapse backend API handlers back into `server/index.mjs`; preserve Router -> Controller -> Service -> DAO/DB responsibilities.
@@ -94,10 +94,11 @@ The scenario test currently covers admin `所属项目`/type-hour configuration,
 - `src/view/CompanyPlan/index.tsx`: companyPlan page composition.
 - `server/index.mjs`: runtime assembly, static asset serving, PM2 entrypoint.
 - `server/config/runtime.mjs`: env-derived paths, ports, constants.
-- `server/db/connection.mjs`: SQLite connection setup.
+- `server/db/connection.mjs`: MySQL connection pool setup.
 - `server/db/company-plan-store.mjs`: schema, migrations, seed data materialization, scoped reads, mappers, attachments, audit persistence.
 - `server/dao/company-plan-dao.mjs`: SQL helpers for service mutations.
 - `server/service/company-plan-service.mjs`: business rules and mutation orchestration.
 - `server/controller/company-plan-controller.mjs`: Express request/response adaptation.
 - `server/router/company-plan-routes.mjs`: API route registration.
 - `server/middleware/auth.mjs` and `server/middleware/security.mjs`: session/auth and safety middleware.
+- `scripts/migrate-sqlite-to-mysql.mjs`: one-time legacy SQLite to MySQL migration for existing deployments.
