@@ -89,7 +89,7 @@ if (!existsSync(sqlitePath)) {
   throw new Error(`SQLite source file does not exist: ${sqlitePath}`);
 }
 
-const db = await createDatabase({ ...mysqlConfig, createDatabase: true });
+const db = await createDatabase(mysqlConfig);
 bindCompanyPlanStore(db);
 
 try {
