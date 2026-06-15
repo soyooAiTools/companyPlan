@@ -53,6 +53,17 @@ Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS i
 
 For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` lets the app create the configured database when the MySQL user has permission. Do not rely on that privilege for production unless it is part of the database operations policy.
 
+The current production host keeps these values in `/srv/companyplan/companyplan.env` with `0600` permissions. PM2 starts `/srv/companyplan/start-companyplan.sh`, which sources that env file and then runs `node server/index.mjs`; this keeps database credentials out of PM2 command arguments.
+
+Production MySQL currently runs as a local Podman container:
+
+```text
+container: companyplan-mysql
+data: /srv/companyplan/mysql
+bind: 127.0.0.1:3306
+restart: always, with podman-restart.service enabled
+```
+
 ## First Run
 
 On an empty database, the server seeds the base companyPlan users, projects, demand tickets, project membership, stored demo attachment files, attachment metadata, and an audit event.
@@ -135,7 +146,7 @@ Production deploy from this checkout:
 git pull --ff-only
 npm install
 npm run build
-pm2 restart companyplan --update-env
+pm2 restart companyplan
 pm2 status companyplan
 ```
 

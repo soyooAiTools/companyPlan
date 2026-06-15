@@ -25,7 +25,9 @@ PM2 process: companyplan
 Port: 4174
 Production data: /srv/companyplan/data
 Database: MySQL database `companyplan`
+MySQL runtime: Podman container `companyplan-mysql`, data at `/srv/companyplan/mysql`, bound to `127.0.0.1:3306`
 Uploads: /srv/companyplan/data/uploads
+PM2 entry: `/srv/companyplan/start-companyplan.sh` sources `/srv/companyplan/companyplan.env`
 ```
 
 ## 当前版本重点
@@ -139,7 +141,7 @@ COMPANYPLAN_SEED_PASSWORD
 
 ## 生产环境变量
 
-生产 PM2 进程需要这些关键环境变量：
+生产 PM2 进程通过 `/srv/companyplan/start-companyplan.sh` 读取 `/srv/companyplan/companyplan.env`。该 env 文件权限应为 `0600`，需要这些关键环境变量：
 
 ```text
 PORT=4174
@@ -159,6 +161,16 @@ COMPANYPLAN_SEED_PASSWORD=<生产种子密码>
 
 不要把生产密码、cookie、MySQL dump、uploads 打包进代码仓库或源码交接包。
 
+生产 MySQL 容器使用 Podman 运行：
+
+```text
+name: companyplan-mysql
+data: /srv/companyplan/mysql
+bind: 127.0.0.1:3306
+restart: always
+systemd helper: podman-restart.service enabled
+```
+
 ## 部署流程
 
 部署前先备份：
@@ -175,7 +187,7 @@ tar -C /srv/companyplan/data -czf "$backup_dir/uploads.tar.gz" uploads
 ```bash
 npm run build
 COMPANYPLAN_SQLITE_PATH=/srv/companyplan/data/companyplan.sqlite npm run migrate:sqlite:mysql  # 仅旧 SQLite 首次迁移时执行
-pm2 restart companyplan --update-env
+pm2 restart companyplan
 ```
 
 检查：
