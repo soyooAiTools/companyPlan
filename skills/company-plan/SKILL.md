@@ -15,6 +15,8 @@ For detailed product rules, read `references/product-spec.md` before changing be
 
 For repo setup and deployment notes, read `README.md` in this skill folder and the repository `docs/deployment.md`.
 
+For Ops data-source or field-semantics work, also read the repository `docs/ops-field-mapping.md`.
+
 ## Workflow
 
 1. Preserve the current production scope: backend-backed data system first, with persistent tickets, attachments, sessions, audit logs, and role-scoped API responses.

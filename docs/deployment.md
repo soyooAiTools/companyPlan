@@ -71,6 +71,8 @@ When an Ops sync succeeds and `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=0`, bootstrap 
 
 `COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT=0` means fetch project members for all Ops projects. Use a positive number only as a temporary throttle during API debugging.
 
+The field-level mapping contract is maintained in `docs/ops-field-mapping.md`. Update that document whenever Ops source fields, ticket field semantics, or imported directory behavior change.
+
 The current production host keeps these values in `/srv/companyplan/companyplan.env` with `0600` permissions. PM2 starts `/srv/companyplan/start-companyplan.sh`, which sources that env file and then runs `node server/index.mjs`; this keeps database credentials out of PM2 command arguments.
 
 Production MySQL currently runs as a local Podman container:
@@ -164,7 +166,7 @@ Production deploy from this checkout:
 git pull --ff-only
 npm install
 npm run build
-pm2 restart companyplan
+pm2 restart companyplan --update-env
 pm2 status companyplan
 ```
 

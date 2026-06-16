@@ -1,6 +1,6 @@
 # companyPlan 交接文档
 
-日期：2026-06-15
+日期：2026-06-16
 
 ## 项目概览
 
@@ -64,6 +64,7 @@ README.md                         项目说明
 docs/deployment.md                部署和运维说明
 docs/demand-ticket-readiness.md   生产交付审计
 docs/handoff.md                   本交接文档
+docs/ops-field-mapping.md         Ops 接口字段与 companyPlan 字段对应关系
 server/index.mjs                  Express 入口、依赖装配、静态资源和 PM2 入口
 server/config/                    运行环境、端口、数据目录和常量
 server/db/                        MySQL 连接池、schema、迁移、种子、scoped reads、映射、附件、审计
@@ -73,6 +74,7 @@ server/controller/                Express request/response 适配
 server/router/                    API URL 注册
 server/middleware/                session/auth、安全响应头和写请求 origin 校验
 server/core/                      日志等基础能力
+server/integration/               Ops 目录同步客户端和标准化逻辑
 server/seed-data.mjs              种子用户、项目、提单、配置
 src/App.tsx                       React 根挂载壳
 src/api/                          前端请求层，只有 request.ts 直接调用 fetch
@@ -97,6 +99,7 @@ skills/company-plan/SKILL.md
 skills/company-plan/references/product-spec.md
 skills/company-plan/README.md
 docs/deployment.md
+docs/ops-field-mapping.md
 ```
 
 ## 本地启动
@@ -306,19 +309,22 @@ other bars
 ```text
 Branch: main
 Remote: origin/main
+Commit: c43f1cb Integrate Ops directory data
+PR: https://github.com/soyooAiTools/companyPlan/pull/1 merged
 npm run build: passed
 npm run test:scenarios: passed, 349 assertions
-node --check server modules: passed
 quick_validate.py skills/company-plan: passed
 quick_validate.py /root/.codex/skills/company-plan: passed
 Production PM2 companyplan: online
 Public URL: https://playcools.top/companyPlan/
+Public /api/bootstrap without login: 401
+Public /api/health Ops sync: active, users=101, projects=1032, tenants=87, tags=10
 ```
 
 最近一次生产备份：
 
 ```text
-/srv/companyplan/backups/20260614-183233
+/srv/companyplan/backups/companyplan-before-tenant-project-remap-20260616-022013.sql.gz
 ```
 
 源码交接包不会包含该生产备份。同事如需真实生产数据，需要单独按公司数据权限流程交接。

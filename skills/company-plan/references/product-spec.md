@@ -22,6 +22,7 @@ The company is a playable-ad production studio with about 100 people, about 150 
 - Enforce permission scoping on the server for tickets, bootstrap data, attachments, and audit history.
 - Store uploaded attachments on disk and metadata in MySQL.
 - Store selectable `所属项目` names and per-ticket-type delivery/risk hours in MySQL. In Ops production mode, `所属项目` names are synced from `/ops/tenants` and `项目名称` choices are synced from visible `/ops/projects`; seeded local mode keeps admin-managed `所属项目` configuration and free-text `项目名称` for deterministic tests.
+- Keep the Ops field mapping contract in `docs/ops-field-mapping.md` current whenever `/ops` source fields, role inference, tenant/project semantics, or ticket field storage change.
 - Keep runtime data, uploaded files, cookies, and passwords out of git.
 
 Do not revert to frontend-only happy-path behavior, localStorage persistence, or account switching as a permission substitute unless the user explicitly asks for a separate prototype.

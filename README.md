@@ -25,10 +25,11 @@ The handoff source package includes both frontend and backend code:
 - Frontend layers: `src/api/`, `src/types/`, `src/layer/`, `src/view/CompanyPlan/`.
 - Backend entry: `server/index.mjs`.
 - Backend layers: `server/config/`, `server/db/`, `server/dao/`, `server/service/`, `server/controller/`, `server/router/`, `server/middleware/`, `server/core/`.
+- Ops integration: `server/integration/ops-directory.mjs`.
 - Seed data: `server/seed-data.mjs`.
 - Scenario tests: `scripts/company-plan-scenarios.mjs`.
 - SQLite-to-MySQL migration: `scripts/migrate-sqlite-to-mysql.mjs`.
-- Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`.
+- Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`, `docs/ops-field-mapping.md`.
 - Codex skill: `skills/company-plan/`.
 - Dependency manifests: `package.json`, `package-lock.json`.
 
@@ -123,6 +124,8 @@ npm run test:scenarios
 The scenario test starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274`, uses a temporary upload directory and isolated MySQL database name, disables Ops sync for deterministic fixtures, and runs the demand-ticket permission, admin configuration, attachment open/download, button actionability, and gantt move/resize workflow checks in a real Chromium browser. Set `COMPANY_PLAN_URL` only when you intentionally want to test an existing server.
 
 Demand-ticket delivery audit: [docs/demand-ticket-readiness.md](docs/demand-ticket-readiness.md).
+
+Ops field mapping audit: [docs/ops-field-mapping.md](docs/ops-field-mapping.md).
 
 Team handoff guide: [docs/handoff.md](docs/handoff.md).
 

@@ -15,6 +15,7 @@ This skill documents the companyPlan production SaaS rules for future Codex sess
 - MySQL persistence, HttpOnly cookie sessions, server-side role scoping, local attachment storage, and audit logs.
 - Frontend is layered into `src/api`, `src/types`, `src/layer`, and `src/view/CompanyPlan`.
 - Backend is layered into `server/config`, `server/db`, `server/dao`, `server/service`, `server/controller`, `server/router`, `server/middleware`, and `server/core`; keep `server/index.mjs` as wiring/entrypoint.
+- Ops directory syncing lives in `server/integration/ops-directory.mjs`; keep Ops API fetching and normalization there instead of mixing it into route handlers.
 - Live URL: `https://playcools.top/companyPlan/`.
 - Production process: PM2 service `companyplan`, proxied by Nginx.
 - Runtime data path on the deployment server: `/srv/companyplan/data`.
@@ -84,6 +85,12 @@ For UI changes, also run browser checks across admin, programmer, and a non-prog
 
 The scenario test currently covers seeded-mode admin `所属项目`/type-hour configuration, user-entered `项目名称`, Chinese priority labels, hour-based due calculation, scoped rows, button actionability, seeded attachment open, attachment open/download, read-only programmer gantt access, and admin gantt move/resize. Ops production mapping is documented in `docs/ops-field-mapping.md`.
 
+## Related Docs
+
+- `docs/ops-field-mapping.md`: Chinese Ops API to companyPlan field mapping. Update it whenever `/ops` field usage or ticket field semantics change.
+- `docs/deployment.md`: production environment variables, Ops sync settings, PM2/Nginx verification, and deployment commands.
+- `docs/handoff.md`: current production state, field semantics, validation status, and takeover notes.
+
 ## Current Code Map
 
 - `src/api/request.ts`: shared frontend request wrapper; the only frontend file that should call `fetch`.
@@ -101,4 +108,5 @@ The scenario test currently covers seeded-mode admin `所属项目`/type-hour co
 - `server/controller/company-plan-controller.mjs`: Express request/response adaptation.
 - `server/router/company-plan-routes.mjs`: API route registration.
 - `server/middleware/auth.mjs` and `server/middleware/security.mjs`: session/auth and safety middleware.
+- `server/integration/ops-directory.mjs`: Ops API client, directory normalization, role inference, tenant-backed `所属项目`, and project-backed `项目名称` sync data.
 - `scripts/migrate-sqlite-to-mysql.mjs`: one-time legacy SQLite to MySQL migration for existing deployments.
