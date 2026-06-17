@@ -13,6 +13,7 @@
     "start": "pnpm --filter @companyplan/server start",
     "start:test": "pnpm --filter @companyplan/server start:test",
     "start:prod": "pnpm --filter @companyplan/server start:prod",
+    "deploy": "bash deploy/deploy.sh",
     "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql",
     "test:scenarios": "pnpm --filter @companyplan/server test:scenarios"
   },
