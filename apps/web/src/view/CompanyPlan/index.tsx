@@ -514,7 +514,7 @@ function LoginView({
   onLogin: (username: string, password: string) => Promise<void>;
   errorMessage: string;
 }) {
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [localError, setLocalError] = useState("");
@@ -545,7 +545,6 @@ function LoginView({
         <div>
           <span className="eyebrow">生产系统登录</span>
           <h1>需求提单数据系统</h1>
-          <p>使用服务端账号进入。所有提单、附件、状态和甘特变更都会写入数据库并记录审计日志。</p>
         </div>
         <label>
           <span>用户名</span>

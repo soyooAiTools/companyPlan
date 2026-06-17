@@ -4,8 +4,9 @@ import react from "@vitejs/plugin-react";
 // 每次构建生成唯一版本号 → 写进 dist/version.json;前端 VersionChecker 轮询它,发现新版本就提示刷新
 const BUILD_ID = String(Date.now());
 
-export default defineConfig(({ command }) => ({
-	base: command === "build" ? "/companyPlan/" : "/",
+export default defineConfig(() => ({
+	// 部署在(子)域名根路径下,用绝对根 base;子路由刷新也能正确取到 /assets/*
+	base: "/",
 	plugins: [
 		react(),
 		{

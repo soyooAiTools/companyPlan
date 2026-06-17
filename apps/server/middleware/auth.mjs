@@ -52,19 +52,23 @@ export function createAuthMiddleware({ db, mapPerson, getPersonProjectIds }) {
   return { attachSession, requireAuth, requireAdmin };
 }
 
+// 跨站部署(前端与 API 不同域,如 ops.soyootech.com → opsapi.soyootech.com)需 SameSite=None;Secure。
+// 由 COMPANYPLAN_COOKIE_SAMESITE 控制(默认 lax;跨域填 none);SameSite=None 时浏览器强制要求 Secure,故自动置 true。
+const cookieSameSite = (process.env.COMPANYPLAN_COOKIE_SAMESITE || "lax").toLowerCase();
+const cookieSecure = process.env.COMPANYPLAN_COOKIE_SECURE === "1" || cookieSameSite === "none";
+
 export function setSessionCookie(response, sessionId, expiresAt) {
-  const secure = process.env.COMPANYPLAN_COOKIE_SECURE === "1";
   response.cookie(sessionCookieName, sessionId, {
     httpOnly: true,
-    sameSite: "lax",
-    secure,
+    sameSite: cookieSameSite,
+    secure: cookieSecure,
     expires: expiresAt,
     path: "/",
   });
 }
 
 export function clearSessionCookie(response) {
-  response.clearCookie(sessionCookieName, { httpOnly: true, sameSite: "lax", path: "/" });
+  response.clearCookie(sessionCookieName, { httpOnly: true, sameSite: cookieSameSite, secure: cookieSecure, path: "/" });
 }
 
 function parseCookies(header) {
