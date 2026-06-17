@@ -1,0 +1,28 @@
+{
+  "name": "@companyplan/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:api": "node index.mjs",
+    "dev:api:watch": "node --watch index.mjs",
+    "dev:api:test": "APP_ENV=test node index.mjs",
+    "dev:api:prod": "APP_ENV=prod node index.mjs",
+    "start": "node index.mjs",
+    "start:test": "APP_ENV=test node index.mjs",
+    "start:prod": "APP_ENV=prod node index.mjs",
+    "migrate:sqlite:mysql": "node scripts/migrate-sqlite-to-mysql.mjs",
+    "test:scenarios": "node scripts/company-plan-scenarios.mjs"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.3",
+    "ali-oss": "^6.23.0",
+    "express": "^5.2.1",
+    "mysql2": "^3.22.5",
+    "sanitize-html": "^2.17.5"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "prisma": "^6.19.3"
+  }
+}

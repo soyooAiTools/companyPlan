@@ -4,8 +4,8 @@ data/
 *.tsbuildinfo
 .DS_Store
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

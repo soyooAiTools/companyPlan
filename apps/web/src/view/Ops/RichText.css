@@ -1,0 +1,137 @@
+/* 富文本编辑器(建单说明)+ 只读渲染(详情 Drawer)的样式 */
+
+/* —— 编辑器外框,样式贴近 antd Input —— */
+.ops-editor {
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  transition: border-color 0.2s;
+}
+.ops-editor:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.1);
+}
+
+/* 工具栏 */
+.ops-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.ops-editor__sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: #e8e8e8;
+}
+
+/* 内容区(ProseMirror) */
+.ops-editor .ProseMirror {
+  min-height: 160px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 8px 11px;
+  outline: none;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2329;
+}
+.ops-editor .ProseMirror > * {
+  margin: 0 0 8px;
+}
+.ops-editor .ProseMirror > *:last-child {
+  margin-bottom: 0;
+}
+
+/* 占位符 */
+.ops-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #bfbfbf;
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* 共用排版(编辑器 + 只读) */
+.ops-editor .ProseMirror,
+.ops-rich {
+  word-break: break-word;
+}
+.ops-editor .ProseMirror img,
+.ops-editor .ProseMirror video,
+.ops-rich img,
+.ops-rich video {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  display: block;
+  margin: 6px 0;
+}
+.ops-editor .ProseMirror a,
+.ops-rich a {
+  color: #0f766e;
+  text-decoration: underline;
+}
+.ops-editor .ProseMirror ul,
+.ops-editor .ProseMirror ol,
+.ops-rich ul,
+.ops-rich ol {
+  padding-left: 22px;
+  margin: 0 0 8px;
+}
+.ops-editor .ProseMirror blockquote,
+.ops-rich blockquote {
+  border-left: 3px solid #d9d9d9;
+  padding-left: 10px;
+  color: #5c6066;
+  margin: 0 0 8px;
+}
+.ops-editor .ProseMirror pre,
+.ops-rich pre {
+  background: #f5f5f5;
+  border-radius: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+}
+.ops-editor .ProseMirror code,
+.ops-rich code {
+  background: #f5f5f5;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 13px;
+}
+.ops-editor .ProseMirror h1,
+.ops-rich h1 {
+  font-size: 20px;
+  margin: 4px 0 8px;
+}
+.ops-editor .ProseMirror h2,
+.ops-rich h2 {
+  font-size: 17px;
+  margin: 4px 0 8px;
+}
+.ops-editor .ProseMirror h3,
+.ops-rich h3 {
+  font-size: 15px;
+  margin: 4px 0 8px;
+}
+
+/* —— 只读渲染容器 —— */
+.ops-rich {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2329;
+}
+.ops-rich > *:first-child {
+  margin-top: 0;
+}
+.ops-rich > *:last-child {
+  margin-bottom: 0;
+}
+.ops-rich p {
+  margin: 0 0 8px;
+}

@@ -1,29 +1,22 @@
 {
-  "name": "companyplan-production",
+  "name": "companyplan",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
+  "packageManager": "pnpm@10.32.1",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "dev:api": "node server/index.mjs",
-    "build": "tsc -b && vite build",
-    "migrate:sqlite:mysql": "node scripts/migrate-sqlite-to-mysql.mjs",
-    "start": "node server/index.mjs",
-    "test:scenarios": "npm run build && node scripts/company-plan-scenarios.mjs",
-    "preview": "vite preview --host 0.0.0.0"
+    "dev": "pnpm --filter @companyplan/web dev",
+    "dev:api": "pnpm --filter @companyplan/server dev:api",
+    "dev:api:watch": "pnpm --filter @companyplan/server dev:api:watch",
+    "dev:api:test": "pnpm --filter @companyplan/server dev:api:test",
+    "dev:api:prod": "pnpm --filter @companyplan/server dev:api:prod",
+    "build": "pnpm --filter @companyplan/web build",
+    "start": "pnpm --filter @companyplan/server start",
+    "start:test": "pnpm --filter @companyplan/server start:test",
+    "start:prod": "pnpm --filter @companyplan/server start:prod",
+    "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql",
+    "test:scenarios": "pnpm --filter @companyplan/server test:scenarios"
   },
-  "dependencies": {
-    "@vitejs/plugin-react": "^5.1.1",
-    "express": "^5.2.1",
-    "lucide-react": "^0.468.0",
-    "mysql2": "^3.22.5",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "vite": "^7.2.7"
-  },
-  "devDependencies": {
-    "@types/react": "^18.3.18",
-    "@types/react-dom": "^18.3.5",
-    "typescript": "^5.7.2"
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "@prisma/client", "@prisma/engines", "prisma"]
   }
 }

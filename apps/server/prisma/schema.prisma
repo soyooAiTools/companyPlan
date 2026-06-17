@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model attachments {
+  id           String  @id @db.VarChar(64)
+  ticket_id    String  @db.VarChar(64)
+  name         String  @db.VarChar(200)
+  kind         String  @db.VarChar(20)
+  mime_type    String? @db.VarChar(160)
+  size_bytes   BigInt?
+  size_label   String  @db.VarChar(80)
+  storage_path String? @db.Text
+  sha256       String? @db.VarChar(64)
+  created_at   String  @db.VarChar(40)
+  tickets      tickets @relation(fields: [ticket_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_attachments_ticket")
+
+  @@index([ticket_id], map: "fk_attachments_ticket")
+}
+
+model audit_events {
+  id            BigInt  @id @default(autoincrement()) @db.UnsignedBigInt
+  actor_id      String? @db.VarChar(64)
+  action        String  @db.VarChar(80)
+  entity_type   String  @db.VarChar(80)
+  entity_id     String  @db.VarChar(128)
+  ip            String? @db.VarChar(80)
+  user_agent    String? @db.Text
+  metadata_json String? @db.Text
+  created_at    String  @db.VarChar(40)
+
+  @@index([entity_type, entity_id], map: "idx_audit_entity")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model people {
+  id                                   String                @id @db.VarChar(64)
+  username                             String                @unique(map: "username") @db.VarChar(80)
+  password_hash                        String                @db.VarChar(255)
+  name                                 String                @db.VarChar(120)
+  role_key                             String                @db.VarChar(40)
+  title                                String                @db.VarChar(120)
+  discipline                           String                @db.VarChar(80)
+  capacity                             Int
+  completion                           Int
+  disabled_at                          String?               @db.VarChar(40)
+  wechat_name                          String?               @db.VarChar(191)
+  wechat_avatar                        String?               @db.VarChar(1024)
+  project_member_tags                  project_member_tags[]
+  project_team                         project_team[]
+  projects                             projects[]
+  sessions                             sessions[]
+  tickets_tickets_owner_idTopeople     tickets[]             @relation("tickets_owner_idTopeople")
+  tickets_tickets_requester_idTopeople tickets[]             @relation("tickets_requester_idTopeople")
+}
+
+model project_member_tags {
+  project_id String   @db.VarChar(64)
+  person_id  String   @db.VarChar(64)
+  tag_id     String   @db.VarChar(64)
+  people     people   @relation(fields: [person_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pmt_person")
+  projects   projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_pmt_project")
+
+  @@id([project_id, person_id, tag_id])
+  @@index([person_id], map: "fk_pmt_person")
+  @@index([project_id, tag_id], map: "idx_pmt_project_tag")
+}
+
+model project_name_options {
+  id         String  @id @db.VarChar(80)
+  name       String  @unique(map: "name") @db.VarChar(160)
+  is_active  Boolean @default(true)
+  sort_order Int     @default(0)
+  created_at String  @db.VarChar(40)
+  updated_at String  @db.VarChar(40)
+}
+
+model project_team {
+  project_id String   @db.VarChar(64)
+  person_id  String   @db.VarChar(64)
+  people     people   @relation(fields: [person_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_project_team_person")
+  projects   projects @relation(fields: [project_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_project_team_project")
+
+  @@id([project_id, person_id])
+  @@index([person_id], map: "fk_project_team_person")
+}
+
+model projects {
+  id                       String                @id @db.VarChar(64)
+  name                     String                @db.VarChar(160)
+  client                   String                @db.VarChar(160)
+  genre                    String                @db.VarChar(120)
+  channel                  String                @db.VarChar(120)
+  owner_id                 String                @db.VarChar(64)
+  status                   String                @db.VarChar(80)
+  phase                    String                @db.VarChar(80)
+  health                   String                @db.VarChar(80)
+  progress                 Int
+  due_in_days              Int
+  ticket_count             Int
+  open_ticket_count        Int
+  discipline_progress_json String                @db.Text
+  blocker                  String                @db.Text
+  tenant_id                String                @default("") @db.VarChar(64)
+  planner_name             String                @default("") @db.VarChar(255)
+  developer_name           String                @default("") @db.VarChar(255)
+  project_member_tags      project_member_tags[]
+  project_team             project_team[]
+  people                   people                @relation(fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_projects_owner")
+  tickets                  tickets[]
+
+  @@index([owner_id], map: "fk_projects_owner")
+}
+
+model sessions {
+  id         String  @id @db.VarChar(128)
+  person_id  String  @db.VarChar(64)
+  created_at String  @db.VarChar(40)
+  expires_at String  @db.VarChar(40)
+  revoked_at String? @db.VarChar(40)
+  people     people  @relation(fields: [person_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_sessions_person")
+
+  @@index([person_id], map: "idx_sessions_person")
+}
+
+model tags {
+  id                     String @id @db.VarChar(64)
+  name                   String @db.VarChar(120)
+  color                  String @default("") @db.VarChar(40)
+  default_delivery_hours Int    @default(72)
+  risk_warning_hours     Int    @default(8)
+  sort_order             Int    @default(0)
+  updated_at             String @db.VarChar(40)
+}
+
+model tenants {
+  id         String @id @db.VarChar(64)
+  name       String @db.VarChar(160)
+  updated_at String @db.VarChar(40)
+}
+
+model ticket_type_settings {
+  type_key               String  @id @db.VarChar(80)
+  label                  String  @db.VarChar(120)
+  default_delivery_hours Int
+  risk_warning_hours     Int     @default(8)
+  is_active              Boolean @default(true)
+  sort_order             Int     @default(0)
+  updated_at             String  @db.VarChar(40)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model tickets {
+  id                                  String        @id @db.VarChar(64)
+  title                               String        @db.VarChar(160)
+  source_project_name                 String?       @db.VarChar(160)
+  project_name                        String?       @db.VarChar(160)
+  project_id                          String        @db.VarChar(64)
+  requester_id                        String        @db.VarChar(64)
+  owner_id                            String        @db.VarChar(64)
+  discipline                          String        @db.VarChar(80)
+  start_at                            String        @db.VarChar(40)
+  status                              String        @db.VarChar(20)
+  priority                            String        @db.VarChar(20)
+  age_days                            Int           @default(0)
+  status_age_days                     Int           @default(0)
+  due_in_days                         Int           @default(3)
+  due_in_hours                        Int           @default(72)
+  timeline_offset_days                Int?          @default(0)
+  timeline_offset_hours               Int?          @default(0)
+  timeline_span_hours                 Int?          @default(72)
+  need_type                           String        @db.VarChar(120)
+  summary                             String        @db.Text
+  hyperlink                           String?       @db.VarChar(500)
+  text                                String?       @db.Text
+  created_at                          String        @db.VarChar(40)
+  updated_at                          String        @db.VarChar(40)
+  status_updated_at                   String        @db.VarChar(40)
+  tag_id                              String        @default("") @db.VarChar(64)
+  segment_id                          Int?
+  block_reason                        String?       @db.VarChar(500)
+  risk_warning_hours                  Int           @default(8)
+  content_html                        String?       @db.MediumText
+  attachments                         attachments[]
+  people_tickets_owner_idTopeople     people        @relation("tickets_owner_idTopeople", fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_owner")
+  projects                            projects      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_project")
+  people_tickets_requester_idTopeople people        @relation("tickets_requester_idTopeople", fields: [requester_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_requester")
+
+  @@index([owner_id], map: "idx_tickets_owner")
+  @@index([project_id], map: "idx_tickets_project")
+  @@index([requester_id], map: "idx_tickets_requester")
+}
+
+model ops_segment_tags {
+  segment_id Int
+  tag_id     String @db.VarChar(64)
+
+  @@id([segment_id, tag_id])
+  @@index([tag_id], map: "idx_ost_tag")
+}
+
+model ops_segments {
+  id                     Int    @id @default(autoincrement())
+  name                   String @unique(map: "name") @db.VarChar(80)
+  default_delivery_hours Int    @default(72)
+  risk_warning_hours     Int    @default(8)
+  sort_order             Int    @default(0)
+  updated_at             String @db.VarChar(40)
+}
+
+model ticket_events {
+  id          Int     @id @default(autoincrement())
+  ticket_id   String  @db.VarChar(64)
+  actor_id    String? @db.VarChar(64)
+  actor_name  String? @db.VarChar(120)
+  action      String  @db.VarChar(40)
+  from_status String? @db.VarChar(20)
+  to_status   String? @db.VarChar(20)
+  note        String? @db.VarChar(500)
+  created_at  String  @db.VarChar(40)
+
+  @@index([ticket_id], map: "idx_te_ticket")
+}
