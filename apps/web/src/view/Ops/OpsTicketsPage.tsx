@@ -50,6 +50,12 @@ export default function OpsTicketsPage() {
 	const [noteStatus, setNoteStatus] = useState("");
 	const [noteText, setNoteText] = useState("");
 
+	// 指派/改派负责人
+	const [assignOpen, setAssignOpen] = useState(false);
+	const [assignCandidates, setAssignCandidates] = useState<{ id: string; name: string; username: string; avatar: string; status: string }[]>([]);
+	const [assignOwnerId, setAssignOwnerId] = useState("");
+	const [assigning, setAssigning] = useState(false);
+
 	// 建单
 	const [open, setOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
@@ -135,6 +141,41 @@ export default function OpsTicketsPage() {
 		}
 		await changeStatus(noteId, noteStatus, noteText.trim());
 		setNoteId(null);
+	};
+
+	// 指派:加载该项目成员 → 选一个 → 改派
+	const openAssign = async () => {
+		if (!detail) return;
+		setAssignOwnerId("");
+		setAssignOpen(true);
+		try {
+			const r = await opsApi.projectMembers(detail.projectId);
+			setAssignCandidates(r.members.filter((m) => m.status !== "disabled"));
+		} catch (e) {
+			messageApi.error(e instanceof Error ? e.message : "加载项目成员失败");
+		}
+	};
+	const confirmAssign = async () => {
+		if (!detail || !assignOwnerId) {
+			messageApi.warning("请选择负责人");
+			return;
+		}
+		setAssigning(true);
+		try {
+			const r = await opsApi.assignTicket(detail.id, assignOwnerId);
+			setDetail(r.ticket);
+			opsApi
+				.ticketEvents(detail.id)
+				.then((e) => setEvents(e.events))
+				.catch(() => {});
+			setAssignOpen(false);
+			messageApi.success("已指派");
+			await loadTickets();
+		} catch (e) {
+			messageApi.error(e instanceof Error ? e.message : "指派失败");
+		} finally {
+			setAssigning(false);
+		}
 	};
 
 	// 改需求说明(提单人/管理员)
@@ -542,7 +583,14 @@ export default function OpsTicketsPage() {
 								<Tag color="cyan">{detail.tagName}</Tag>
 							</Descriptions.Item>
 							<Descriptions.Item label="提单人">{personCell(detail.requesterAvatar, detail.requesterName)}</Descriptions.Item>
-							<Descriptions.Item label="负责人">{personCell(detail.ownerAvatar, detail.ownerName)}</Descriptions.Item>
+							<Descriptions.Item label="负责人">
+								{personCell(detail.ownerAvatar, detail.ownerName)}
+								{detail.canEdit ? (
+									<Button size="small" type="link" style={{ paddingLeft: 8 }} onClick={openAssign}>
+										指派
+									</Button>
+								) : null}
+							</Descriptions.Item>
 							<Descriptions.Item label="优先级">
 								<Tag color={PRIORITY_COLOR[detail.priority]}>{detail.priority}</Tag>
 							</Descriptions.Item>
@@ -575,7 +623,7 @@ export default function OpsTicketsPage() {
 									await loadDetailContent();
 									setContentZoom(true);
 								}}>
-								点击查看
+								点击查看需求
 							</Button>
 						) : (
 							<Typography.Text type="secondary">空</Typography.Text>
@@ -665,6 +713,26 @@ export default function OpsTicketsPage() {
 					value={noteText}
 					onChange={(e) => setNoteText(e.target.value)}
 					placeholder={noteStatus === "阻塞" ? "阻塞原因" : "完成备注(可选)"}
+				/>
+			</Modal>
+
+			<Modal
+				title="指派负责人"
+				open={assignOpen}
+				onOk={confirmAssign}
+				confirmLoading={assigning}
+				onCancel={() => setAssignOpen(false)}
+				okText="指派"
+				cancelText="取消"
+				destroyOnHidden>
+				<Select
+					style={{ width: "100%" }}
+					placeholder="选择该项目的成员"
+					value={assignOwnerId || undefined}
+					onChange={(v) => setAssignOwnerId(v)}
+					options={assignCandidates.map((m) => ({ value: m.id, label: m.name || m.username }))}
+					showSearch
+					optionFilterProp="label"
 				/>
 			</Modal>
 

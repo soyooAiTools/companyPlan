@@ -154,13 +154,20 @@ export const opsApi = {
 		requestJson<{ url: string }>("/api/ops/upload", { method: "POST", body: JSON.stringify(body) }),
 	// 当前用户(角色,用于按管理员显示设置菜单)
 	me: () => requestJson<{ user: OpsMe }>("/api/ops/me"),
-	// 同步管理(仅管理员)
-	syncInfo: () => requestJson<{ config: OpsSyncConfig; status: OpsSyncStatus; logs: OpsSyncLog[] }>("/api/ops/sync"),
-	saveSyncConfig: (body: { intervalMinutes?: number; enabled?: boolean }) => requestJson<{ config: OpsSyncConfig }>("/api/ops/sync", { method: "PUT", body: JSON.stringify(body) }),
-	runSync: () => requestJson<{ started: boolean }>("/api/ops/sync/run", { method: "POST" }),
 	updateTicketStatus: (id: string, status: string, reason?: string) =>
 		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/status`, {
 			method: "PATCH",
 			body: JSON.stringify({ status, reason }),
+		}),
+	// 项目成员(指派候选)
+	projectMembers: (projectId: string) =>
+		requestJson<{ members: { id: string; username: string; name: string; avatar: string; wechatName: string; status: string }[] }>(
+			`/api/ops/projects/${encodeURIComponent(projectId)}/members`,
+		),
+	// 指派/改派工单给项目其他成员(管理员或当前负责人)
+	assignTicket: (id: string, ownerId: string) =>
+		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/assign`, {
+			method: "POST",
+			body: JSON.stringify({ ownerId }),
 		}),
 };

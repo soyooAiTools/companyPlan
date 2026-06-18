@@ -32,8 +32,8 @@ export const sessionCookieName = "companyplan_session";
 export const sessionTtlDays = Number(process.env.COMPANYPLAN_SESSION_DAYS ?? "7");
 export const maxAttachmentBytes = Number(process.env.COMPANYPLAN_MAX_ATTACHMENT_BYTES ?? `${10 * 1024 * 1024}`);
 export const port = Number(process.env.PORT ?? "4174");
-// 后台全量同步间隔（毫秒）。默认 5 分钟；设 0 关闭定时同步（仍会启动时同步一次）。
-export const opsSyncIntervalMs = Number(process.env.COMPANYPLAN_OPS_SYNC_INTERVAL_MS ?? `${5 * 60 * 1000}`);
+// 后台全量同步间隔（毫秒）。默认 30 分钟,作兜底——实时性靠 soyoo push 触发的去抖同步；设 0 关闭定时同步（仍会启动时同步一次）。
+export const opsSyncIntervalMs = Number(process.env.COMPANYPLAN_OPS_SYNC_INTERVAL_MS ?? `${30 * 60 * 1000}`);
 export const statusOptions = new Set(["排队中", "进行中", "阻塞", "已完成"]);
 export const priorityOptions = new Set(["紧急", "优先", "普通", "低优先"]);
 export const attachmentKinds = new Set(["图片", "附件", "文件"]);

@@ -35,6 +35,7 @@ export function createCompanyPlanService(deps) {
     storeAttachment,
     audit,
     verifyPassword,
+    upsertPersonFromSoyoo,
     cleanText,
     clampNumber,
     formatDateTime,
@@ -71,11 +72,31 @@ export function createCompanyPlanService(deps) {
         return fail(soyoo.status === 403 ? 403 : 401, soyoo.error || "用户名或密码不正确");
       }
 
-      // 用户应已被同步进本地(同步覆盖全部用户),按用户名定位
+      // 不再依赖同步:用 soyoo 返回的用户信息 upsert 本地身份(新用户首次登录即建档)。
+      const su = soyoo.user ?? {};
+      if (su.status === "disabled") {
+        await audit(null, "login_disabled", "person", username, auditContext, { username });
+        return fail(403, "账户已被禁用,请联系管理员");
+      }
+      // 直接用 soyoo 用户 id 作为 people.id,不加任何前缀(与工单里存的 owner_id/requester_id 一致)
+      const personId = String(su.ID ?? su.id ?? "").trim();
+      if (!personId) {
+        await audit(null, "login_no_soyoo_id", "person", username, auditContext, { username });
+        return fail(500, "soyoo 未返回用户 id");
+      }
+      await upsertPersonFromSoyoo({
+        id: personId,
+        username,
+        name: su.nickname || username,
+        roleKey: su.is_admin ? "admin" : "member",
+        wechatName: su.wechat_name ?? "",
+        wechatAvatar: su.wechat_avatar_url ?? "",
+      });
+      // 回读拿真实行(含真实 id,兼容历史 id 格式)
       const user = await dao.findActivePersonByUsername(username);
       if (!user) {
-        await audit(null, "login_no_local_user", "person", username, auditContext, { username });
-        return fail(403, "账号尚未同步到提单系统,请稍后重试或联系管理员");
+        await audit(null, "login_upsert_failed", "person", username, auditContext, { username });
+        return fail(500, "登录建档失败,请重试");
       }
 
       const sessionId = crypto.randomBytes(32).toString("hex");

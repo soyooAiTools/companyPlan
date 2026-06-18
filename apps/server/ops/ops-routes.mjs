@@ -4,10 +4,14 @@ import sanitizeHtml from "sanitize-html";
 import { prisma } from "./prisma.mjs";
 import { isOssConfigured, uploadObject } from "./oss.mjs";
 import { ossConfig } from "../config/runtime.mjs";
+import { soyooId } from "./soyoo-client.mjs";
+import { listMyProjects, getProjectWithMembers, getUser, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
 const isAdmin = (user) => user?.roleKey === "admin";
+// 当前用户的纯 soyoo id(req.user.id 形如 ops-user-123;新工单只存纯 id)
+const meId = (user) => soyooId(user?.id);
 const nowIso = () => new Date().toISOString();
 const clip = (v, n) => (v == null ? "" : String(v)).slice(0, n);
 
@@ -39,7 +43,7 @@ function mapTicket(t, segNameById) {
   return {
     id: t.id,
     title: t.title,
-    client: t.source_project_name ?? "", // 所属项目=客户名
+    client: t.client_name ?? t.source_project_name ?? "", // 客户名(快照)
     projectName: t.project_name ?? "",
     projectId: t.project_id,
     tagName: (t.segment_id != null && segNameById?.get(t.segment_id)) || t.discipline, // 环节名:优先按 segment_id 取「当前」名,回退历史快照
@@ -48,11 +52,11 @@ function mapTicket(t, segNameById) {
     status: t.status,
     dueInHours: t.due_in_hours,
     ownerId: t.owner_id,
-    ownerName: t.people_tickets_owner_idTopeople?.name ?? "",
-    ownerAvatar: t.people_tickets_owner_idTopeople?.wechat_avatar ?? "",
+    ownerName: t.owner_name ?? "",
+    ownerAvatar: t.owner_avatar ?? "",
     requesterId: t.requester_id,
-    requesterName: t.people_tickets_requester_idTopeople?.name ?? "",
-    requesterAvatar: t.people_tickets_requester_idTopeople?.wechat_avatar ?? "",
+    requesterName: t.requester_name ?? "",
+    requesterAvatar: t.requester_avatar ?? "",
     summary: t.summary ?? "",
     contentHtml: t.content_html ?? "",
     hyperlink: t.hyperlink ?? "",
@@ -67,8 +71,8 @@ function mapTicket(t, segNameById) {
 function withCanEdit(t, user, segNameById) {
   return {
     ...mapTicket(t, segNameById),
-    canEdit: isAdmin(user) || t.owner_id === user?.id,
-    canEditContent: isAdmin(user) || t.requester_id === user?.id,
+    canEdit: isAdmin(user) || t.owner_id === meId(user),
+    canEditContent: isAdmin(user) || t.requester_id === meId(user),
   };
 }
 
@@ -106,11 +110,9 @@ async function logTicketEvent({ ticketId, user, action, fromStatus = null, toSta
 async function loadSegments() {
   const segments = await prisma.ops_segments.findMany({ orderBy: [{ sort_order: "asc" }, { name: "asc" }] });
   const links = await prisma.ops_segment_tags.findMany();
-  const tagIds = [...new Set(links.map((l) => l.tag_id))];
-  const tags = tagIds.length
-    ? await prisma.tags.findMany({ where: { id: { in: tagIds } }, select: { id: true, name: true } })
-    : [];
-  const tagNameById = new Map(tags.map((t) => [t.id, t.name]));
+  // 标签名实时查 soyoo(本地不再存 tags);失败则回退 tag_id
+  const liveTags = await listTags().catch(() => []);
+  const tagNameById = new Map(liveTags.map((t) => [t.id, t.name]));
   const bySeg = new Map();
   for (const l of links) {
     if (!bySeg.has(l.segment_id)) bySeg.set(l.segment_id, []);
@@ -126,12 +128,7 @@ async function loadSegments() {
   }));
 }
 
-const ticketInclude = {
-  people_tickets_owner_idTopeople: { select: { name: true, username: true, wechat_avatar: true } },
-  people_tickets_requester_idTopeople: { select: { name: true, username: true, wechat_avatar: true } },
-};
-
-export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
+export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // 当前登录用户(供前端按角色显示菜单)
   app.get("/api/ops/me", requireAuth, async (req, res) => {
     const u = req.user || {};
@@ -139,36 +136,10 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "" } });
   });
 
-  // 同步管理(仅管理员):配置 + 状态 + 最近记录
-  app.get("/api/ops/sync", requireAuth, requireAdmin, async (_req, res) => {
-    if (!opsSync) return res.status(503).json({ error: "同步调度未就绪" });
-    const [config, logs] = await Promise.all([opsSync.getConfig(), opsSync.getLogs(20)]);
-    res.json({ config, status: opsSync.getStatus(), logs });
-  });
-
-  // 改同步频率/开关(仅管理员):立即重排,无需重启
-  app.put("/api/ops/sync", requireAuth, requireAdmin, async (req, res) => {
-    if (!opsSync) return res.status(503).json({ error: "同步调度未就绪" });
-    const b = req.body ?? {};
-    const patch = {};
-    if (b.intervalMinutes != null) patch.intervalMinutes = Number(b.intervalMinutes);
-    if (b.enabled != null) patch.enabled = !!b.enabled;
-    await opsSync.reschedule(patch);
-    res.json({ config: await opsSync.getConfig() });
-  });
-
-  // 立即手动同步一次(仅管理员):后台跑、不阻塞请求(全量同步约 1 分钟);完成写入同步记录,前端轮询查看
-  app.post("/api/ops/sync/run", requireAuth, requireAdmin, (req, res) => {
-    if (!opsSync) return res.status(503).json({ error: "同步调度未就绪" });
-    const actor = req.user?.name || req.user?.username || "管理员";
-    void opsSync.runSync("manual", actor);
-    res.json({ started: true });
-  });
-
-  // 原始 soyoo 标签(供环节配置页绑定)
+  // 原始 soyoo 标签(供环节配置页绑定):实时查 soyoo
   app.get("/api/ops/tags", requireAuth, async (_req, res) => {
-    const tags = await prisma.tags.findMany({ orderBy: [{ sort_order: "asc" }, { name: "asc" }] });
-    res.json({ tags: tags.map((t) => ({ id: t.id, name: t.name, color: t.color })) });
+    const tags = await listTags().catch(() => []);
+    res.json({ tags });
   });
 
   // 富文本编辑器图片上传 → 阿里云 OSS,返回公开 URL。Body: { projectName, mime, dataBase64 }
@@ -198,31 +169,29 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     }
   });
 
-  // 客户
-  app.get("/api/ops/tenants", requireAuth, async (_req, res) => {
-    const tenants = await prisma.tenants.findMany({ orderBy: { name: "asc" } });
-    res.json({ tenants: tenants.map((t) => ({ id: t.id, name: t.name })) });
+  // 客户:实时查 soyoo。前端可传 keyword/page/limit(服务端搜索/分页);不传则取全(下拉默认用)
+  app.get("/api/ops/tenants", requireAuth, async (req, res) => {
+    const { keyword, page, limit } = req.query;
+    const tenants = await listTenants({ keyword, page, limit }).catch(() => []);
+    res.json({ tenants });
   });
 
-  // 项目(可按客户过滤)
+  // 项目:只返当前用户参与的(实时查 soyoo「我的项目」),可按客户过滤
   app.get("/api/ops/projects", requireAuth, async (req, res) => {
-    const tenantId = req.query.tenantId ? String(req.query.tenantId) : null;
-    const projects = await prisma.projects.findMany({
-      where: tenantId ? { tenant_id: tenantId } : {},
-      orderBy: { name: "asc" },
-      select: { id: true, name: true, tenant_id: true, client: true, planner_name: true, developer_name: true, status: true },
-    });
-    res.json({
-      projects: projects.map((p) => ({
+    try {
+      const all = await listMyProjects(req.user);
+      const tenantId = req.query.tenantId ? String(req.query.tenantId) : "";
+      const projects = (tenantId ? all.filter((p) => p.clientId === tenantId) : all).map((p) => ({
         id: p.id,
         name: p.name,
-        tenantId: p.tenant_id,
+        tenantId: p.clientId,
         client: p.client,
-        plannerName: p.planner_name,
-        developerName: p.developer_name,
         status: p.status,
-      })),
-    });
+      }));
+      res.json({ projects });
+    } catch {
+      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    }
   });
 
   // 环节(分类)列表 + 绑定 + 配置
@@ -282,37 +251,16 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     res.json({ ok: true });
   });
 
-  // 该项目「环节 → 成员」:成员标签 ∈ 环节绑定标签(只返回有成员的环节)
+  // 该项目「环节 → 成员」:成员标签 ∈ 环节绑定标签(实时查 soyoo 成员;环节/绑定来自本地 ops)
   app.get("/api/ops/projects/:id/responsibles", requireAuth, async (req, res) => {
-    const projectId = String(req.params.id);
-    const memberRows = await prisma.project_member_tags.findMany({
-      where: { project_id: projectId },
-      include: { people: { select: { id: true, username: true, name: true, disabled_at: true, wechat_name: true, wechat_avatar: true } } },
-    });
+    const projectId = soyooId(req.params.id);
     const segments = await loadSegments();
-    const byPerson = new Map();
-    for (const m of memberRows) {
-      if (m.people?.disabled_at) continue;
-      if (!byPerson.has(m.person_id)) byPerson.set(m.person_id, { person: m.people, tags: new Set() });
-      byPerson.get(m.person_id).tags.add(m.tag_id);
+    try {
+      const result = await getResponsibles(projectId, segments);
+      res.json(result);
+    } catch {
+      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
     }
-    const segTagSets = segments.map((seg) => ({ seg, tagIds: new Set(seg.tags.map((t) => t.id)) }));
-    const result = [];
-    for (const { seg, tagIds } of segTagSets) {
-      if (!tagIds.size) continue;
-      const members = [];
-      for (const { person, tags } of byPerson.values()) {
-        if ([...tags].some((t) => tagIds.has(t))) members.push({ id: person.id, username: person.username, name: person.name, wechatName: person.wechat_name ?? "", wechatAvatar: person.wechat_avatar ?? "" });
-      }
-      if (members.length) result.push({ id: seg.id, name: seg.name, members });
-    }
-    // 全部可分配成员(有 ≥1 个被环节绑定的标签),附带其所属环节 id —— 供"不选环节列全部 / 选负责人回填环节"
-    const allMembers = [];
-    for (const { person, tags } of byPerson.values()) {
-      const segmentIds = segTagSets.filter(({ tagIds }) => tagIds.size && [...tags].some((t) => tagIds.has(t))).map(({ seg }) => seg.id);
-      if (segmentIds.length) allMembers.push({ id: person.id, username: person.username, name: person.name, wechatName: person.wechat_name ?? "", wechatAvatar: person.wechat_avatar ?? "", segmentIds });
-    }
-    res.json({ segments: result, members: allMembers });
   });
 
   // 提单列表 —— 需求提单是「个人数据」:始终只看与我相关(owner 或 requester),管理员也不例外。
@@ -320,12 +268,14 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
   app.get("/api/ops/tickets", requireAuth, async (req, res) => {
     const user = req.user;
     const scope = String(req.query.scope ?? "all");
+    const me = meId(user);
     let where;
-    if (scope === "owner") where = { owner_id: user.id };
-    else if (scope === "requester") where = { requester_id: user.id };
-    else where = { OR: [{ owner_id: user.id }, { requester_id: user.id }] };
-    // 列表不返回 content_html(富文本正文可能很大);点详情时再单独拉 /:id/content
-    const tickets = await prisma.tickets.findMany({ where, orderBy: [{ created_at: "desc" }, { id: "desc" }], include: ticketInclude, omit: { content_html: true } });
+    if (isAdmin(user) && scope === "all") where = {}; // 管理员:看全部工单
+    else if (scope === "owner") where = { owner_id: me };
+    else if (scope === "requester") where = { requester_id: me };
+    else where = { OR: [{ owner_id: me }, { requester_id: me }] };
+    // 列表读工单快照(不再 join people);content_html 太大,详情再单独拉
+    const tickets = await prisma.tickets.findMany({ where, orderBy: [{ created_at: "desc" }, { id: "desc" }], omit: { content_html: true } });
     const segNameById = await loadSegNameMap();
     res.json({ tickets: tickets.map((t) => withCanEdit(t, user, segNameById)) });
   });
@@ -345,35 +295,44 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     const contentHtml = isBlankRich(rawHtml) ? "" : sanitizeRichHtml(rawHtml);
     const summaryText = htmlToPlain(contentHtml) || clip(b.summary, 2000);
 
-    const project = await prisma.projects.findUnique({ where: { id: projectId } });
-    if (!project) return res.status(400).json({ error: "项目不存在" });
     const segment = await prisma.ops_segments.findUnique({ where: { id: segmentId } });
     if (!segment) return res.status(400).json({ error: "环节不存在" });
-    const segTagIds = (await prisma.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } })).map((r) => r.tag_id);
-    if (!segTagIds.length) return res.status(400).json({ error: "该环节未绑定任何标签" });
-    const ownerMatch = await prisma.project_member_tags.findFirst({
-      where: { project_id: projectId, person_id: ownerId, tag_id: { in: segTagIds } },
-    });
-    if (!ownerMatch) return res.status(400).json({ error: "负责人不属于该项目该环节" });
+    const segTags = (await prisma.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } })).map((r) => ({ id: r.tag_id }));
+    if (!segTags.length) return res.status(400).json({ error: "该环节未绑定任何标签" });
 
-    let clientName = project.client || "";
-    if (project.tenant_id) {
-      const tenant = await prisma.tenants.findUnique({ where: { id: project.tenant_id } });
-      if (tenant) clientName = tenant.name;
+    // 实时查 soyoo:校验项目/负责人,组装全量快照(不依赖本地 people/projects)
+    let built;
+    try {
+      built = await buildTicketSnapshot({ projectId, ownerId, requesterUserId: meId(user), segTags });
+    } catch {
+      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
     }
+    if (built.error) return res.status(400).json({ error: built.error });
+    const s = built.snapshot;
+
     const now = nowIso();
     const created = await prisma.tickets.create({
       data: {
         id: crypto.randomUUID(),
         title: clip(b.title, 160) || "未命名需求",
-        source_project_name: clip(clientName, 160),
-        project_name: clip(project.name, 160),
-        project_id: projectId,
-        tag_id: "",
+        source_project_name: clip(s.client_name, 160),
+        client_id: s.client_id,
+        client_name: clip(s.client_name, 160),
+        project_name: clip(s.project_name, 160),
+        project_id: s.project_id,
+        project_status: clip(s.project_status, 80),
+        tag_id: s.tag_id,
+        tag_name: clip(s.tag_name, 120),
         segment_id: segmentId, // 关联环节(显示按 id 取当前名)
         discipline: clip(segment.name, 80), // 兼容历史:仍存环节名快照
-        requester_id: user.id,
-        owner_id: ownerId,
+        requester_id: s.requester_id,
+        requester_name: clip(s.requester_name, 120),
+        requester_avatar: clip(s.requester_avatar, 1024),
+        requester_username: clip(s.requester_username, 120),
+        owner_id: s.owner_id,
+        owner_name: clip(s.owner_name, 120),
+        owner_avatar: clip(s.owner_avatar, 1024),
+        owner_username: clip(s.owner_username, 120),
         status: "排队中",
         priority: PRIORITIES.has(b.priority) ? b.priority : "普通",
         start_at: now,
@@ -388,10 +347,50 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
         updated_at: now,
         status_updated_at: now,
       },
-      include: ticketInclude,
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
     res.status(201).json({ ticket: withCanEdit(created, user, await loadSegNameMap()) });
+  });
+
+  // 项目成员(指派候选 / 选负责人):实时查 soyoo
+  app.get("/api/ops/projects/:id/members", requireAuth, async (req, res) => {
+    try {
+      const { members } = await getProjectWithMembers(soyooId(req.params.id));
+      res.json({ members });
+    } catch {
+      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    }
+  });
+
+  // 指派/改派:把工单转给该项目的另一个成员(管理员 或 当前负责人可操作)
+  app.post("/api/ops/tickets/:id/assign", requireAuth, async (req, res) => {
+    const user = req.user;
+    const id = String(req.params.id);
+    const newOwnerId = req.body?.ownerId ? String(req.body.ownerId) : "";
+    if (!newOwnerId) return res.status(400).json({ error: "请选择负责人" });
+    const t = await prisma.tickets.findUnique({ where: { id } });
+    if (!t) return res.status(404).json({ error: "提单不存在" });
+    if (!isAdmin(user) && t.owner_id !== meId(user)) return res.status(403).json({ error: "只有管理员或当前负责人可指派" });
+    let member;
+    try {
+      const { members } = await getProjectWithMembers(t.project_id);
+      member = members.find((m) => m.id === newOwnerId);
+    } catch {
+      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    }
+    if (!member) return res.status(400).json({ error: "该负责人不在此项目" });
+    const updated = await prisma.tickets.update({
+      where: { id },
+      data: {
+        owner_id: member.id,
+        owner_name: clip(member.name, 120),
+        owner_avatar: clip(member.avatar, 1024),
+        owner_username: clip(member.username, 120),
+        updated_at: nowIso(),
+      },
+    });
+    await logTicketEvent({ ticketId: id, user, action: "指派", note: `指派给 ${member.name}` });
+    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
   });
 
   // 改状态(仅负责人或管理员;提单人不能改,不满意线下沟通)
@@ -402,12 +401,12 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.owner_id !== user.id) return res.status(403).json({ error: "无权修改(仅负责人或管理员)" });
+    if (!isAdmin(user) && t.owner_id !== meId(user)) return res.status(403).json({ error: "无权修改(仅负责人或管理员)" });
     const now = nowIso();
     const reason = clip(req.body?.reason, 500) || null; // 完成/阻塞 的备注都记进流转记录
     const data = { status, updated_at: now, status_updated_at: now };
     if (status === "阻塞") data.block_reason = reason;
-    const updated = await prisma.tickets.update({ where: { id }, data, include: ticketInclude });
+    const updated = await prisma.tickets.update({ where: { id }, data });
     await logTicketEvent({ ticketId: id, user, action: statusActionLabel(t.status, status), fromStatus: t.status, toStatus: status, note: reason });
     res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
   });
@@ -418,7 +417,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.requester_id !== user.id) return res.status(403).json({ error: "无权修改(仅提单人或管理员)" });
+    if (!isAdmin(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权修改(仅提单人或管理员)" });
     const rawHtml = req.body?.contentHtml != null ? String(req.body.contentHtml) : "";
     if (rawHtml.length > MAX_CONTENT_HTML) return res.status(413).json({ error: "内容过大,请压缩图片后重试" });
     const contentHtml = isBlankRich(rawHtml) ? "" : sanitizeRichHtml(rawHtml);
@@ -427,7 +426,6 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     const updated = await prisma.tickets.update({
       where: { id },
       data: { content_html: contentHtml || null, summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""), updated_at: now },
-      include: ticketInclude,
     });
     await logTicketEvent({ ticketId: id, user, action: "修改需求说明" });
     res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
@@ -447,7 +445,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin, opsSync }) {
     const t = await prisma.tickets.findUnique({ where: { id }, select: { content_html: true, owner_id: true, requester_id: true } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.owner_id !== user.id && t.requester_id !== user.id) return res.status(403).json({ error: "无权查看" });
+    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权查看" });
     res.json({ contentHtml: t.content_html ?? "" });
   });
 }

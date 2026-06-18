@@ -508,6 +508,18 @@ async function syncOpsDirectory(directory) {
   externalDirectoryActive = true;
 }
 
+// 删外键(若存在):本系统不强制 FK,表间用 id join。MySQL 无 DROP FK IF EXISTS,先查 information_schema。
+async function dropForeignKeyIfExists(tableName, fkName) {
+  const rows = await db
+    .prepare(
+      "SELECT 1 FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'"
+    )
+    .all(tableName, fkName);
+  if (rows.length) {
+    await db.prepare(`ALTER TABLE ${safeIdentifier(tableName)} DROP FOREIGN KEY ${safeIdentifier(fkName)}`).run();
+  }
+}
+
 async function migrateSchema() {
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
   await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
@@ -557,6 +569,52 @@ async function migrateSchema() {
   // 弃用字段加注释(保留不删):
   await ensureColumnComment("tickets", "discipline", "VARCHAR(80) NOT NULL", "弃用:改用 tag_id;新单仍写标签名兼容历史");
   await ensureColumnComment("people", "discipline", "VARCHAR(80) NOT NULL", "弃用:全局岗位;改用 project_member_tags 解析负责人");
+
+  // ===== ops 提单去同步:工单全量快照 + 去外键 + 变更游标(soyoo 数据不再落 people/projects)=====
+  // 快照列:建单时把 soyoo 返回的字段都存进工单,显示只读本地,不再 join people/projects
+  await ensureColumn("tickets", "client_id", "VARCHAR(64) NOT NULL DEFAULT ''");
+  await ensureColumn("tickets", "client_name", "VARCHAR(160)");
+  await ensureColumn("tickets", "project_status", "VARCHAR(80)");
+  await ensureColumn("tickets", "owner_name", "VARCHAR(120)");
+  await ensureColumn("tickets", "owner_avatar", "VARCHAR(1024)");
+  await ensureColumn("tickets", "owner_username", "VARCHAR(120)");
+  await ensureColumn("tickets", "requester_name", "VARCHAR(120)");
+  await ensureColumn("tickets", "requester_avatar", "VARCHAR(1024)");
+  await ensureColumn("tickets", "requester_username", "VARCHAR(120)");
+  await ensureColumn("tickets", "tag_name", "VARCHAR(120)");
+
+  // 一次性 backfill 旧工单快照(此时 people/projects/tenants 仍在;删表前补齐;表已删则忽略)
+  try {
+    await db.prepare(`UPDATE tickets t JOIN people o ON o.id = t.owner_id
+      SET t.owner_name = COALESCE(NULLIF(t.owner_name, ''), o.name),
+          t.owner_avatar = COALESCE(t.owner_avatar, o.wechat_avatar),
+          t.owner_username = COALESCE(NULLIF(t.owner_username, ''), o.username)
+      WHERE t.owner_name IS NULL OR t.owner_name = ''`).run();
+    await db.prepare(`UPDATE tickets t JOIN people r ON r.id = t.requester_id
+      SET t.requester_name = COALESCE(NULLIF(t.requester_name, ''), r.name),
+          t.requester_avatar = COALESCE(t.requester_avatar, r.wechat_avatar),
+          t.requester_username = COALESCE(NULLIF(t.requester_username, ''), r.username)
+      WHERE t.requester_name IS NULL OR t.requester_name = ''`).run();
+    await db.prepare(`UPDATE tickets t JOIN projects p ON p.id = t.project_id
+      SET t.project_status = COALESCE(t.project_status, p.status),
+          t.client_id = CASE WHEN t.client_id = '' THEN p.tenant_id ELSE t.client_id END
+      WHERE t.project_status IS NULL OR t.client_id = ''`).run();
+    await db.prepare(`UPDATE tickets t JOIN tenants tn ON tn.id = t.client_id
+      SET t.client_name = COALESCE(NULLIF(t.client_name, ''), tn.name)
+      WHERE t.client_name IS NULL OR t.client_name = ''`).run();
+  } catch {
+    // people/projects/tenants 已删则跳过 backfill
+  }
+
+  // 去外键:工单只存 id,不强制关联(本系统统一用 id join,不建 FK)
+  await dropForeignKeyIfExists("tickets", "fk_tickets_owner");
+  await dropForeignKeyIfExists("tickets", "fk_tickets_requester");
+  await dropForeignKeyIfExists("tickets", "fk_tickets_project");
+
+  // 变更游标(outbox 消费进度):单行 kv,k='last_seq'
+  await db.prepare(
+    "CREATE TABLE IF NOT EXISTS ops_sync_state (k VARCHAR(64) PRIMARY KEY, v BIGINT NOT NULL DEFAULT 0)"
+  ).run();
 }
 
 async function ensureColumn(tableName, columnName, definition) {
@@ -1389,6 +1447,24 @@ async function getSyncLogs(limit = 20) {
   }));
 }
 
+// 登录建档:用 soyoo 登录返回的用户信息 upsert 本地身份(替代"必须先同步";新用户首次登录即建档)。
+// auth 已由 soyoo 完成,password_hash 仅占位(列 NOT NULL),登录不校验本地密码。
+async function upsertPersonFromSoyoo({ id, username, name, roleKey, wechatName = "", wechatAvatar = "" }) {
+  await db
+    .prepare(
+      `INSERT INTO people (id, username, password_hash, name, wechat_name, wechat_avatar, role_key, title, discipline, capacity, completion, disabled_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, '', '', 0, 0, NULL)
+       ON DUPLICATE KEY UPDATE
+         username = VALUES(username),
+         name = VALUES(name),
+         wechat_name = VALUES(wechat_name),
+         wechat_avatar = VALUES(wechat_avatar),
+         role_key = VALUES(role_key),
+         disabled_at = NULL`
+    )
+    .run(id, username, hashPassword(seedPassword), name, wechatName, wechatAvatar, roleKey);
+}
+
 export {
   audit,
   canMutateTicket,
@@ -1414,5 +1490,6 @@ export {
   seedDatabase,
   syncOpsDirectory,
   storeAttachment,
+  upsertPersonFromSoyoo,
   verifyPassword,
 };
