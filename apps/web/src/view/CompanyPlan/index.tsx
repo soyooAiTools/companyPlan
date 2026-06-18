@@ -147,7 +147,8 @@ function isTicketRelevantToUser(ticket: Ticket, person: Person) {
   return ticket.ownerId === person.id || ticket.requesterId === person.id;
 }
 
-function App() {
+// embedded=true 时:不渲染旧的侧边栏/顶栏/登录,只渲染 forcedView 指定的那个 section(供新 app 的路由嵌入调用)。
+function App({ embedded = false, forcedView }: { embedded?: boolean; forcedView?: ViewKey } = {}) {
   const [activeView, setActiveView] = useState<ViewKey>(() => {
     // 支持外部深链:/?view=overview|projects|people|tickets|admin(供 /ops 左侧菜单跳转过来)
     const v = new URLSearchParams(window.location.search).get("view");
@@ -216,7 +217,7 @@ function App() {
   }
 
   const activeUser = currentUser ?? people[0];
-  const effectiveView: ViewKey = activeUser.roleKey === "admin" ? activeView : "tickets";
+  const effectiveView: ViewKey = forcedView ?? (activeUser.roleKey === "admin" ? activeView : "tickets");
   const accessibleNavItems =
     activeUser.roleKey === "admin" ? navItems : navItems.filter((item) => item.key === "tickets");
   const visibleProjectIds = useMemo(() => {
@@ -344,6 +345,7 @@ function App() {
   }
 
   if (isBootstrapping) {
+    if (embedded) return <div style={{ padding: 24, color: "#64748b" }}>正在加载生产数据…</div>;
     return (
       <div className="login-screen">
         <div className="login-panel">
@@ -356,11 +358,13 @@ function App() {
   }
 
   if (!currentUser) {
+    if (embedded) return <div style={{ padding: 24, color: "#64748b" }}>会话失效,请重新登录。</div>;
     return <LoginView onLogin={login} errorMessage={appError} />;
   }
 
   return (
-    <div className="app-shell">
+    <div className={embedded ? undefined : "app-shell"}>
+      {!embedded && (
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">PO</div>
@@ -402,6 +406,7 @@ function App() {
           </button>
         </div>
       </aside>
+      )}
 
       <main className={`workspace ${effectiveView === "tickets" ? "sheet-workspace" : ""}`}>
         {appError && (
@@ -409,7 +414,7 @@ function App() {
             {appError}
           </div>
         )}
-        {effectiveView !== "tickets" && (
+        {!embedded && effectiveView !== "tickets" && (
           <header className="topbar">
             <div>
               <span className="eyebrow">试玩广告制作 · 2026-06</span>

@@ -188,6 +188,16 @@ model tickets {
   block_reason                        String?       @db.VarChar(500)
   risk_warning_hours                  Int           @default(8)
   content_html                        String?       @db.MediumText
+  client_id                           String        @default("") @db.VarChar(64)
+  client_name                         String?       @db.VarChar(160)
+  project_status                      String?       @db.VarChar(80)
+  owner_name                          String?       @db.VarChar(120)
+  owner_avatar                        String?       @db.VarChar(1024)
+  owner_username                      String?       @db.VarChar(120)
+  requester_name                      String?       @db.VarChar(120)
+  requester_avatar                    String?       @db.VarChar(1024)
+  requester_username                  String?       @db.VarChar(120)
+  tag_name                            String?       @db.VarChar(120)
   attachments                         attachments[]
   people_tickets_owner_idTopeople     people        @relation("tickets_owner_idTopeople", fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_owner")
   projects                            projects      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_project")
@@ -227,4 +237,9 @@ model ticket_events {
   created_at  String  @db.VarChar(40)
 
   @@index([ticket_id], map: "idx_te_ticket")
+}
+
+model ops_sync_state {
+  k String @id @db.VarChar(64)
+  v BigInt @default(0)
 }

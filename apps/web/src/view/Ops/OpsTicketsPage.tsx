@@ -9,7 +9,8 @@ import { shortNo, fmtDateTime } from "../../utils/format";
 import { remainingHours, remainingView, isWarning } from "./ticketUtils";
 
 type Scope = "all" | "owner" | "requester";
-const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
+// 「阻塞」暂时前端隐藏:不可选 / 不分组 / 不展示(后端仍支持,恢复时把 "阻塞" 加回本数组即可)
+const STATUSES = ["排队中", "进行中", "已完成"];
 const STATUS_COLOR: Record<string, string> = { 排队中: "default", 进行中: "processing", 阻塞: "error", 已完成: "success" };
 const PRIORITIES = ["紧急", "优先", "普通", "低优先"];
 const PRIORITY_COLOR: Record<string, string> = { 紧急: "red", 优先: "orange", 普通: "blue", 低优先: "default" };
