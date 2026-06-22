@@ -1,6 +1,6 @@
-import LegacyApp from "../CompanyPlan";
+import PlaceholderPage from "./PlaceholderPage";
 
-// 人员进度(复用旧实现,embedded 模式嵌入新外壳内容区)
+// 人员进度:旧实现已下线(死数据/旧接口移除),待重新接入。
 export default function PeoplePage() {
-  return <LegacyApp embedded forcedView="people" />;
+  return <PlaceholderPage title="人员进度" />;
 }

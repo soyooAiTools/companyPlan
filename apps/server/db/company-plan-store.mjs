@@ -582,6 +582,9 @@ async function migrateSchema() {
   await ensureColumn("tickets", "requester_avatar", "VARCHAR(1024)");
   await ensureColumn("tickets", "requester_username", "VARCHAR(120)");
   await ensureColumn("tickets", "tag_name", "VARCHAR(120)");
+  await ensureColumn("tickets", "due_at", "VARCHAR(40)"); // 截止时刻(=创建+交付时长):延期 tab 服务端筛/排序用
+  await ensureColumn("tickets", "warn_at", "VARCHAR(40)"); // 预警时刻(=截止−预警窗口)
+  await ensureIndex("idx_tickets_warn", "tickets", "warn_at");
 
   // 一次性 backfill 旧工单快照(此时 people/projects/tenants 仍在;删表前补齐;表已删则忽略)
   try {
@@ -606,6 +609,21 @@ async function migrateSchema() {
     // people/projects/tenants 已删则跳过 backfill
   }
 
+  // 回填 due_at/warn_at(老工单:从 created_at + due_in_hours/risk_warning_hours 算;新单建单时已写)
+  try {
+    const rows = await db.prepare("SELECT id, created_at, due_in_hours, risk_warning_hours FROM tickets WHERE due_at IS NULL OR due_at = ''").all();
+    const upd = db.prepare("UPDATE tickets SET due_at = ?, warn_at = ? WHERE id = ?");
+    for (const r of rows) {
+      const t0 = Date.parse(r.created_at);
+      if (!t0) continue;
+      const dh = r.due_in_hours || 72;
+      const rh = r.risk_warning_hours || 8;
+      await upd.run(new Date(t0 + dh * 3600e3).toISOString(), new Date(t0 + (dh - rh) * 3600e3).toISOString(), r.id);
+    }
+  } catch {
+    // 回填失败忽略(新单不受影响)
+  }
+
   // 去外键:工单只存 id,不强制关联(本系统统一用 id join,不建 FK)
   await dropForeignKeyIfExists("tickets", "fk_tickets_owner");
   await dropForeignKeyIfExists("tickets", "fk_tickets_requester");
@@ -615,6 +633,53 @@ async function migrateSchema() {
   await db.prepare(
     "CREATE TABLE IF NOT EXISTS ops_sync_state (k VARCHAR(64) PRIMARY KEY, v BIGINT NOT NULL DEFAULT 0)"
   ).run();
+
+  // 项目状态流转记录(项目池:谁/何时把项目状态 X→Y + 富文本评论)
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_project_status_logs (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        project_id VARCHAR(64) NOT NULL,
+        project_name VARCHAR(160),
+        kind VARCHAR(16) NOT NULL DEFAULT 'status',
+        from_status VARCHAR(20),
+        to_status VARCHAR(20) NOT NULL,
+        actor_id VARCHAR(64),
+        actor_name VARCHAR(120),
+        comment_html MEDIUMTEXT,
+        created_at VARCHAR(40) NOT NULL,
+        KEY idx_psl_project (project_id),
+        KEY idx_psl_created (created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+  // 老库补 kind 列(status=状态变更 / stage=阶段变更);阶段名最长 6 字,VARCHAR(20) 够用
+  await ensureColumn("ops_project_status_logs", "kind", "VARCHAR(16) NOT NULL DEFAULT 'status'");
+
+  // 项目状态时长阈值配置(每状态:是否监控 enabled + 停留多久算超时 stale_hours)
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_project_status_settings (
+        status VARCHAR(20) PRIMARY KEY,
+        enabled TINYINT NOT NULL DEFAULT 1,
+        stale_hours INT NOT NULL DEFAULT 48,
+        sort_order INT NOT NULL DEFAULT 0,
+        updated_at VARCHAR(40) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+
+  // 项目「ops 自有扩展字段」(1:1,project_id = soyoo 项目 id)。soyoo 没有、ops 想加的字段都放这,以后扩展加列即可。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_project_ext (
+        project_id VARCHAR(64) PRIMARY KEY,
+        stage VARCHAR(40),
+        stage_changed_at VARCHAR(40),
+        updated_at VARCHAR(40)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
 }
 
 async function ensureColumn(tableName, columnName, definition) {
@@ -706,6 +771,23 @@ async function seedConfigRows(now) {
       index,
       now
     );
+  }
+
+  // 项目状态时长阈值默认值(幂等 INSERT IGNORE;管理员可在配置页改)。enabled=0 不监控:已完成/回收中/客户暂停
+  const insertStatusSetting = db.prepare(
+    `INSERT IGNORE INTO ops_project_status_settings (status, enabled, stale_hours, sort_order, updated_at) VALUES (?, ?, ?, ?, ?)`
+  );
+  const statusDefaults = [
+    { status: "未启动", enabled: 1, hours: 48 },
+    { status: "推进中", enabled: 1, hours: 168 },
+    { status: "已完成", enabled: 0, hours: 0 },
+    { status: "已反馈", enabled: 1, hours: 24 },
+    { status: "待反馈", enabled: 1, hours: 48 },
+    { status: "回收中", enabled: 0, hours: 0 },
+    { status: "客户暂停", enabled: 0, hours: 0 },
+  ];
+  for (const [index, s] of statusDefaults.entries()) {
+    await insertStatusSetting.run(s.status, s.enabled, s.hours, index, now);
   }
 }
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { App as AntApp, Avatar, Button, ConfigProvider, Layout, Menu, Spin } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, SafetyCertificateOutlined, LogoutOutlined } from "@ant-design/icons";
+import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined } from "@ant-design/icons";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { logoutApi } from "../../api/modules/companyPlan";
 import { opsApi, type OpsMe } from "../../api/modules/ops";
@@ -11,9 +11,8 @@ import LoginView from "./LoginView";
 import OpsTicketsPage from "./OpsTicketsPage";
 import OpsSettingsPage from "./OpsSettingsPage";
 import OverviewPage from "./OverviewPage";
-import ProjectsPage from "./ProjectsPage";
+import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
-import AdminPage from "./AdminPage";
 
 const { Sider, Content } = Layout;
 
@@ -23,6 +22,8 @@ export default function OpsApp() {
   const selected = location.pathname.split("/")[1] || "tickets";
   const [me, setMe] = useState<OpsMe | null>(null);
   const [auth, setAuth] = useState<"loading" | "login" | "ready">("loading");
+  const isAdmin = !!me?.isAdmin;
+  const canPool = isAdmin || !!me?.isPlanner; // 管理员或策划(制片)可见「项目池」
 
   // 用 /api/ops/me 判断登录态:成功=已登录,401=未登录显示登录页
   const loadMe = () =>
@@ -54,17 +55,15 @@ export default function OpsApp() {
     navigate("/tickets");
   };
 
-  const isAdmin = !!me?.isAdmin;
   const allItems = [
-    { key: "overview", icon: <DashboardOutlined />, label: "运营总览" },
-    { key: "projects", icon: <ProjectOutlined />, label: "项目池" },
-    { key: "people", icon: <TeamOutlined />, label: "人员进度" },
-    { key: "tickets", icon: <FileTextOutlined />, label: "需求提单" },
-    { key: "settings", icon: <SettingOutlined />, label: "设置" },
-    { key: "admin", icon: <SafetyCertificateOutlined />, label: "管理员" },
+    { key: "overview", icon: <DashboardOutlined />, label: "运营总览", show: isAdmin },
+    { key: "projects", icon: <ProjectOutlined />, label: "项目池", show: canPool },
+    { key: "people", icon: <TeamOutlined />, label: "人员进度", show: isAdmin },
+    { key: "tickets", icon: <FileTextOutlined />, label: "需求提单", show: true },
+    { key: "settings", icon: <SettingOutlined />, label: "设置", show: isAdmin },
   ];
-  // 非管理员只看到「需求提单」(其余仅管理员可见)
-  const items = isAdmin ? allItems : allItems.filter((i) => i.key === "tickets");
+  // 提单所有人可见;项目池=管理员或策划;其余仅管理员
+  const items = allItems.filter((i) => i.show).map(({ show: _show, ...i }) => i);
 
   return (
     <ConfigProvider locale={zhCN} theme={{ token: { colorPrimary: "#0f766e" } }}>
@@ -107,9 +106,8 @@ export default function OpsApp() {
                 <Routes>
                   <Route path="tickets" element={<OpsTicketsPage />} />
                   <Route path="overview" element={<OverviewPage />} />
-                  <Route path="projects" element={<ProjectsPage />} />
+                  <Route path="projects" element={canPool ? <ProjectPoolPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="people" element={<PeoplePage />} />
-                  <Route path="admin" element={isAdmin ? <AdminPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="settings" element={isAdmin ? <OpsSettingsPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="*" element={<Navigate to="/tickets" replace />} />
                 </Routes>

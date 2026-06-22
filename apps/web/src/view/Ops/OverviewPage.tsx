@@ -1,6 +1,6 @@
-import LegacyApp from "../CompanyPlan";
+import PlaceholderPage from "./PlaceholderPage";
 
-// 运营总览(复用旧实现,embedded 模式嵌入新外壳内容区)
+// 运营总览:旧实现已下线(死数据/旧接口移除),待重新接入。
 export default function OverviewPage() {
-  return <LegacyApp embedded forcedView="overview" />;
+  return <PlaceholderPage title="运营总览" />;
 }

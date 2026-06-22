@@ -5,15 +5,11 @@ import { prisma } from "./prisma.mjs";
 import { isOssConfigured, uploadObject } from "./oss.mjs";
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
-import { listMyProjects, getProjectWithMembers, getUser, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
+import { isAdmin, meId, nowIso, clip, isPlanner } from "./ops-helpers.mjs";
+import { listMyProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
-const isAdmin = (user) => user?.roleKey === "admin";
-// 当前用户的纯 soyoo id(req.user.id 形如 ops-user-123;新工单只存纯 id)
-const meId = (user) => soyooId(user?.id);
-const nowIso = () => new Date().toISOString();
-const clip = (v, n) => (v == null ? "" : String(v)).slice(0, n);
 
 // —— 富文本正文:白名单 sanitize(防存储型 XSS)+ 派生纯文本摘要 ——
 const MAX_CONTENT_HTML = 8_000_000; // ~8MB,给 base64 内联图片留空间(列为 MEDIUMTEXT 16MB)
@@ -133,7 +129,9 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/me", requireAuth, async (req, res) => {
     const u = req.user || {};
     const p = await prisma.people.findUnique({ where: { id: String(u.id) }, select: { wechat_avatar: true, wechat_name: true } }).catch(() => null);
-    res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "" } });
+    // isPlanner:soyoo 用户带「制片」标签 = 策划(决定「项目池」菜单可见 + 策划视角)
+    const planner = await isPlanner(u);
+    res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", isPlanner: planner, avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "" } });
   });
 
   // 原始 soyoo 标签(供环节配置页绑定):实时查 soyoo
@@ -242,6 +240,15 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({ segment: segments.find((s) => s.id === id) ?? null });
   });
 
+  // 环节排序(拖拽):按传入的 id 顺序写 sort_order(0,1,2…)
+  app.post("/api/ops/segments/reorder", requireAuth, requireAdmin, async (req, res) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map((x) => Number(x)).filter(Number.isInteger) : [];
+    if (!ids.length) return res.status(400).json({ error: "缺少 ids" });
+    const now = nowIso();
+    await prisma.$transaction(ids.map((id, i) => prisma.ops_segments.update({ where: { id }, data: { sort_order: i, updated_at: now } })));
+    res.json({ segments: await loadSegments() });
+  });
+
   // 删除环节
   app.delete("/api/ops/segments/:id", requireAuth, requireAdmin, async (req, res) => {
     const id = Number(req.params.id);
@@ -267,17 +274,56 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // scope: all=我相关的全部 / owner=我负责的 / requester=我提单的
   app.get("/api/ops/tickets", requireAuth, async (req, res) => {
     const user = req.user;
-    const scope = String(req.query.scope ?? "all");
+    const qy = req.query;
+    const scope = String(qy.scope ?? "all"); // all | owner | requester | overdue
     const me = meId(user);
-    let where;
-    if (isAdmin(user) && scope === "all") where = {}; // 管理员:看全部工单
-    else if (scope === "owner") where = { owner_id: me };
-    else if (scope === "requester") where = { requester_id: me };
-    else where = { OR: [{ owner_id: me }, { requester_id: me }] };
-    // 列表读工单快照(不再 join people);content_html 太大,详情再单独拉
-    const tickets = await prisma.tickets.findMany({ where, orderBy: [{ created_at: "desc" }, { id: "desc" }], omit: { content_html: true } });
+    const page = Math.max(1, Number(qy.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(qy.pageSize) || 20));
+
+    // 可见性 + scope:管理员 all=全部;owner/requester=对应自己;普通用户"全部"=自己相关
+    let base;
+    if (scope === "owner") base = { owner_id: me };
+    else if (scope === "requester") base = { requester_id: me };
+    else if (isAdmin(user)) base = {};
+    else base = { OR: [{ owner_id: me }, { requester_id: me }] };
+
+    // 除"状态"外的筛选(状态单独加,以便给状态 chip 计数)
+    const filters = [];
+    if (qy.priority) filters.push({ priority: String(qy.priority) });
+    if (qy.segment) filters.push({ segment_id: Number(qy.segment) || -1 });
+    const kw = String(qy.q ?? "").trim();
+    if (kw)
+      filters.push({
+        OR: [
+          { title: { contains: kw } },
+          { project_name: { contains: kw } },
+          { client_name: { contains: kw } },
+          { owner_name: { contains: kw } },
+          { requester_name: { contains: kw } },
+          { id: { contains: kw } },
+        ],
+      });
+
+    let orderBy = [{ created_at: "desc" }, { id: "desc" }];
+    // 延期预警:未完成 且 warn_at < 现在,按截止时间升序(最急在前)
+    if (scope === "overdue") {
+      filters.push({ status: { not: "已完成" } }, { warn_at: { not: null } }, { warn_at: { lt: nowIso() } });
+      orderBy = [{ due_at: "asc" }];
+    }
+
+    const whereNoStatus = { AND: [base, ...filters] };
+    const where = qy.status ? { AND: [base, ...filters, { status: String(qy.status) }] } : whereNoStatus;
+
+    const [total, rows, grouped] = await Promise.all([
+      prisma.tickets.count({ where }),
+      prisma.tickets.findMany({ where, orderBy, skip: (page - 1) * pageSize, take: pageSize, omit: { content_html: true } }),
+      // 各状态计数(给状态筛选 chip 用;延期 tab 不需要)
+      scope === "overdue" ? Promise.resolve([]) : prisma.tickets.groupBy({ by: ["status"], where: whereNoStatus, _count: { _all: true } }),
+    ]);
+    const counts = {};
+    for (const g of grouped) counts[g.status] = g._count._all;
     const segNameById = await loadSegNameMap();
-    res.json({ tickets: tickets.map((t) => withCanEdit(t, user, segNameById)) });
+    res.json({ tickets: rows.map((t) => withCanEdit(t, user, segNameById)), total, page, pageSize, counts });
   });
 
   // 建单:按环节(segmentId)。owner 须为该项目下、标签 ∈ 环节绑定标签 的成员
@@ -311,6 +357,10 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const s = built.snapshot;
 
     const now = nowIso();
+    // 截止/预警时刻一并固化进工单(供延期 tab 服务端筛选/排序;与"阈值建单即快照"一致)
+    const t0 = Date.parse(now);
+    const dueAt = new Date(t0 + segment.default_delivery_hours * 3600e3).toISOString();
+    const warnAt = new Date(t0 + (segment.default_delivery_hours - segment.risk_warning_hours) * 3600e3).toISOString();
     const created = await prisma.tickets.create({
       data: {
         id: crypto.randomUUID(),
@@ -338,6 +388,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
         start_at: now,
         due_in_hours: segment.default_delivery_hours,
         risk_warning_hours: segment.risk_warning_hours,
+        due_at: dueAt,
+        warn_at: warnAt,
         need_type: clip(b.needType, 120) || segment.name,
         summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""),
         content_html: contentHtml || null,

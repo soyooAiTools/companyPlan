@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Avatar, Button, Card, Col, Collapse, Descriptions, Drawer, Form, Input, Modal, Row, Segmented, Select, Space, Tag, Table, Timeline, Tooltip, Typography } from "antd";
+import { App, Avatar, Button, Card, Col, Descriptions, Drawer, Form, Input, Modal, Row, Segmented, Select, Space, Tag, Table, Timeline, Tooltip, Typography } from "antd";
 import { BarsOutlined, EditOutlined, FullscreenOutlined, ProjectOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant, OpsTicket, OpsTicketEvent } from "../../api/modules/ops";
 import RichTextEditor from "./RichTextEditor";
-import { OPS_TICKETS_VIEW_KEY, OPS_TICKETS_DEFAULT_VIEW, type OpsTicketsView } from "./constants";
+import SegmentedTabs from "../../components/SegmentedTabs";
+import { OPS_TICKETS_VIEW_KEY, OPS_TICKETS_DEFAULT_VIEW, OPS_TOOLBAR_CARD, type OpsTicketsView } from "./constants";
 import { shortNo, fmtDateTime } from "../../utils/format";
-import { remainingHours, remainingView, isWarning } from "./ticketUtils";
+import { remainingView } from "./ticketUtils";
 
 type Scope = "all" | "owner" | "requester";
 // 「阻塞」暂时前端隐藏:不可选 / 不分组 / 不展示(后端仍支持,恢复时把 "阻塞" 加回本数组即可)
@@ -14,7 +15,7 @@ const STATUSES = ["排队中", "进行中", "已完成"];
 const STATUS_COLOR: Record<string, string> = { 排队中: "default", 进行中: "processing", 阻塞: "error", 已完成: "success" };
 const PRIORITIES = ["紧急", "优先", "普通", "低优先"];
 const PRIORITY_COLOR: Record<string, string> = { 紧急: "red", 优先: "orange", 普通: "blue", 低优先: "default" };
-const SCOPE_OPTIONS = [
+const SCOPE_OPTIONS: { label: string; value: Scope }[] = [
 	{ label: "全部", value: "all" },
 	{ label: "我提单的", value: "requester" },
 	{ label: "我负责的", value: "owner" },
@@ -35,9 +36,16 @@ export default function OpsTicketsPage() {
 	const [groupBy, setGroupBy] = useState<"status" | "priority" | "segment">("status");
 	const [bottomTab, setBottomTab] = useState("tickets");
 	const [search, setSearch] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [priorityFilter, setPriorityFilter] = useState<string>();
-	const [segmentFilter, setSegmentFilter] = useState<string>();
-	const [segmentOptions, setSegmentOptions] = useState<string[]>([]); // 全部环节(筛选下拉用,非仅当前数据)
+	const [segmentFilter, setSegmentFilter] = useState<number>();
+	const [segmentOptions, setSegmentOptions] = useState<{ id: number; name: string }[]>([]); // 全部环节(筛选下拉用)
+	const [statusFilter, setStatusFilter] = useState<string>(); // 状态筛选 chip(undefined=全部)
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(20);
+	const [total, setTotal] = useState(0);
+	const [counts, setCounts] = useState<Record<string, number>>({}); // 各状态条数(状态 chip 用)
+	const [overdueCount, setOverdueCount] = useState(0); // 延期 tab 角标
 	const [detail, setDetail] = useState<OpsTicket | null>(null);
 	const [events, setEvents] = useState<OpsTicketEvent[]>([]);
 	const [contentZoom, setContentZoom] = useState(false); // 需求说明放大查看
@@ -67,21 +75,55 @@ export default function OpsTicketsPage() {
 	const selectedSegmentId = Form.useWatch("segmentId", form) as number | undefined;
 	const selectedProjectId = Form.useWatch("projectId", form) as string | undefined;
 
-	const loadTickets = async (s: Scope = scope) => {
+	const loadTickets = async () => {
 		setLoading(true);
 		try {
-			const r = await opsApi.tickets(s);
+			const overdue = bottomTab === "overdue";
+			const r = await opsApi.tickets({
+				scope: overdue ? "overdue" : scope,
+				page,
+				pageSize: view === "kanban" ? 200 : pageSize, // 看板=有界概览(封顶 200)
+				q: debouncedSearch.trim() || undefined,
+				priority: priorityFilter,
+				segment: segmentFilter,
+				status: overdue ? undefined : statusFilter,
+			});
 			setTickets(r.tickets);
+			setTotal(r.total ?? r.tickets.length);
+			setCounts(r.counts || {});
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "加载提单失败");
 		} finally {
 			setLoading(false);
 		}
 	};
+	// 延期总数(底部 tab 角标用)
+	const loadOverdueCount = async () => {
+		try {
+			const r = await opsApi.tickets({ scope: "overdue", page: 1, pageSize: 1 });
+			setOverdueCount(r.total ?? 0);
+		} catch {
+			/* ignore */
+		}
+	};
+	// 筛选/分页/视图/tab 变化 → 服务端重新拉(单一来源,避免重复请求:筛选变更已在各 onChange 里 setPage(1))
 	useEffect(() => {
-		void loadTickets(scope);
+		void loadTickets();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [scope]);
+	}, [scope, bottomTab, view, page, pageSize, statusFilter, priorityFilter, segmentFilter, debouncedSearch]);
+	// 搜索去抖(并回到第 1 页)
+	useEffect(() => {
+		const t = setTimeout(() => {
+			setDebouncedSearch(search);
+			setPage(1);
+		}, 400);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [search]);
+	useEffect(() => {
+		void loadOverdueCount();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	// 记住用户选的视图(table/kanban)到本地
 	useEffect(() => {
@@ -92,7 +134,7 @@ export default function OpsTicketsPage() {
 	useEffect(() => {
 		opsApi
 			.segments()
-			.then((r) => setSegmentOptions(r.segments.map((s) => s.name)))
+			.then((r) => setSegmentOptions(r.segments.map((s) => ({ id: s.id, name: s.name }))))
 			.catch(() => {});
 	}, []);
 
@@ -117,6 +159,7 @@ export default function OpsTicketsPage() {
 					.then((e) => setEvents(e.events))
 					.catch(() => {});
 			await loadTickets();
+			void loadOverdueCount();
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "操作失败");
 		}
@@ -291,17 +334,8 @@ export default function OpsTicketsPage() {
 		}
 	};
 
+	// 列表/看板数据都由服务端按 scope/状态/筛选/分页返回,前端不再客户端过滤
 	const segmentNames = useMemo(() => [...new Set(tickets.map((t) => t.tagName).filter(Boolean))], [tickets]);
-	const filtered = useMemo(() => {
-		const kw = search.trim().toLowerCase();
-		return tickets.filter(
-			(t) =>
-				(!priorityFilter || t.priority === priorityFilter) &&
-				(!segmentFilter || t.tagName === segmentFilter) &&
-				(!kw || [t.id, t.title, t.projectName, t.client, t.ownerName, t.requesterName].some((x) => (x || "").toLowerCase().includes(kw))),
-		);
-	}, [tickets, search, priorityFilter, segmentFilter]);
-	const overdueRows = useMemo(() => filtered.filter(isWarning).sort((a, b) => (remainingHours(a) ?? 0) - (remainingHours(b) ?? 0)), [filtered]);
 
 	// 看板:列按 groupBy(状态/优先级/环节)动态分组
 	const makeGroupColumns = (rows: OpsTicket[]) =>
@@ -395,76 +429,70 @@ export default function OpsTicketsPage() {
 		},
 		{ title: "状态", key: "status", width: 120, render: (_: unknown, r: OpsTicket) => statusControl(r, 108) },
 	];
-	const tableProps = (rows: OpsTicket[]) => ({
+	const tableProps = {
 		rowKey: "id" as const,
-		dataSource: rows,
+		dataSource: tickets,
 		columns: baseColumns,
 		size: "small" as const,
 		loading,
-		pagination: rows.length > 20 ? ({ pageSize: 20, showSizeChanger: true } as const) : (false as const),
+		pagination: {
+			current: page,
+			pageSize,
+			total,
+			showSizeChanger: true,
+			showTotal: (t: number) => `共 ${t} 条`,
+			onChange: (p: number, ps: number) => {
+				setPage(p);
+				setPageSize(ps);
+			},
+		},
 		scroll: { x: 1340 },
 		onRow: (r: OpsTicket) => ({ onClick: () => setDetail(r), style: { cursor: "pointer" } }),
-	});
+	};
 
-	// 表格视图:按状态分组折叠
-	const tableGrouped = (
-		<Collapse
-			defaultActiveKey={STATUSES}
-			items={STATUSES.map((st) => {
-				const rows = filtered.filter((t) => t.status === st);
-				return {
-					key: st,
-					label: (
-						<span>
-							<Tag color={STATUS_COLOR[st]}>{st}</Tag>
-							<span style={{ color: "#64748b" }}>{rows.length} 条</span>
-						</span>
-					),
-					children: <Table {...tableProps(rows)} />,
-				};
-			})}
-		/>
+	// 状态筛选 chip(替代旧的"按状态折叠";数量来自服务端 counts)
+	const totalAll = Object.values(counts).reduce((a, b) => a + b, 0);
+	const statusChips = (
+		<Space wrap style={{ marginBottom: 12 }}>
+			<Tag.CheckableTag
+				checked={!statusFilter}
+				onChange={() => {
+					setStatusFilter(undefined);
+					setPage(1);
+				}}>
+				全部 {totalAll}
+			</Tag.CheckableTag>
+			{STATUSES.map((st) => (
+				<Tag.CheckableTag
+					key={st}
+					checked={statusFilter === st}
+					onChange={() => {
+						setStatusFilter(statusFilter === st ? undefined : st);
+						setPage(1);
+					}}>
+					{st} {counts[st] || 0}
+				</Tag.CheckableTag>
+			))}
+		</Space>
 	);
 
 	const sheetTabs = [
 		{ key: "tickets", label: "需求提单" },
-		{ key: "overdue", label: `延期任务预警${overdueRows.length ? ` (${overdueRows.length})` : ""}` },
+		{ key: "overdue", label: `延期任务预警${overdueCount ? ` (${overdueCount})` : ""}` },
 	];
 
 	return (
 		<div style={{ paddingBottom: 52 }}>
-			<div
-				style={{
-					display: "flex",
-					justifyContent: "space-between",
-					alignItems: "center",
-					flexWrap: "wrap",
-					gap: 12,
-					marginBottom: 12,
-					background: "#fff",
-					padding: "10px 12px",
-					borderRadius: 8,
-					border: "1px solid #edf0f3",
-				}}>
+			<div style={{ ...OPS_TOOLBAR_CARD, justifyContent: "space-between" }}>
 				<Space wrap>
-					<div style={{ display: "inline-flex", gap: 2, background: "#eef1f5", padding: 3, borderRadius: 8 }}>
-						{SCOPE_OPTIONS.map((o) => (
-							<div
-								key={o.value}
-								onClick={() => setScope(o.value as Scope)}
-								style={{
-									padding: "3px 14px",
-									borderRadius: 6,
-									cursor: "pointer",
-									fontSize: 14,
-									fontWeight: scope === o.value ? 600 : 400,
-									background: scope === o.value ? "#0f766e" : "transparent",
-									color: scope === o.value ? "#fff" : "#64748b",
-								}}>
-								{o.label}
-							</div>
-						))}
-					</div>
+					<SegmentedTabs
+						value={scope}
+						onChange={(v) => {
+							setScope(v);
+							setPage(1);
+						}}
+						options={SCOPE_OPTIONS}
+					/>
 					{view === "kanban" ? (
 						<Segmented
 							options={[
@@ -482,17 +510,23 @@ export default function OpsTicketsPage() {
 						placeholder="环节"
 						style={{ width: 110 }}
 						value={segmentFilter}
-						onChange={setSegmentFilter}
+						onChange={(v) => {
+							setSegmentFilter(v);
+							setPage(1);
+						}}
 						showSearch
 						optionFilterProp="label"
-						options={segmentOptions.map((n) => ({ value: n, label: n }))}
+						options={segmentOptions.map((s) => ({ value: s.id, label: s.name }))}
 					/>
 					<Select
 						allowClear
 						placeholder="优先级"
 						style={{ width: 110 }}
 						value={priorityFilter}
-						onChange={setPriorityFilter}
+						onChange={(v) => {
+							setPriorityFilter(v);
+							setPage(1);
+						}}
 						options={PRIORITIES.map((p) => ({ value: p, label: p }))}
 					/>
 				</Space>
@@ -511,7 +545,21 @@ export default function OpsTicketsPage() {
 				</Space>
 			</div>
 
-			{view === "kanban" ? renderKanban(bottomTab === "tickets" ? filtered : overdueRows) : bottomTab === "tickets" ? tableGrouped : <Table {...tableProps(overdueRows)} />}
+			{view === "kanban" ? (
+				<>
+					{total > tickets.length ? (
+						<Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+							看板仅展示前 {tickets.length} 条(共 {total} 条),查看全部请切换到列表视图
+						</Typography.Text>
+					) : null}
+					{renderKanban(tickets)}
+				</>
+			) : (
+				<>
+					{bottomTab === "tickets" ? statusChips : null}
+					<Table {...tableProps} />
+				</>
+			)}
 
 			{/* 固定在底部的工作表式标签栏(类似 Excel:圆角折页 Tab,选中白底连着内容,无顶部高亮线) */}
 			<div
@@ -534,7 +582,10 @@ export default function OpsTicketsPage() {
 					return (
 						<div
 							key={t.key}
-							onClick={() => setBottomTab(t.key)}
+							onClick={() => {
+								setBottomTab(t.key);
+								setPage(1);
+							}}
 							style={{
 								display: "flex",
 								alignItems: "center",

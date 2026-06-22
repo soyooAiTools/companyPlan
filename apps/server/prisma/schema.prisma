@@ -198,6 +198,8 @@ model tickets {
   requester_avatar                    String?       @db.VarChar(1024)
   requester_username                  String?       @db.VarChar(120)
   tag_name                            String?       @db.VarChar(120)
+  due_at                              String?       @db.VarChar(40)
+  warn_at                             String?       @db.VarChar(40)
   attachments                         attachments[]
   people_tickets_owner_idTopeople     people        @relation("tickets_owner_idTopeople", fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_owner")
   projects                            projects      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_project")
@@ -206,6 +208,7 @@ model tickets {
   @@index([owner_id], map: "idx_tickets_owner")
   @@index([project_id], map: "idx_tickets_project")
   @@index([requester_id], map: "idx_tickets_requester")
+  @@index([warn_at], map: "idx_tickets_warn")
 }
 
 model ops_segment_tags {
@@ -242,4 +245,36 @@ model ticket_events {
 model ops_sync_state {
   k String @id @db.VarChar(64)
   v BigInt @default(0)
+}
+
+model ops_project_status_logs {
+  id           Int     @id @default(autoincrement())
+  project_id   String  @db.VarChar(64)
+  project_name String? @db.VarChar(160)
+  kind         String  @default("status") @db.VarChar(16)
+  from_status  String? @db.VarChar(20)
+  to_status    String  @db.VarChar(20)
+  actor_id     String? @db.VarChar(64)
+  actor_name   String? @db.VarChar(120)
+  comment_html String? @db.MediumText
+  created_at   String  @db.VarChar(40)
+
+  @@index([project_id], map: "idx_psl_project")
+  @@index([created_at], map: "idx_psl_created")
+}
+
+model ops_project_status_settings {
+  status      String @id @db.VarChar(20)
+  enabled     Int    @default(1) @db.TinyInt
+  stale_hours Int    @default(48)
+  sort_order  Int    @default(0)
+  updated_at  String @db.VarChar(40)
+}
+
+// 项目「ops 自有扩展字段」(1:1,project_id = soyoo 项目 id)。soyoo 没有、ops 想加的字段都放这。
+model ops_project_ext {
+  project_id       String  @id @db.VarChar(64)
+  stage            String? @db.VarChar(40)
+  stage_changed_at String? @db.VarChar(40)
+  updated_at       String? @db.VarChar(40)
 }

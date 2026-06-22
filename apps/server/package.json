@@ -17,6 +17,7 @@
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "ali-oss": "^6.23.0",
+    "dayjs": "^1.11.21",
     "express": "^5.2.1",
     "mysql2": "^3.22.5",
     "sanitize-html": "^2.17.5"

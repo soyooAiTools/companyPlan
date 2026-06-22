@@ -1,7 +1,16 @@
-// 设置页:Tabs —— 标签绑定(环节↔标签 + 交付配置)。仅管理员可进。
+// 设置页:Tabs —— 标签绑定(环节↔标签 + 交付配置) / 项目状态时间(超时阈值)。仅管理员可进。
 import { Tabs } from "antd";
 import OpsTagSettingsPage from "./OpsTagSettingsPage";
+import OpsProjectStatusSettingsPage from "./OpsProjectStatusSettingsPage";
 
 export default function OpsSettingsPage() {
-  return <Tabs defaultActiveKey="tags" items={[{ key: "tags", label: "标签绑定", children: <OpsTagSettingsPage /> }]} />;
+  return (
+    <Tabs
+      defaultActiveKey="tags"
+      items={[
+        { key: "tags", label: "标签绑定", children: <OpsTagSettingsPage /> },
+        { key: "project-status", label: "项目状态时间", children: <OpsProjectStatusSettingsPage /> },
+      ]}
+    />
+  );
 }

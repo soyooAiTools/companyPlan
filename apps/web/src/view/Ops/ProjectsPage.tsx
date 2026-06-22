@@ -1,6 +1,6 @@
-import LegacyApp from "../CompanyPlan";
+import PlaceholderPage from "./PlaceholderPage";
 
-// 项目池(复用旧实现,embedded 模式嵌入新外壳内容区)
+// 项目池:旧实现已下线(死数据/旧接口移除),待重新接入。
 export default function ProjectsPage() {
-  return <LegacyApp embedded forcedView="projects" />;
+  return <PlaceholderPage title="项目池" />;
 }

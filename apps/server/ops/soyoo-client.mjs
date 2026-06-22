@@ -11,11 +11,17 @@ export function soyooId(id) {
   return String(id ?? "").replace(/^ops-(user|project|tenant|tag)-/, "");
 }
 
-async function callRaw(path) {
+async function callRaw(path, opts = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT);
   try {
-    const res = await fetch(`${BASE}${path}`, { headers: { Accept: "application/json" }, signal: controller.signal });
+    const init = { headers: { Accept: "application/json" }, signal: controller.signal };
+    if (opts.method) init.method = opts.method;
+    if (opts.body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(opts.body);
+    }
+    const res = await fetch(`${BASE}${path}`, init);
     if (!res.ok) throw new Error(`soyoo ${path} -> ${res.status}`);
     return await res.json().catch(() => ({}));
   } finally {
@@ -66,4 +72,15 @@ export const soyooClient = {
   },
   tags: () => cached("tags", () => call(`/integration/tags`)),
   changes: (after = 0, limit = 200) => call(`/integration/changes?after=${after}&limit=${limit}`),
+  // 项目池:列表(返回 {data,total,page,limit})/ 改状态 / 超时筛
+  projectsList: (opts = {}) => {
+    const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
+    if (opts.keyword) q.set("keyword", String(opts.keyword));
+    if (opts.status) q.set("status", String(opts.status));
+    if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的状态(逗号分隔),如 回收中,未启动
+    if (opts.memberUserId) q.set("member_user_id", String(opts.memberUserId));
+    return callRaw(`/integration/projects?${q.toString()}`);
+  },
+  setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/status`, { method: "POST", body: { status } }),
+  staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
 };

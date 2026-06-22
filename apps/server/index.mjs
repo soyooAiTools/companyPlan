@@ -48,6 +48,7 @@ import { clearSessionCookie, createAuthMiddleware, setSessionCookie } from "./mi
 import { securityHeaders, validateWriteOrigin } from "./middleware/security.mjs";
 import { registerCompanyPlanRoutes } from "./router/company-plan-routes.mjs";
 import { registerOpsRoutes } from "./ops/ops-routes.mjs";
+import { registerProjectPoolRoutes } from "./ops/project-pool-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
 
@@ -116,6 +117,7 @@ registerCompanyPlanRoutes(app, companyPlanController, {
 });
 // 新需求提单接口(Prisma,/api/ops/*),与旧接口共存
 registerOpsRoutes(app, { requireAuth, requireAdmin });
+registerProjectPoolRoutes(app, { requireAuth, requireAdmin });
 
 const distDir = join(repoRoot, "apps", "web", "dist");
 if (existsSync(distDir)) {

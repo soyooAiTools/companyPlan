@@ -99,8 +99,67 @@ export interface OpsMe {
 	username: string;
 	roleKey: string;
 	isAdmin: boolean;
+	isPlanner: boolean; // soyoo 带「制片」标签 = 策划(决定「项目池」菜单可见)
 	avatar?: string; // 微信头像 URL
 	wechatName?: string; // 微信名
+}
+
+// ===== 项目池 =====
+export interface OpsProjectPoolRow {
+	id: string;
+	name: string;
+	client: string;
+	status: string;
+	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
+	stageChangedAt: string | null;
+	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
+	planners: { name: string; avatar: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
+	statusChangedAt: string | null;
+	memberCount: number;
+	segments: { id: number; name: string; count: number }[]; // 目前环节 + 各环节未完成工单数
+	ticketGroups: Record<string, number>; // 未完成工单按状态分组 {排队中:N, 进行中:N}
+	ticketTotal: number;
+	atRisk: number; // 工单超时(临期)数
+	overdue: number; // 工单逾期(超期)数
+	stuckHours?: number | null; // 项目已停留小时
+	staleHours?: number; // 该状态阈值
+	overByHours?: number | null; // 超出阈值小时
+	isStale?: boolean; // 项目状态超时 → 整行标红
+}
+export interface OpsProjectPoolMember {
+	id: string;
+	name: string;
+	avatar: string; // 微信头像 URL
+	wechatName: string;
+	username: string;
+	tags: string[]; // 角色标签名(如 制片/美术)
+}
+export interface OpsSegmentTicket {
+	id: string;
+	title: string;
+	status: string;
+	priority: string;
+	ownerName: string;
+	ownerAvatar: string;
+	dueAt: string | null;
+	overdue: boolean; // 逾期(已过截止)
+	atRisk: boolean; // 临期(已过预警未到截止)
+}
+export interface OpsProjectStatusLog {
+	id: number;
+	kind: "status" | "stage"; // 状态变更 / 阶段变更(同一时间线区分)
+	fromStatus: string | null;
+	toStatus: string;
+	actorName: string | null;
+	actorAvatar: string; // 操作人微信头像 URL(无则空)
+	commentHtml: string | null;
+	createdAt: string;
+}
+export interface OpsProjectStatusSetting {
+	status: string;
+	enabled: boolean;
+	staleHours: number;
+	sortOrder: number;
 }
 export interface OpsSyncConfig {
 	intervalMinutes: number;
@@ -140,9 +199,23 @@ export const opsApi = {
 	updateSegment: (id: number, body: { name?: string; defaultDeliveryHours?: number; riskWarningHours?: number; sortOrder?: number; tagIds?: string[] }) =>
 		requestJson<{ segment: OpsSegment }>(`/api/ops/segments/${id}`, { method: "PUT", body: JSON.stringify(body) }),
 	deleteSegment: (id: number) => requestJson<{ ok: boolean }>(`/api/ops/segments/${id}`, { method: "DELETE" }),
+	reorderSegments: (ids: number[]) => requestJson<{ segments: OpsSegment[] }>("/api/ops/segments/reorder", { method: "POST", body: JSON.stringify({ ids }) }),
 	responsibles: (projectId: string) =>
 		requestJson<{ segments: OpsResponsibleSegment[]; members: OpsResponsibleMember[] }>(`/api/ops/projects/${encodeURIComponent(projectId)}/responsibles`),
-	tickets: (scope: "all" | "owner" | "requester" = "all") => requestJson<{ tickets: OpsTicket[] }>(`/api/ops/tickets${scope !== "all" ? `?scope=${scope}` : ""}`),
+	tickets: (
+		params: { scope?: "all" | "owner" | "requester" | "overdue"; page?: number; pageSize?: number; q?: string; status?: string; priority?: string; segment?: number } = {},
+	) => {
+		const qs = new URLSearchParams();
+		if (params.scope && params.scope !== "all") qs.set("scope", params.scope);
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status) qs.set("status", params.status);
+		if (params.priority) qs.set("priority", params.priority);
+		if (params.segment != null) qs.set("segment", String(params.segment));
+		const s = qs.toString();
+		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
+	},
 	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)
@@ -170,4 +243,41 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ ownerId }),
 		}),
+
+	// ===== 项目池 =====
+	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[] } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(",")); // 多选 → 逗号分隔,后端 IN;不传则后端按「开启监控」状态查
+		const s = qs.toString();
+		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
+	},
+	projectPoolMembers: (projectId: string) =>
+		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),
+	projectSegmentTickets: (projectId: string, segmentId: number) =>
+		requestJson<{ tickets: OpsSegmentTicket[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets?segmentId=${segmentId}`),
+	projectPoolStale: (params: { page?: number; pageSize?: number } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		const s = qs.toString();
+		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
+	},
+	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
+	changeProjectStatus: (projectId: string, status: string, commentHtml?: string) =>
+		requestJson<{ ok: boolean; status: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status`, {
+			method: "POST",
+			body: JSON.stringify({ status, commentHtml }),
+		}),
+	changeProjectStage: (projectId: string, stage: string, commentHtml?: string) =>
+		requestJson<{ ok: boolean; stage: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage`, {
+			method: "POST",
+			body: JSON.stringify({ stage, commentHtml }),
+		}),
+	projectStatusLogs: (projectId: string) => requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs`),
+	projectStatusSettings: () => requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings"),
+	saveProjectStatusSettings: (settings: OpsProjectStatusSetting[]) =>
+		requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
 };

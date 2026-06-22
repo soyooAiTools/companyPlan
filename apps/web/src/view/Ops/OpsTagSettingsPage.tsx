@@ -1,10 +1,42 @@
 // 环节配置 / 标签绑定(antd)。环节=ops 分类,绑定 soyoo 标签(程序←cocos开发/unity开发),交付时间/阈值按环节。
-import { useEffect, useState } from "react";
+import { type CSSProperties, type DOMAttributes, type HTMLAttributes, type Key, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { App, Button, Input, InputNumber, Popconfirm, Select, Space, Table, Typography } from "antd";
+import { HolderOutlined } from "@ant-design/icons";
+import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsSegment, OpsTag } from "../../api/modules/ops";
 
 type Draft = { name: string; defaultDeliveryHours: number; riskWarningHours: number; tagIds: string[] };
+
+// 拖拽:手柄的 listeners 经 context 传到「序号」列的手柄(整行平滑位移,只有手柄能发起拖拽,不影响行内输入框)
+const RowContext = createContext<{ setActivatorNodeRef?: (el: HTMLElement | null) => void; listeners?: Record<string, unknown> }>({});
+
+function DragHandle() {
+  const { setActivatorNodeRef, listeners } = useContext(RowContext);
+  return (
+    <span ref={setActivatorNodeRef} {...(listeners as DOMAttributes<HTMLSpanElement>)} style={{ cursor: "grab", color: "#999", touchAction: "none" }} title="拖动排序">
+      <HolderOutlined />
+    </span>
+  );
+}
+
+function SortableRow(props: HTMLAttributes<HTMLTableRowElement> & { "data-row-key"?: Key }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: String(props["data-row-key"] ?? "") });
+  const style: CSSProperties = {
+    ...props.style,
+    transform: CSS.Translate.toString(transform),
+    transition,
+    ...(isDragging ? { position: "relative", zIndex: 999, background: "#f5f7fa" } : {}),
+  };
+  const ctx = useMemo(() => ({ setActivatorNodeRef, listeners: listeners as Record<string, unknown> }), [setActivatorNodeRef, listeners]);
+  return (
+    <RowContext.Provider value={ctx}>
+      <tr {...props} ref={setNodeRef} style={style} {...attributes} />
+    </RowContext.Provider>
+  );
+}
 
 export default function OpsTagSettingsPage() {
   const [segments, setSegments] = useState<OpsSegment[]>([]);
@@ -86,9 +118,38 @@ export default function OpsTagSettingsPage() {
     }
   };
 
+  // 拖拽排序(@dnd-kit):乐观更新 → 持久化 sort_order → 提示
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+  const onDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const from = segments.findIndex((s) => String(s.id) === active.id);
+    const to = segments.findIndex((s) => String(s.id) === over.id);
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(segments, from, to);
+    setSegments(next);
+    opsApi
+      .reorderSegments(next.map((s) => s.id))
+      .then(() => messageApi.success("排序已保存"))
+      .catch((e) => {
+        messageApi.error(e instanceof Error ? e.message : "排序保存失败");
+        void load();
+      });
+  };
+
   const tagOptions = tags.map((t) => ({ value: t.id, label: t.name }));
 
   const columns = [
+    {
+      title: "序号",
+      key: "drag",
+      width: 64,
+      render: (_: unknown, __: OpsSegment, index: number) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <DragHandle />
+          <span style={{ color: "#475569" }}>{index + 1}</span>
+        </span>
+      ),
+    },
     {
       title: "环节",
       key: "name",
@@ -161,7 +222,19 @@ export default function OpsTagSettingsPage() {
           + 新增环节
         </Button>
       </Space>
-      <Table rowKey="id" loading={loading} dataSource={segments} columns={columns} pagination={false} size="middle" />
+      <DndContext sensors={sensors} onDragEnd={onDragEnd}>
+        <SortableContext items={segments.map((s) => String(s.id))} strategy={verticalListSortingStrategy}>
+          <Table
+            rowKey="id"
+            loading={loading}
+            dataSource={segments}
+            columns={columns}
+            pagination={false}
+            size="middle"
+            components={{ body: { row: SortableRow } }}
+          />
+        </SortableContext>
+      </DndContext>
     </div>
   );
 }

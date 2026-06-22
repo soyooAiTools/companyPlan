@@ -48,6 +48,7 @@ export async function getUser(userId) {
     name: u.nickname || u.username || "",
     avatar: u.wechat_avatar_url ?? "",
     wechatName: u.wechat_name ?? "",
+    tags: Array.isArray(u.tags) ? u.tags : [], // 角色标签名(判定是否「制片/策划」用)
   };
 }
 
