@@ -1,16 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, notification } from "antd";
 
-// 版本检测 → 提示刷新(参考 playable-preview/VersionChecker):
-// 进入页面先查一次;每 20 分钟轮询一次 version.json;标签页重新可见/窗口聚焦/页面恢复时也查一次。
-// 发现部署了新版本(version.json 变化)就弹一条非阻塞顶部提示,让用户方便时自己点刷新。
 declare const __APP_VERSION__: string;
 
-const POLL_INTERVAL = 20 * 60 * 1000;
+const POLL_INTERVAL = 5 * 60 * 1000;
 const CURRENT_VERSION = __APP_VERSION__;
 const NOTICE_KEY = "ops-version-update";
 
-// version.json 由 vite 构建时生成(每次构建一个唯一时间戳);base 在 prod 是 /companyPlan/
 const versionUrl = () => `${import.meta.env.BASE_URL}version.json`;
 
 async function fetchVersion(): Promise<string | null> {
