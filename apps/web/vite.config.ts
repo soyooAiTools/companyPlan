@@ -7,6 +7,9 @@ const BUILD_ID = String(Date.now());
 export default defineConfig(() => ({
 	// 部署在(子)域名根路径下,用绝对根 base;子路由刷新也能正确取到 /assets/*
 	base: "/",
+	define: {
+		__APP_VERSION__: JSON.stringify(BUILD_ID),
+	},
 	plugins: [
 		react(),
 		{
