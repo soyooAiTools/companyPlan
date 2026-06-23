@@ -20,6 +20,7 @@
     "@tiptap/react": "^3.26.1",
     "@tiptap/starter-kit": "^3.26.1",
     "antd": "^6.4.4",
+    "dayjs": "^1.11.13",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -29,6 +30,9 @@
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^5.1.1",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4.19",
     "typescript": "^5.7.2",
     "vite": "^7.2.7"
   }

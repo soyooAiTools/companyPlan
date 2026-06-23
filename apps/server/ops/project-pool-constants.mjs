@@ -7,3 +7,6 @@ export const DEFAULT_STAGE = PROJECT_STAGES[0];
 
 // 带此标签的成员 = 该项目策划(可改状态/阶段)
 export const PLANNER_TAG = "制片";
+
+// 项目池过滤的 客户，后续需要直接添加
+export const EXCLUDED_CLIENT_NAMES = ["test"];

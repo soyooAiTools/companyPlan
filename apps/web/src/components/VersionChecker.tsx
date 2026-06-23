@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 // 版本检测 → 提示刷新(参考 playable-preview/VersionChecker):
-// 每 20 分钟轮询一次 version.json;标签页重新可见时也查一次(切回来立即检测)。
+// 进入页面先查一次;每 20 分钟轮询一次 version.json;标签页重新可见/窗口聚焦/页面恢复时也查一次。
 // 发现部署了新版本(version.json 变化)就弹一条非阻塞顶部提示,让用户方便时自己点刷新。
 const POLL_INTERVAL = 20 * 60 * 1000;
 
@@ -28,6 +28,8 @@ export default function VersionChecker() {
 			stopped = true;
 			if (timer) clearInterval(timer);
 			document.removeEventListener("visibilitychange", onVisible);
+			window.removeEventListener("focus", check);
+			window.removeEventListener("pageshow", check);
 		};
 
 		const check = async () => {
@@ -52,6 +54,8 @@ export default function VersionChecker() {
 		check();
 		timer = setInterval(check, POLL_INTERVAL);
 		document.addEventListener("visibilitychange", onVisible);
+		window.addEventListener("focus", check);
+		window.addEventListener("pageshow", check);
 		return cleanup;
 	}, []);
 

@@ -1,39 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
-import { App, Avatar, Button, Card, Col, Descriptions, Drawer, Form, Input, Modal, Row, Segmented, Select, Space, Tag, Table, Timeline, Tooltip, Typography } from "antd";
-import { BarsOutlined, EditOutlined, FullscreenOutlined, ProjectOutlined } from "@ant-design/icons";
+import { App, Button, Card, Form, Input, Modal, Segmented, Select, Space, Tag, Table, Tooltip, Typography } from "antd";
+import { BarsOutlined, ProjectOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant, OpsTicket, OpsTicketEvent } from "../../api/modules/ops";
-import RichTextEditor from "./RichTextEditor";
 import SegmentedTabs from "../../components/SegmentedTabs";
 import { OPS_TICKETS_VIEW_KEY, OPS_TICKETS_DEFAULT_VIEW, OPS_TOOLBAR_CARD, type OpsTicketsView } from "./constants";
 import { shortNo, fmtDateTime } from "../../utils/format";
 import { remainingView } from "./ticketUtils";
-
-type Scope = "all" | "owner" | "requester";
-// 「阻塞」暂时前端隐藏:不可选 / 不分组 / 不展示(后端仍支持,恢复时把 "阻塞" 加回本数组即可)
-const STATUSES = ["排队中", "进行中", "已完成"];
-const STATUS_COLOR: Record<string, string> = { 排队中: "default", 进行中: "processing", 阻塞: "error", 已完成: "success" };
-const PRIORITIES = ["紧急", "优先", "普通", "低优先"];
-const PRIORITY_COLOR: Record<string, string> = { 紧急: "red", 优先: "orange", 普通: "blue", 低优先: "default" };
-const SCOPE_OPTIONS: { label: string; value: Scope }[] = [
-	{ label: "全部", value: "all" },
-	{ label: "我提单的", value: "requester" },
-	{ label: "我负责的", value: "owner" },
-];
-const NEED_NOTE = new Set(["已完成", "阻塞"]); // 切到这些状态要填备注
-
-// 时间/格式化工具已拆到 ../../utils/format(shortNo / fmtDateTime / fmtDuration)与 ./ticketUtils(remainingHours / remainingView / isWarning)
+import { NEED_NOTE, PRIORITIES, PRIORITY_COLOR, SCOPE_OPTIONS, STATUSES, STATUS_COLOR, type OpsTicketGroupBy, type OpsTicketScope } from "./opsTickets.constants";
+import { stripHtmlText } from "./opsTickets.utils";
+import AssignOwnerModal, { type AssignOwnerCandidate } from "./components/ticket/AssignOwnerModal";
+import CreateTicketModal from "./components/ticket/CreateTicketModal";
+import EditTicketContentModal from "./components/ticket/EditTicketContentModal";
+import OpsTicketDetailDrawer from "./components/ticket/OpsTicketDetailDrawer";
+import PersonCell from "./components/ticket/PersonCell";
+import TicketStatusNoteModal from "./components/ticket/TicketStatusNoteModal";
 
 export default function OpsTicketsPage() {
 	const { message: messageApi } = App.useApp();
 	const [tickets, setTickets] = useState<OpsTicket[]>([]);
 	const [loading, setLoading] = useState(false);
-	const [scope, setScope] = useState<Scope>("all");
+	const [scope, setScope] = useState<OpsTicketScope>("all");
 	const [view, setView] = useState<OpsTicketsView>(() => {
 		const saved = localStorage.getItem(OPS_TICKETS_VIEW_KEY);
 		return saved === "table" || saved === "kanban" ? saved : OPS_TICKETS_DEFAULT_VIEW;
 	});
-	const [groupBy, setGroupBy] = useState<"status" | "priority" | "segment">("status");
+	const [groupBy, setGroupBy] = useState<OpsTicketGroupBy>("status");
 	const [bottomTab, setBottomTab] = useState("tickets");
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -47,11 +39,12 @@ export default function OpsTicketsPage() {
 	const [counts, setCounts] = useState<Record<string, number>>({}); // 各状态条数(状态 chip 用)
 	const [overdueCount, setOverdueCount] = useState(0); // 延期 tab 角标
 	const [detail, setDetail] = useState<OpsTicket | null>(null);
+	const [detailLoading, setDetailLoading] = useState(false); // 详情打开/切换时的加载态(避免闪上一条数据)
 	const [events, setEvents] = useState<OpsTicketEvent[]>([]);
-	const [contentZoom, setContentZoom] = useState(false); // 需求说明放大查看
 	const [editContentOpen, setEditContentOpen] = useState(false); // 编辑需求说明
 	const [editContentHtml, setEditContentHtml] = useState("");
 	const [savingContent, setSavingContent] = useState(false);
+	const [editingPriorityId, setEditingPriorityId] = useState<string | null>(null);
 
 	// 改状态填备注
 	const [noteId, setNoteId] = useState<string | null>(null);
@@ -60,7 +53,7 @@ export default function OpsTicketsPage() {
 
 	// 指派/改派负责人
 	const [assignOpen, setAssignOpen] = useState(false);
-	const [assignCandidates, setAssignCandidates] = useState<{ id: string; name: string; username: string; avatar: string; status: string }[]>([]);
+	const [assignCandidates, setAssignCandidates] = useState<AssignOwnerCandidate[]>([]);
 	const [assignOwnerId, setAssignOwnerId] = useState("");
 	const [assigning, setAssigning] = useState(false);
 
@@ -139,15 +132,48 @@ export default function OpsTicketsPage() {
 	}, []);
 
 	useEffect(() => {
+		setEvents([]); // 切换/关闭先清空,避免闪现上一条工单的数据
+		setEditingPriorityId(null);
 		if (!detail) {
-			setEvents([]);
+			setDetailLoading(false);
 			return;
 		}
-		opsApi
-			.ticketEvents(detail.id)
-			.then((r) => setEvents(r.events))
-			.catch(() => setEvents([]));
+		const id = detail.id;
+		let active = true; // 防快速切换的竞态:旧请求回来不再写入
+		// 流转记录 + 需求说明富文本一起拉,都到位再结束加载态(打开时显示 Spin,不闪旧数据)
+		const tasks = [
+			opsApi
+				.ticketEvents(id)
+				.then((r) => {
+					if (active) setEvents(r.events);
+				})
+				.catch(() => {
+					if (active) setEvents([]);
+				}),
+		];
+		if (!detail.contentHtml) {
+			tasks.push(
+				opsApi
+					.ticketContent(id)
+					.then((r) => {
+						if (active) setDetail((d) => (d && d.id === id ? { ...d, contentHtml: r.contentHtml } : d));
+					})
+					.catch(() => {}),
+			);
+		}
+		Promise.all(tasks).finally(() => {
+			if (active) setDetailLoading(false);
+		});
+		return () => {
+			active = false;
+		};
 	}, [detail?.id]);
+
+	// 打开详情:进入加载态(配合 effect 拉数据 + destroyOnHidden,避免显示上一条)
+	const openDetail = (t: OpsTicket) => {
+		setDetailLoading(true);
+		setDetail(t);
+	};
 
 	const changeStatus = async (id: string, status: string, reason?: string) => {
 		try {
@@ -162,6 +188,22 @@ export default function OpsTicketsPage() {
 			void loadOverdueCount();
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "操作失败");
+		}
+	};
+	const changePriority = async (t: OpsTicket, priority: string) => {
+		if (priority === t.priority) return;
+		try {
+			const r = await opsApi.updateTicketPriority(t.id, priority);
+			setDetail((d) => (d && d.id === t.id ? r.ticket : d));
+			setEditingPriorityId(null);
+			opsApi
+				.ticketEvents(t.id)
+				.then((e) => setEvents(e.events))
+				.catch(() => {});
+			messageApi.success("优先级已更新");
+			await loadTickets();
+		} catch (e) {
+			messageApi.error(e instanceof Error ? e.message : "修改优先级失败");
 		}
 	};
 
@@ -268,6 +310,30 @@ export default function OpsTicketsPage() {
 		) : (
 			<Tag color={STATUS_COLOR[t.status]}>{t.status}</Tag>
 		);
+	const priorityControl = (t: OpsTicket, width: number | string = 120) =>
+		t.canEditPriority && editingPriorityId === t.id ? (
+			<Space size={6} onClick={(e) => e.stopPropagation()}>
+				<Select
+					size="small"
+					value={t.priority}
+					style={{ width }}
+					options={PRIORITIES.map((p) => ({ value: p, label: p }))}
+					onChange={(p) => void changePriority(t, p)}
+				/>
+				<Button size="small" type="link" style={{ padding: 0 }} onClick={() => setEditingPriorityId(null)}>
+					取消
+				</Button>
+			</Space>
+		) : (
+			<Space size={4} onClick={(e) => e.stopPropagation()}>
+				<Tag color={PRIORITY_COLOR[t.priority]}>{t.priority}</Tag>
+				{t.canEditPriority ? (
+					<Button size="small" type="link" style={{ padding: 0 }} onClick={() => setEditingPriorityId(t.id)}>
+						编辑
+					</Button>
+				) : null}
+			</Space>
+		);
 
 	// 建单级联
 	const openCreate = async () => {
@@ -333,6 +399,33 @@ export default function OpsTicketsPage() {
 			setSubmitting(false);
 		}
 	};
+	const hasCreateDraft = () => {
+		const v = form.getFieldsValue();
+		return Boolean(
+			String(v.title ?? "").trim() ||
+				String(v.tenantId ?? "").trim() ||
+				String(v.projectId ?? "").trim() ||
+				v.segmentId != null ||
+				String(v.ownerId ?? "").trim() ||
+				(v.priority && v.priority !== "普通") ||
+				stripHtmlText(v.contentHtml),
+		);
+	};
+	const closeCreate = () => {
+		if (submitting) return;
+		if (!hasCreateDraft()) {
+			setOpen(false);
+			return;
+		}
+		Modal.confirm({
+			title: "确认关闭新建工单？",
+			content: "当前已填写内容或需求说明，关闭后本次填写不会保存。",
+			okText: "关闭",
+			cancelText: "继续填写",
+			okButtonProps: { danger: true },
+			onOk: () => setOpen(false),
+		});
+	};
 
 	// 列表/看板数据都由服务端按 scope/状态/筛选/分页返回,前端不再客户端过滤
 	const segmentNames = useMemo(() => [...new Set(tickets.map((t) => t.tagName).filter(Boolean))], [tickets]);
@@ -360,7 +453,7 @@ export default function OpsTicketsPage() {
 									key={t.id}
 									size="small"
 									hoverable
-									onClick={() => setDetail(t)}
+									onClick={() => openDetail(t)}
 									styles={{ body: { padding: 12 } }}
 									style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.06)", border: "1px solid #e8eaed" }}>
 									<div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginBottom: 2 }}>#{shortNo(t.id)}</div>
@@ -391,14 +484,7 @@ export default function OpsTicketsPage() {
 
 	// 表格
 	// 「提单人/负责人」列:微信头像 + 姓名(无头像回退首字母)
-	const personCell = (avatar?: string, name?: string) => (
-		<Space size={6}>
-			<Avatar size={20} src={avatar || undefined} style={{ flex: "none", background: "#e2e8f0", color: "#475569", fontSize: 11 }}>
-				{(name || "?").slice(0, 1)}
-			</Avatar>
-			<span>{name || "-"}</span>
-		</Space>
-	);
+	const personCell = (avatar?: string, name?: string) => <PersonCell avatar={avatar} name={name} />;
 	const baseColumns = [
 		{
 			title: "单号",
@@ -447,7 +533,7 @@ export default function OpsTicketsPage() {
 			},
 		},
 		scroll: { x: 1340 },
-		onRow: (r: OpsTicket) => ({ onClick: () => setDetail(r), style: { cursor: "pointer" } }),
+		onRow: (r: OpsTicket) => ({ onClick: () => openDetail(r), style: { cursor: "pointer" } }),
 	};
 
 	// 状态筛选 chip(替代旧的"按状态折叠";数量来自服务端 counts)
@@ -501,7 +587,7 @@ export default function OpsTicketsPage() {
 								{ label: "按环节", value: "segment" },
 							]}
 							value={groupBy}
-							onChange={(v) => setGroupBy(v as "status" | "priority" | "segment")}
+							onChange={(v) => setGroupBy(v as OpsTicketGroupBy)}
 						/>
 					) : null}
 					<Input.Search placeholder="搜索 单号/标题/项目/客户/人" allowClear style={{ width: 240 }} onChange={(e) => setSearch(e.target.value)} />
@@ -608,273 +694,40 @@ export default function OpsTicketsPage() {
 				})}
 			</div>
 
-			<Drawer
-				title={detail?.title}
-				open={!!detail}
-				onClose={() => {
-					setDetail(null);
-					setContentZoom(false);
-				}}
-				width={480}>
-				{detail && (
-					<>
-						<Space style={{ marginBottom: 12 }}>
-							<span>状态:</span>
-							{statusControl(detail, 130)}
-						</Space>
-						<Descriptions column={1} size="small" bordered>
-							<Descriptions.Item label="单号">
-								<Typography.Text copyable={{ text: detail.id }} style={{ fontFamily: "monospace", fontSize: 12 }}>
-									{detail.id}
-								</Typography.Text>
-							</Descriptions.Item>
-							<Descriptions.Item label="客户">{detail.client}</Descriptions.Item>
-							<Descriptions.Item label="项目">{detail.projectName}</Descriptions.Item>
-							<Descriptions.Item label="环节">
-								<Tag color="cyan">{detail.tagName}</Tag>
-							</Descriptions.Item>
-							<Descriptions.Item label="提单人">{personCell(detail.requesterAvatar, detail.requesterName)}</Descriptions.Item>
-							<Descriptions.Item label="负责人">
-								{personCell(detail.ownerAvatar, detail.ownerName)}
-								{detail.canEdit ? (
-									<Button size="small" type="link" style={{ paddingLeft: 8 }} onClick={openAssign}>
-										指派
-									</Button>
-								) : null}
-							</Descriptions.Item>
-							<Descriptions.Item label="优先级">
-								<Tag color={PRIORITY_COLOR[detail.priority]}>{detail.priority}</Tag>
-							</Descriptions.Item>
-							<Descriptions.Item label="提单时间">{fmtDateTime(detail.createdAt)}</Descriptions.Item>
-							<Descriptions.Item label="剩余时间">
-								{(() => {
-									const x = remainingView(detail);
-									return <span style={{ color: x.color }}>{x.text}</span>;
-								})()}
-							</Descriptions.Item>
-							{detail.status === "阻塞" && detail.blockReason ? <Descriptions.Item label="阻塞原因">{detail.blockReason}</Descriptions.Item> : null}
-						</Descriptions>
+			<OpsTicketDetailDrawer
+				detail={detail}
+				loading={detailLoading}
+				events={events}
+				statusControl={statusControl}
+				priorityControl={priorityControl}
+				personCell={personCell}
+				onClose={() => setDetail(null)}
+				onAssign={openAssign}
+				onEditContent={openEditContent}
+			/>
 
-						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16 }}>
-							<Typography.Title level={5} style={{ margin: 0 }}>
-								需求说明
-							</Typography.Title>
-							{detail.canEditContent && detail.status !== "已完成" ? (
-								<Button size="small" icon={<EditOutlined />} onClick={openEditContent}>
-									编辑
-								</Button>
-							) : null}
-						</div>
-						{detail.contentHtml || detail.summary || detail.hyperlink ? (
-							<Button
-								type="link"
-								style={{ paddingLeft: 0 }}
-								icon={<FullscreenOutlined />}
-								onClick={async () => {
-									await loadDetailContent();
-									setContentZoom(true);
-								}}>
-								点击查看需求
-							</Button>
-						) : (
-							<Typography.Text type="secondary">空</Typography.Text>
-						)}
+			<EditTicketContentModal open={editContentOpen} value={editContentHtml} saving={savingContent} projectId={detail?.projectId} onChange={setEditContentHtml} onSave={saveContent} onCancel={() => setEditContentOpen(false)} />
 
-						<Typography.Title level={5} style={{ marginTop: 16 }}>
-							流转记录
-						</Typography.Title>
-						{events.length ? (
-							<Timeline
-								items={events.map((e) => ({
-									color: e.toStatus === "阻塞" ? "red" : e.toStatus === "已完成" ? "green" : "blue",
-									children: (
-										<div>
-											<span style={{ fontWeight: 600 }}>{e.actorName || "系统"}</span> {e.action}
-											{e.fromStatus && e.toStatus ? (
-												<span style={{ color: "#64748b" }}>
-													,状态「{e.fromStatus}」→「{e.toStatus}」
-												</span>
-											) : e.toStatus ? (
-												<span style={{ color: "#64748b" }}>,状态「{e.toStatus}」</span>
-											) : null}
-											{e.note ? <div style={{ color: "#475569" }}>备注:{e.note}</div> : null}
-											<div style={{ color: "#94a3b8", fontSize: 12 }}>{fmtDateTime(e.createdAt)}</div>
-										</div>
-									),
-								}))}
-							/>
-						) : (
-							<Typography.Text type="secondary">暂无记录</Typography.Text>
-						)}
-					</>
-				)}
-			</Drawer>
+			<TicketStatusNoteModal open={!!noteId} status={noteStatus} value={noteText} onChange={setNoteText} onConfirm={confirmNote} onCancel={() => setNoteId(null)} />
 
-			<Modal
-				title={`需求说明 · ${detail?.title ?? ""}`}
-				open={contentZoom}
-				onCancel={() => setContentZoom(false)}
-				footer={null}
-				width={900}
-				styles={{ body: { maxHeight: "72vh", overflow: "auto" } }}>
-				{detail?.contentHtml ? (
-					<div className="ops-rich" style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: detail.contentHtml }} />
-				) : detail?.summary || detail?.hyperlink ? (
-					<div style={{ fontSize: 15, lineHeight: 1.7 }}>
-						{detail.summary ? <div style={{ whiteSpace: "pre-wrap" }}>{detail.summary}</div> : null}
-						{detail.hyperlink ? (
-							<div style={{ marginTop: 8 }}>
-								<a href={detail.hyperlink} target="_blank" rel="noreferrer">
-									{detail.hyperlink}
-								</a>
-							</div>
-						) : null}
-					</div>
-				) : (
-					<Typography.Text type="secondary">空</Typography.Text>
-				)}
-			</Modal>
+			<AssignOwnerModal open={assignOpen} candidates={assignCandidates} ownerId={assignOwnerId} assigning={assigning} onOwnerChange={setAssignOwnerId} onConfirm={confirmAssign} onCancel={() => setAssignOpen(false)} />
 
-			<Modal
-				title="编辑需求说明"
-				open={editContentOpen}
-				onOk={saveContent}
-				confirmLoading={savingContent}
-				onCancel={() => setEditContentOpen(false)}
-				okText="保存"
-				cancelText="取消"
-				width={860}
-				destroyOnHidden>
-				<RichTextEditor value={editContentHtml} onChange={setEditContentHtml} projectId={detail?.projectId} />
-			</Modal>
-
-			<Modal
-				title={noteStatus === "阻塞" ? "阻塞原因" : "完成备注"}
-				open={!!noteId}
-				onOk={confirmNote}
-				onCancel={() => setNoteId(null)}
-				okText="确认"
-				okButtonProps={{ danger: noteStatus === "阻塞" }}>
-				<Typography.Paragraph type="secondary">
-					{noteStatus === "阻塞" ? "填写阻塞原因(如:等客户确认参考),会记入流转记录。" : "填写完成备注(可选),会记入流转记录。"}
-				</Typography.Paragraph>
-				<Input.TextArea
-					rows={3}
-					maxLength={500}
-					value={noteText}
-					onChange={(e) => setNoteText(e.target.value)}
-					placeholder={noteStatus === "阻塞" ? "阻塞原因" : "完成备注(可选)"}
-				/>
-			</Modal>
-
-			<Modal
-				title="指派负责人"
-				open={assignOpen}
-				onOk={confirmAssign}
-				confirmLoading={assigning}
-				onCancel={() => setAssignOpen(false)}
-				okText="指派"
-				cancelText="取消"
-				destroyOnHidden>
-				<Select
-					style={{ width: "100%" }}
-					placeholder="选择该项目的成员"
-					value={assignOwnerId || undefined}
-					onChange={(v) => setAssignOwnerId(v)}
-					options={assignCandidates.map((m) => ({ value: m.id, label: m.name || m.username }))}
-					showSearch
-					optionFilterProp="label"
-				/>
-			</Modal>
-
-			<Modal title="新建工单" cancelText="取消" open={open} onOk={submit} confirmLoading={submitting} onCancel={() => setOpen(false)} okText="提交" width={860} destroyOnHidden>
-				<Form form={form} layout="vertical" preserve={false}>
-					<Row gutter={16}>
-						<Col span={16}>
-							<Form.Item name="title" label="标题" rules={[{ required: true, message: "请输入标题" }]}>
-								<Input maxLength={160} placeholder="需求标题" />
-							</Form.Item>
-						</Col>
-						<Col span={8}>
-							<Form.Item name="priority" label="优先级" initialValue="普通">
-								<Select allowClear options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
-							</Form.Item>
-						</Col>
-						<Col span={12}>
-							<Form.Item name="tenantId" label="所属项目(客户)" rules={[{ required: true, message: "请选择客户" }]}>
-								<Select
-									allowClear
-									showSearch
-									optionFilterProp="label"
-									placeholder="选择客户"
-									options={tenants.map((t) => ({ value: t.id, label: t.name }))}
-									onChange={onTenantChange}
-								/>
-							</Form.Item>
-						</Col>
-						<Col span={12}>
-							<Form.Item name="projectId" label="项目名称" rules={[{ required: true, message: "请选择项目" }]}>
-								<Select
-									allowClear
-									showSearch
-									optionFilterProp="label"
-									placeholder="先选客户"
-									options={projects.map((p) => ({ value: p.id, label: p.name }))}
-									onChange={onProjectChange}
-								/>
-							</Form.Item>
-						</Col>
-						<Col span={12}>
-							<Form.Item name="segmentId" label="环节" rules={[{ required: true, message: "请选择环节" }]}>
-								<Select
-									allowClear
-									showSearch
-									optionFilterProp="label"
-									placeholder="不选则按负责人带出"
-									options={segments.map((s) => ({ value: s.id, label: s.name }))}
-									notFoundContent="该项目暂无可分配的环节"
-									onChange={() => form.setFieldsValue({ ownerId: undefined })}
-								/>
-							</Form.Item>
-						</Col>
-						<Col span={12}>
-							<Form.Item name="ownerId" label="负责人" rules={[{ required: true, message: "请选择负责人" }]}>
-								<Select
-									allowClear
-									showSearch
-									placeholder="选负责人(环节自动带出)"
-									options={ownerOptions}
-									filterOption={(input, option) => {
-										const kw = input.trim().toLowerCase();
-										return [option?.wechatName, option?.name, option?.username].some((s) =>
-											String(s ?? "")
-												.toLowerCase()
-												.includes(kw),
-										);
-									}}
-									optionRender={(opt) => (
-										<Space size={6}>
-											<Avatar size={22} src={opt.data?.avatar || undefined} style={{ flex: "none", background: "#e2e8f0", color: "#475569", fontSize: 12 }}>
-												{(opt.data?.name || "?").slice(0, 1)}
-											</Avatar>
-											{opt.data?.wechatName ? <span style={{ color: "#64748b" }}>{opt.data.wechatName}</span> : null}
-											{opt.data?.wechatName ? <span style={{ color: "#cbd5e1" }}>｜</span> : null}
-											<span>{opt.data?.name}</span>
-										</Space>
-									)}
-									notFoundContent="该项目暂无可分配成员"
-									onChange={onOwnerChange}
-								/>
-							</Form.Item>
-						</Col>
-						<Col span={24}>
-							<Form.Item name="contentHtml" label="需求说明">
-								<RichTextEditor projectId={selectedProjectId} />
-							</Form.Item>
-						</Col>
-					</Row>
-				</Form>
-			</Modal>
+			<CreateTicketModal
+				open={open}
+				submitting={submitting}
+				form={form}
+				tenants={tenants}
+				projects={projects}
+				segments={segments}
+				ownerOptions={ownerOptions}
+				selectedProjectId={selectedProjectId}
+				onTenantChange={onTenantChange}
+				onProjectChange={onProjectChange}
+				onSegmentChange={() => form.setFieldsValue({ ownerId: undefined })}
+				onOwnerChange={onOwnerChange}
+				onSubmit={submit}
+				onCancel={closeCreate}
+			/>
 		</div>
 	);
 }

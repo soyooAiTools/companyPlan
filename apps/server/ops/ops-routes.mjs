@@ -1,5 +1,6 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
+import dayjs from "dayjs";
 import sanitizeHtml from "sanitize-html";
 import { prisma } from "./prisma.mjs";
 import { isOssConfigured, uploadObject } from "./oss.mjs";
@@ -63,12 +64,15 @@ function mapTicket(t, segNameById) {
   };
 }
 
-// 权限标记:canEdit=改状态(负责人/管理员);canEditContent=改需求说明(提单人/管理员)
+// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派/优先级=管理员
 function withCanEdit(t, user, segNameById) {
+  const admin = isAdmin(user);
   return {
     ...mapTicket(t, segNameById),
-    canEdit: isAdmin(user) || t.owner_id === meId(user),
-    canEditContent: isAdmin(user) || t.requester_id === meId(user),
+    canEdit: admin || t.owner_id === meId(user),
+    canEditContent: admin || t.requester_id === meId(user),
+    canAssign: admin,
+    canEditPriority: admin,
   };
 }
 
@@ -357,10 +361,9 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const s = built.snapshot;
 
     const now = nowIso();
-    // 截止/预警时刻一并固化进工单(供延期 tab 服务端筛选/排序;与"阈值建单即快照"一致)
-    const t0 = Date.parse(now);
-    const dueAt = new Date(t0 + segment.default_delivery_hours * 3600e3).toISOString();
-    const warnAt = new Date(t0 + (segment.default_delivery_hours - segment.risk_warning_hours) * 3600e3).toISOString();
+    // 两个绝对时刻固化进工单:交付时刻(目标)<  预警时刻(最后死线)。超过交付=橙、超过预警=红;延期预警 tab 筛「超过预警」。
+    const dueAt = dayjs(now).add(segment.default_delivery_hours, "hour").toISOString(); // 交付时刻 = 创建 + 交付时长
+    const warnAt = dayjs(now).add(segment.risk_warning_hours, "hour").toISOString(); // 预警时刻 = 创建 + 预警时长(应 > 交付时长)
     const created = await prisma.tickets.create({
       data: {
         id: crypto.randomUUID(),
@@ -408,13 +411,21 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/projects/:id/members", requireAuth, async (req, res) => {
     try {
       const { members } = await getProjectWithMembers(soyooId(req.params.id));
-      res.json({ members });
+      const segments = await loadSegments();
+      const enriched = members.map((m) => {
+        const tagIds = new Set((m.tags || []).map((t) => String(t.id)));
+        const segmentNames = segments
+          .filter((seg) => (seg.tags || []).some((t) => tagIds.has(String(t.id))))
+          .map((seg) => seg.name);
+        return { ...m, segmentNames };
+      });
+      res.json({ members: enriched });
     } catch {
       res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
     }
   });
 
-  // 指派/改派:把工单转给该项目的另一个成员(管理员 或 当前负责人可操作)
+  // 指派/改派:把工单转给该项目的另一个成员(仅管理员可操作)
   app.post("/api/ops/tickets/:id/assign", requireAuth, async (req, res) => {
     const user = req.user;
     const id = String(req.params.id);
@@ -422,7 +433,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (!newOwnerId) return res.status(400).json({ error: "请选择负责人" });
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
-    if (!isAdmin(user) && t.owner_id !== meId(user)) return res.status(403).json({ error: "只有管理员或当前负责人可指派" });
+    if (!isAdmin(user)) return res.status(403).json({ error: "只有管理员可指派" });
     let member;
     try {
       const { members } = await getProjectWithMembers(t.project_id);
@@ -463,6 +474,24 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
   });
 
+  // 改优先级(仅管理员),并记入流转记录
+  app.patch("/api/ops/tickets/:id/priority", requireAuth, async (req, res) => {
+    const id = String(req.params.id);
+    const priority = String(req.body?.priority ?? "");
+    if (!PRIORITIES.has(priority)) return res.status(400).json({ error: "优先级不合法" });
+    const t = await prisma.tickets.findUnique({ where: { id } });
+    if (!t) return res.status(404).json({ error: "提单不存在" });
+    const user = req.user;
+    if (!isAdmin(user)) return res.status(403).json({ error: "无权修改(仅管理员)" });
+    if (t.priority === priority) return res.json({ ticket: withCanEdit(t, user, await loadSegNameMap()) });
+    const updated = await prisma.tickets.update({
+      where: { id },
+      data: { priority, updated_at: nowIso() },
+    });
+    await logTicketEvent({ ticketId: id, user, action: "修改优先级", note: `优先级「${t.priority}」→「${priority}」` });
+    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
+  });
+
   // 改需求说明(富文本;仅提单人或管理员)。建单后正文可改,其它字段不可改。
   app.patch("/api/ops/tickets/:id", requireAuth, async (req, res) => {
     const id = String(req.params.id);
@@ -485,7 +514,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
 
   // 流转记录(时间线)
   app.get("/api/ops/tickets/:id/events", requireAuth, async (req, res) => {
-    const events = await prisma.ticket_events.findMany({ where: { ticket_id: String(req.params.id) }, orderBy: [{ created_at: "asc" }, { id: "asc" }] });
+    const events = await prisma.ticket_events.findMany({ where: { ticket_id: String(req.params.id) }, orderBy: [{ created_at: "desc" }, { id: "desc" }] });
     res.json({
       events: events.map((e) => ({ id: e.id, actorName: e.actor_name ?? "", action: e.action, fromStatus: e.from_status ?? "", toStatus: e.to_status ?? "", note: e.note ?? "", createdAt: e.created_at })),
     });

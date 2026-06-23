@@ -172,19 +172,24 @@ export default function OpsTagSettingsPage() {
       ),
     },
     {
-      title: "默认交付小时",
+      title: "交付时长(h)",
       key: "d",
-      width: 120,
+      width: 130,
       render: (_: unknown, seg: OpsSegment) => (
         <InputNumber min={1} max={720} value={valOf(seg).defaultDeliveryHours} onChange={(v) => patch(seg, { defaultDeliveryHours: Number(v) || 1 })} />
       ),
     },
     {
-      title: "风险阈值小时",
+      title: "预警时长(h·须>交付)",
       key: "r",
-      width: 120,
+      width: 160,
       render: (_: unknown, seg: OpsSegment) => (
-        <InputNumber min={1} max={168} value={valOf(seg).riskWarningHours} onChange={(v) => patch(seg, { riskWarningHours: Number(v) || 1 })} />
+        <InputNumber
+          min={(valOf(seg).defaultDeliveryHours || 1) + 1}
+          max={720}
+          value={valOf(seg).riskWarningHours}
+          onChange={(v) => patch(seg, { riskWarningHours: Number(v) || 1 })}
+        />
       ),
     },
     {
@@ -213,7 +218,8 @@ export default function OpsTagSettingsPage() {
           环节配置 / 标签绑定
         </Typography.Title>
         <Typography.Text type="secondary">
-          环节是 ops 自己的分类;把 soyoo 标签绑到环节(如 程序 ← cocos开发 / unity开发)。建单按环节筛选负责人,交付时间/阈值按环节生效。
+          环节是 ops 自己的分类;把 soyoo 标签绑到环节(如 程序 ← cocos开发 / unity开发)。建单按环节筛选负责人。
+          时间按环节生效:<b>交付时长</b> = 目标交付(超过后「剩余」变橙);<b>预警时长</b> = 最后死线(超过后变红,并进「延期任务预警」),<b>必须大于交付时长</b>。
         </Typography.Text>
       </Space>
       <Space style={{ marginBottom: 12 }}>

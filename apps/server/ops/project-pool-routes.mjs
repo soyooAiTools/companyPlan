@@ -52,7 +52,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/status", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectStatus({ user: req.user, projectId: req.params.id, status: String(req.body?.status ?? ""), commentHtml: req.body?.commentHtml });
+      r = await pool.changeProjectStatus({ user: req.user, projectId: req.params.id, status: String(req.body?.status ?? ""), commentHtml: req.body?.commentHtml, force: req.body?.force === true });
     } catch {
       return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
     }

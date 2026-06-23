@@ -68,6 +68,8 @@ export interface OpsTicket {
 	riskWarningHours: number;
 	canEdit: boolean; // 能否改状态(负责人/管理员)
 	canEditContent: boolean; // 能否改需求说明(提单人/管理员)
+	canAssign?: boolean; // 能否指派(管理员)
+	canEditPriority?: boolean; // 能否改优先级(管理员)
 	createdAt: string;
 	statusUpdatedAt: string;
 }
@@ -108,7 +110,7 @@ export interface OpsMe {
 export interface OpsProjectPoolRow {
 	id: string;
 	name: string;
-	client: string;
+	tenantName: string; // 客户名(= soyoo tenant_name)
 	status: string;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
 	stageChangedAt: string | null;
@@ -232,9 +234,14 @@ export const opsApi = {
 			method: "PATCH",
 			body: JSON.stringify({ status, reason }),
 		}),
+	updateTicketPriority: (id: string, priority: string) =>
+		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/priority`, {
+			method: "PATCH",
+			body: JSON.stringify({ priority }),
+		}),
 	// 项目成员(指派候选)
 	projectMembers: (projectId: string) =>
-		requestJson<{ members: { id: string; username: string; name: string; avatar: string; wechatName: string; status: string }[] }>(
+		requestJson<{ members: { id: string; username: string; name: string; avatar: string; wechatName: string; status: string; segmentNames?: string[] }[] }>(
 			`/api/ops/projects/${encodeURIComponent(projectId)}/members`,
 		),
 	// 指派/改派工单给项目其他成员(管理员或当前负责人)

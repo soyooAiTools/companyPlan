@@ -11,7 +11,6 @@
     "start": "node index.mjs",
     "start:test": "APP_ENV=test node index.mjs",
     "start:prod": "APP_ENV=prod node index.mjs",
-    "migrate:sqlite:mysql": "node scripts/migrate-sqlite-to-mysql.mjs",
     "test:scenarios": "node scripts/company-plan-scenarios.mjs"
   },
   "dependencies": {

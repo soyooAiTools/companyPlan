@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import dayjs from "dayjs";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { deflateRawSync, deflateSync } from "node:zlib";
@@ -214,30 +215,6 @@ async function initializeSchema() {
       note VARCHAR(500),
       created_at VARCHAR(40) NOT NULL,
       KEY idx_te_ticket (ticket_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- ops 键值配置(同步频率、是否启用 等;页面可调、落库)
-    CREATE TABLE IF NOT EXISTS ops_settings (
-      setting_key VARCHAR(64) PRIMARY KEY,
-      setting_value VARCHAR(255) NOT NULL,
-      updated_at VARCHAR(40) NOT NULL
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-    -- 同步记录(每次定时/手动同步记一条:触发方、谁、结果数量、成功失败、耗时)
-    CREATE TABLE IF NOT EXISTS ops_sync_logs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      trigger_by VARCHAR(20) NOT NULL,
-      actor_name VARCHAR(120),
-      status VARCHAR(20) NOT NULL,
-      users INT DEFAULT 0,
-      projects INT DEFAULT 0,
-      tenants INT DEFAULT 0,
-      tags INT DEFAULT 0,
-      duration_ms INT DEFAULT 0,
-      error VARCHAR(500),
-      started_at VARCHAR(40) NOT NULL,
-      finished_at VARCHAR(40) NOT NULL,
-      KEY idx_sync_logs_time (started_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await ensureIndex("idx_tickets_project", "tickets", "project_id");
@@ -609,16 +586,21 @@ async function migrateSchema() {
     // people/projects/tenants 已删则跳过 backfill
   }
 
-  // 回填 due_at/warn_at(老工单:从 created_at + due_in_hours/risk_warning_hours 算;新单建单时已写)
+  // 回填/迁移 due_at/warn_at:交付时刻=创建+交付时长;预警时刻=创建+预警时长(新模型,预警应 > 交付)。
+  // 选 缺失 或 旧公式(warn_at <= due_at,旧版预警在交付之前)的工单,按新公式重算;重算后 warn>due 不会再选中。
   try {
-    const rows = await db.prepare("SELECT id, created_at, due_in_hours, risk_warning_hours FROM tickets WHERE due_at IS NULL OR due_at = ''").all();
+    const rows = await db
+      .prepare(
+        "SELECT id, created_at, due_in_hours, risk_warning_hours FROM tickets WHERE due_at IS NULL OR due_at = '' OR warn_at IS NULL OR warn_at = '' OR warn_at <= due_at"
+      )
+      .all();
     const upd = db.prepare("UPDATE tickets SET due_at = ?, warn_at = ? WHERE id = ?");
     for (const r of rows) {
-      const t0 = Date.parse(r.created_at);
-      if (!t0) continue;
+      const c = dayjs(r.created_at);
+      if (!c.isValid()) continue;
       const dh = r.due_in_hours || 72;
       const rh = r.risk_warning_hours || 8;
-      await upd.run(new Date(t0 + dh * 3600e3).toISOString(), new Date(t0 + (dh - rh) * 3600e3).toISOString(), r.id);
+      await upd.run(c.add(dh, "hour").toISOString(), c.add(rh, "hour").toISOString(), r.id);
     }
   } catch {
     // 回填失败忽略(新单不受影响)
@@ -714,12 +696,13 @@ async function seedDefaultSegments() {
   const row = await db.prepare("SELECT COUNT(*) AS c FROM ops_segments").get();
   if (row && row.c > 0) return;
   const now = new Date().toISOString();
+  // hours=交付时长(目标,较小),risk=预警时长(最后死线,必须 > 交付)。超过交付→橙,超过预警→红
   const defaults = [
-    { name: "程序", hours: 48, risk: 8, tags: ["程序", "cocos开发", "unity开发"] },
-    { name: "美术", hours: 36, risk: 8, tags: ["模型", "动画", "UI"] },
-    { name: "策划", hours: 24, risk: 6, tags: ["制片"] },
-    { name: "地编", hours: 24, risk: 6, tags: ["地编"] },
-    { name: "外包", hours: 48, risk: 8, tags: ["外包"] },
+    { name: "程序", hours: 48, risk: 72, tags: ["程序", "cocos开发", "unity开发"] },
+    { name: "美术", hours: 36, risk: 60, tags: ["模型", "动画", "UI"] },
+    { name: "策划", hours: 24, risk: 48, tags: ["制片"] },
+    { name: "地编", hours: 24, risk: 48, tags: ["地编"] },
+    { name: "外包", hours: 48, risk: 72, tags: ["外包"] },
   ];
   const insertSeg = db.prepare(
     "INSERT INTO ops_segments (name, default_delivery_hours, risk_warning_hours, sort_order, updated_at) VALUES (?, ?, ?, ?, ?)"
@@ -1478,57 +1461,6 @@ function getProjectNameOptionSource(id) {
   return "local";
 }
 
-// —— ops 键值配置 + 同步记录(供「设置 > 同步管理」页)——
-async function getOpsSetting(key, fallback = null) {
-  const row = await db.prepare("SELECT setting_value FROM ops_settings WHERE setting_key = ?").get(key);
-  return row ? row.setting_value : fallback;
-}
-async function setOpsSetting(key, value) {
-  await db
-    .prepare(
-      "INSERT INTO ops_settings (setting_key, setting_value, updated_at) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_at = VALUES(updated_at)"
-    )
-    .run(key, String(value), new Date().toISOString());
-}
-async function addSyncLog(record) {
-  await db
-    .prepare(
-      `INSERT INTO ops_sync_logs (trigger_by, actor_name, status, users, projects, tenants, tags, duration_ms, error, started_at, finished_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      record.triggerBy ?? "scheduled",
-      record.actorName ?? null,
-      record.status ?? "success",
-      Number(record.users) || 0,
-      Number(record.projects) || 0,
-      Number(record.tenants) || 0,
-      Number(record.tags) || 0,
-      Number(record.durationMs) || 0,
-      record.error ? String(record.error).slice(0, 500) : null,
-      record.startedAt,
-      record.finishedAt
-    );
-}
-async function getSyncLogs(limit = 20) {
-  const n = Math.max(1, Math.min(100, Number(limit) || 20));
-  const rows = await db.prepare(`SELECT * FROM ops_sync_logs ORDER BY id DESC LIMIT ${n}`).all();
-  return rows.map((r) => ({
-    id: r.id,
-    triggerBy: r.trigger_by,
-    actorName: r.actor_name ?? "",
-    status: r.status,
-    users: r.users,
-    projects: r.projects,
-    tenants: r.tenants,
-    tags: r.tags,
-    durationMs: r.duration_ms,
-    error: r.error ?? "",
-    startedAt: r.started_at,
-    finishedAt: r.finished_at,
-  }));
-}
-
 // 登录建档:用 soyoo 登录返回的用户信息 upsert 本地身份(替代"必须先同步";新用户首次登录即建档)。
 // auth 已由 soyoo 完成,password_hash 仅占位(列 NOT NULL),登录不校验本地密码。
 async function upsertPersonFromSoyoo({ id, username, name, roleKey, wechatName = "", wechatAvatar = "" }) {
@@ -1556,10 +1488,6 @@ export {
   formatDateTime,
   getBootstrap,
   getCompanyConfig,
-  getOpsSetting,
-  setOpsSetting,
-  addSyncLog,
-  getSyncLogs,
   getDefaultDeliveryHours,
   getPerson,
   getPersonProjectIds,
@@ -1570,7 +1498,6 @@ export {
   mapPerson,
   nextTicketId,
   seedDatabase,
-  syncOpsDirectory,
   storeAttachment,
   upsertPersonFromSoyoo,
   verifyPassword,

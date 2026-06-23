@@ -46,6 +46,3 @@ export const statusStyle = (status?: string) => {
 	const c = STATUS_COLOR[status || "未启动"] || { bg: "#f1f5f9", text: "#475569" };
 	return { background: c.bg, color: c.text };
 };
-
-/** 富文本备注是否含图片/视频等媒体(含则前端折叠成「点击查看」) */
-export const commentHasMedia = (html?: string | null): boolean => !!html && /<(img|video|audio|iframe|source)\b/i.test(html);

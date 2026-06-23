@@ -4,7 +4,7 @@ import { prisma } from "../prisma.mjs";
 import { soyooClient, soyooId } from "../soyoo-client.mjs";
 import { getProjectWithMembers } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
-import { PROJECT_STAGES, PLANNER_TAG } from "../project-pool-constants.mjs";
+import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
 
 // 批量取项目 ops 扩展字段(阶段等)→ { [project_id]: {stage, stageChangedAt} }
 async function loadExt(projectIds) {
@@ -74,7 +74,7 @@ function buildRow(p, agg, segMap, sm, extMap) {
   return {
     id: String(p.id),
     name: p.name ?? "",
-    client: p.tenant_name ?? "",
+    tenantName: p.tenant_name ?? "", // 客户名(= soyoo tenant_name);原字段名 client 已对齐为 tenantName
     status: p.status ?? "",
     plannerName: p.planner_name ?? "", // 原始串(可能含多个策划),文字展示用
     planners: normalizePlanners(p), // 拆分后每个策划 {name, avatar}(兼容新旧 soyoo)
@@ -106,7 +106,7 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
     if (!enabled.length) return { rows: [], total: 0, page, pageSize }; // 没有任何开启监控的状态 → 不查
     statusFilter = enabled.join(",");
   }
-  const opts = { page, limit: pageSize, keyword: q, status: statusFilter };
+  const opts = { page, limit: pageSize, keyword: q, status: statusFilter, excludeTenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) opts.memberUserId = meId(user);
   const r = await soyooClient.projectsList(opts);
   const projects = Array.isArray(r?.data) ? r.data : [];
@@ -152,7 +152,7 @@ export async function getProjectMembers(projectId) {
 }
 
 // ---- 改状态:先调 soyoo(落库+飞书+outbox)成功,才写 ops 流转记录 ----
-export async function changeProjectStatus({ user, projectId, status, commentHtml }) {
+export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false }) {
   if (!status) return { error: "缺少状态", code: 400 };
   const { project, members } = await getProjectWithMembers(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
@@ -161,6 +161,8 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
     if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   }
   const from = project.status;
+  // 相同状态默认拦截(避免 UI 误点把 status_changed_at 清零);force=true 放行(维护用:把停留计时刷新为当前时间)
+  if (!force && from === status) return { error: "状态未变化,无需修改", code: 400 };
   await soyooClient.setProjectStatus(projectId, status); // 抛错 → 路由转 502,不写日志(保证一致)
   await prisma.ops_project_status_logs.create({
     data: {
@@ -191,6 +193,7 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   const pid = String(projectId);
   const cur = await prisma.ops_project_ext.findUnique({ where: { project_id: pid }, select: { stage: true } });
   const from = cur?.stage || null; // 没设置过阶段 → from 为空,日志只显示「→ X」
+  if ((from || "") === stage) return { error: "阶段未变化,无需修改", code: 400 }; // 相同阶段不重置 stage_changed_at
   const now = nowIso();
   await prisma.ops_project_ext.upsert({
     where: { project_id: pid },
@@ -262,7 +265,7 @@ async function staleCutoffs() {
 export async function listStale({ user, page = 1, pageSize = 20 }) {
   const cutoffs = await staleCutoffs();
   if (!cutoffs.length) return { rows: [], total: 0, page, pageSize };
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page, limit: pageSize };
+  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page, limit: pageSize, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   const projects = Array.isArray(r?.data) ? r.data : [];
@@ -273,7 +276,7 @@ export async function listStale({ user, page = 1, pageSize = 20 }) {
 export async function staleCount({ user }) {
   const cutoffs = await staleCutoffs();
   if (!cutoffs.length) return 0;
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page: 1, limit: 1 };
+  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page: 1, limit: 1, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   return Number(r?.total ?? 0);

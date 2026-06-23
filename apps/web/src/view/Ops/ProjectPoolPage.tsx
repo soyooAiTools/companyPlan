@@ -2,13 +2,14 @@
 // 两个 tab:全部项目 / 超时关注;项目状态超时整行标红。超时是服务端按「项目状态时间」阈值实时算的。
 import { useEffect, useRef, useState } from "react";
 import { App, Avatar, Button, Drawer, Empty, Input, List, Modal, Select, Space, Spin, Table, Tag, Timeline, Tooltip, Typography } from "antd";
-import { EditOutlined, QuestionCircleOutlined, PictureOutlined } from "@ant-design/icons";
+import { EditOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import SegmentedTabs from "../../components/SegmentedTabs";
+import RichContentView from "../../components/RichContentView";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsProjectPoolRow, OpsProjectStatusLog, OpsProjectPoolMember, OpsSegmentTicket } from "../../api/modules/ops";
 import RichTextEditor from "./RichTextEditor";
 import { fmtDateTime, fmtDuration } from "../../utils/format";
-import { PROJECT_STATUSES, PROJECT_STAGES, statusStyle, commentHasMedia, OPS_TOOLBAR_CARD } from "./constants";
+import { PROJECT_STATUSES, PROJECT_STAGES, statusStyle, OPS_TOOLBAR_CARD } from "./constants";
 
 const fmtH = (h?: number | null) => {
   if (h == null) return "-";
@@ -59,10 +60,6 @@ export default function ProjectPoolPage() {
   const [memProject, setMemProject] = useState<OpsProjectPoolRow | null>(null);
   const [members, setMembers] = useState<OpsProjectPoolMember[]>([]);
   const [memLoading, setMemLoading] = useState(false);
-
-  // 备注详情弹框(日志里含图片/视频的备注 → 点击查看)
-  const [cmOpen, setCmOpen] = useState(false);
-  const [cmHtml, setCmHtml] = useState("");
 
   // 环节工单弹框(点目前环节里的某环节 → 看该环节下所有人的未完成工单)
   const [segOpen, setSegOpen] = useState(false);
@@ -122,6 +119,7 @@ export default function ProjectPoolPage() {
   };
   const confirmChange = async () => {
     if (!chTarget || !chValue) return;
+    if (chValue === (chField === "status" ? chTarget.status : chTarget.stage)) return; // 未变化,不提交(避免重置停留计时)
     setChSaving(true);
     try {
       if (chField === "status") await opsApi.changeProjectStatus(chTarget.id, chValue, chComment || undefined);
@@ -216,7 +214,7 @@ export default function ProjectPoolPage() {
       render: (_: unknown, r: OpsProjectPoolRow) => (
         <div>
           <div style={{ fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all" }}>{r.name || "—"}</div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>{r.client || "未填客户"}</div>
+          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>{r.tenantName || "未填客户"}</div>
         </div>
       ),
     },
@@ -430,6 +428,7 @@ export default function ProjectPoolPage() {
         onCancel={() => setChOpen(false)}
         okText="确认修改"
         cancelText="取消"
+        okButtonProps={{ disabled: !chValue || chValue === (chField === "status" ? chTarget?.status : chTarget?.stage) }}
         width={760}
         destroyOnHidden>
         <Space direction="vertical" style={{ width: "100%" }} size={12}>
@@ -439,7 +438,11 @@ export default function ProjectPoolPage() {
               value={chValue || undefined}
               placeholder={chField === "status" ? "选择状态" : "选择阶段"}
               style={{ width: 200 }}
-              options={(chField === "status" ? PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({ value: s, label: s }))}
+              options={(chField === "status" ? PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({
+                value: s,
+                label: s === (chField === "status" ? chTarget?.status : chTarget?.stage) ? `${s}(当前)` : s,
+                disabled: s === (chField === "status" ? chTarget?.status : chTarget?.stage), // 当前值不可选
+              }))}
               onChange={setChValue}
             />
             {chTarget ? (
@@ -477,25 +480,7 @@ export default function ProjectPoolPage() {
                       {lg.fromStatus ? `「${lg.fromStatus}」→ ` : ""}「{lg.toStatus}」
                     </span>
                   </div>
-                  {lg.commentHtml ? (
-                    commentHasMedia(lg.commentHtml) ? (
-                      // 含图片/视频 → 折叠成「点击查看」,弹框展示
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<PictureOutlined />}
-                        style={{ padding: 0, height: "auto", marginTop: 4 }}
-                        onClick={() => {
-                          setCmHtml(lg.commentHtml || "");
-                          setCmOpen(true);
-                        }}>
-                        查看备注(含图片/视频)
-                      </Button>
-                    ) : (
-                      // 纯文字 → 直接显示
-                      <div className="ops-rich" style={{ marginTop: 4, fontSize: 13 }} dangerouslySetInnerHTML={{ __html: lg.commentHtml }} />
-                    )
-                  ) : null}
+                  <RichContentView html={lg.commentHtml} linkText="查看备注(含图片/视频)" modalTitle="备注详情" inlineStyle={{ marginTop: 4, fontSize: 13 }} />
                   <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{fmtDateTime(lg.createdAt)}</div>
                 </div>
               ),
@@ -540,11 +525,6 @@ export default function ProjectPoolPage() {
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无协作成员" />
         )}
-      </Modal>
-
-      <Modal title="备注详情" open={cmOpen} onCancel={() => setCmOpen(false)} footer={null} width={640}>
-        <style>{`.ops-comment-detail img, .ops-comment-detail video { max-width: 100%; height: auto; border-radius: 6px; }`}</style>
-        <div className="ops-rich ops-comment-detail" style={{ maxHeight: "70vh", overflow: "auto" }} dangerouslySetInnerHTML={{ __html: cmHtml }} />
       </Modal>
 
       <Modal title={`环节工单 · ${segTitle}`} open={segOpen} onCancel={() => setSegOpen(false)} footer={null} width={620}>
