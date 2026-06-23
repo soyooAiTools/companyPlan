@@ -68,7 +68,7 @@ export interface OpsTicket {
 	riskWarningHours: number;
 	canEdit: boolean; // 能否改状态(负责人/管理员)
 	canEditContent: boolean; // 能否改需求说明(提单人/管理员)
-	canAssign?: boolean; // 能否指派(管理员)
+	canAssign?: boolean; // 能否指派(负责人/提单人/管理员)
 	canEditPriority?: boolean; // 能否改优先级(管理员)
 	createdAt: string;
 	statusUpdatedAt: string;

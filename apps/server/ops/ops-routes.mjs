@@ -64,14 +64,15 @@ function mapTicket(t, segNameById) {
   };
 }
 
-// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派/优先级=管理员
+// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派=负责人/提单人/管理员;优先级=管理员
 function withCanEdit(t, user, segNameById) {
   const admin = isAdmin(user);
+  const userId = meId(user);
   return {
     ...mapTicket(t, segNameById),
-    canEdit: admin || t.owner_id === meId(user),
-    canEditContent: admin || t.requester_id === meId(user),
-    canAssign: admin,
+    canEdit: admin || t.owner_id === userId,
+    canEditContent: admin || t.requester_id === userId,
+    canAssign: admin || t.owner_id === userId || t.requester_id === userId,
     canEditPriority: admin,
   };
 }
@@ -425,7 +426,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 指派/改派:把工单转给该项目的另一个成员(仅管理员可操作)
+  // 指派/改派:把工单转给该项目的另一个成员(管理员/当前负责人/当前提单人可操作)
   app.post("/api/ops/tickets/:id/assign", requireAuth, async (req, res) => {
     const user = req.user;
     const id = String(req.params.id);
@@ -433,7 +434,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (!newOwnerId) return res.status(400).json({ error: "请选择负责人" });
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
-    if (!isAdmin(user)) return res.status(403).json({ error: "只有管理员可指派" });
+    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "只有管理员、当前负责人或当前提单人可指派" });
     let member;
     try {
       const { members } = await getProjectWithMembers(t.project_id);

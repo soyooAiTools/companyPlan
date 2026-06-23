@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { App, Button, Card, Form, Input, Modal, Segmented, Select, Space, Tag, Table, Tooltip, Typography } from "antd";
-import { BarsOutlined, ProjectOutlined } from "@ant-design/icons";
+import { BarsOutlined, EditOutlined, ProjectOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant, OpsTicket, OpsTicketEvent } from "../../api/modules/ops";
 import SegmentedTabs from "../../components/SegmentedTabs";
@@ -328,9 +328,7 @@ export default function OpsTicketsPage() {
 			<Space size={4} onClick={(e) => e.stopPropagation()}>
 				<Tag color={PRIORITY_COLOR[t.priority]}>{t.priority}</Tag>
 				{t.canEditPriority ? (
-					<Button size="small" type="link" style={{ padding: 0 }} onClick={() => setEditingPriorityId(t.id)}>
-						编辑
-					</Button>
+					<Button size="small" type="text" icon={<EditOutlined />} style={{ padding: 0, width: 22 }} onClick={() => setEditingPriorityId(t.id)} />
 				) : null}
 			</Space>
 		);
@@ -502,7 +500,7 @@ export default function OpsTicketsPage() {
 		{ title: "提单人", dataIndex: "requesterName", width: 120, render: (v: string, r: OpsTicket) => personCell(r.requesterAvatar, v) },
 		{ title: "环节", dataIndex: "tagName", width: 100, render: (v: string) => <Tag color="cyan">{v}</Tag> },
 		{ title: "负责人", dataIndex: "ownerName", width: 120, render: (v: string, r: OpsTicket) => personCell(r.ownerAvatar, v) },
-		{ title: "优先级", dataIndex: "priority", width: 90, render: (v: string) => <Tag color={PRIORITY_COLOR[v]}>{v}</Tag> },
+		{ title: "优先级", dataIndex: "priority", width: 120, render: (_: string, r: OpsTicket) => priorityControl(r, 88) },
 		{ title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => fmtDateTime(v) },
 		{
 			title: "剩余",
@@ -533,7 +531,13 @@ export default function OpsTicketsPage() {
 			},
 		},
 		scroll: { x: 1340 },
-		onRow: (r: OpsTicket) => ({ onClick: () => openDetail(r), style: { cursor: "pointer" } }),
+		onRow: (r: OpsTicket) => ({
+			onClick: () => {
+				if (window.getSelection()?.toString()) return;
+				openDetail(r);
+			},
+			style: { cursor: "pointer" },
+		}),
 	};
 
 	// 状态筛选 chip(替代旧的"按状态折叠";数量来自服务端 counts)
