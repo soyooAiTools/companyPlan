@@ -2,16 +2,12 @@
 // 时间模型(两个绝对死线,交付 < 预警):
 //   交付时刻 = 建单 + 交付时长(dueInHours,目标);预警时刻 = 建单 + 预警时长(riskWarningHours,最后死线,应 > 交付)
 //   未到交付 → 黑「剩 X」;超过交付未超预警 → 橙「超期 X」;超过预警 → 红「超期 X」
-import dayjs from "dayjs";
 import type { OpsTicket } from "../../api/modules/ops";
 import { fmtDuration } from "../../utils/format";
 
-// 剩余小时 = 交付时长 − 已过时间(正=还没到交付,负=已超过交付)
+// 距交付的工作小时:后端已按工作时间(10:00-19:00、排夜间)算好(正=还剩、负=已超期、已完成=null),前端直接用
 export function remainingHours(t: OpsTicket): number | null {
-  if (!t.createdAt || !t.dueInHours) return null;
-  const created = dayjs(t.createdAt);
-  if (!created.isValid()) return null;
-  return Math.round(t.dueInHours - dayjs().diff(created, "hour", true)); // 已过小时用 dayjs().diff 算
+  return t.remainingHours ?? null;
 }
 
 // 剩余/超期 文案 + 颜色

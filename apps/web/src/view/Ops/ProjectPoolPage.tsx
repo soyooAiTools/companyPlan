@@ -54,6 +54,13 @@ export default function ProjectPoolPage() {
   const [logsProject, setLogsProject] = useState<OpsProjectPoolRow | null>(null);
   const [logs, setLogs] = useState<OpsProjectStatusLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [logKind, setLogKind] = useState<"all" | "status" | "stage" | "remark">("all"); // 流转记录按类型筛选
+
+  // 备注编辑弹框(富文本)
+  const [rmOpen, setRmOpen] = useState(false);
+  const [rmTarget, setRmTarget] = useState<OpsProjectPoolRow | null>(null);
+  const [rmValue, setRmValue] = useState("");
+  const [rmSaving, setRmSaving] = useState(false);
 
   // 协作成员弹框
   const [memOpen, setMemOpen] = useState(false);
@@ -134,9 +141,31 @@ export default function ProjectPoolPage() {
     }
   };
 
+  // 备注:打开编辑(富文本)+ 保存
+  const openRemark = (r: OpsProjectPoolRow) => {
+    setRmTarget(r);
+    setRmValue(r.remark || "");
+    setRmOpen(true);
+  };
+  const saveRemark = async () => {
+    if (!rmTarget) return;
+    setRmSaving(true);
+    try {
+      await opsApi.changeProjectRemark(rmTarget.id, rmValue);
+      message.success("备注已更新");
+      setRmOpen(false);
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "更新失败");
+    } finally {
+      setRmSaving(false);
+    }
+  };
+
   const openLogs = async (r: OpsProjectPoolRow) => {
     setLogsProject(r);
     setLogsOpen(true);
+    setLogKind("all");
     setLogs([]);
     setLogsLoading(true);
     try {
@@ -179,12 +208,12 @@ export default function ProjectPoolPage() {
     }
   };
 
-  // 剩余时间(和提单页一致):超期=红,临期=橙,正常=灰
+  // 剩余时间(后端按工作时间算好:正=剩、负=超期)
   const segRemain = (t: OpsSegmentTicket) => {
-    if (!t.dueAt) return null;
-    const r = Math.round((new Date(t.dueAt).getTime() - Date.now()) / 3.6e6); // 剩余小时
-    if (r < 0) return <span style={{ color: "#cf1322", fontSize: 12 }}>超期 {fmtDuration(-r)}</span>;
-    return <span style={{ color: t.atRisk ? "#fa8c16" : "#64748b", fontSize: 12 }}>剩 {fmtDuration(r)}</span>;
+    const r = t.remainingHours;
+    if (r == null) return null;
+    if (r < 0) return <span style={{ color: t.overdue ? "#cf1322" : "#fa8c16", fontSize: 12 }}>超期 {fmtDuration(-r)}</span>; // 过预警=红,仅过交付=橙
+    return <span style={{ color: "#64748b", fontSize: 12 }}>剩 {fmtDuration(r)}</span>;
   };
 
   // 未完成工单汇总:2×2 网格,标签定宽 + 数字紧跟。进行中/排队中(按状态)、工单超时(临期)/工单逾期(已过截止)
@@ -286,6 +315,37 @@ export default function ProjectPoolPage() {
       ),
     },
     {
+      title: headerTip("备注", "项目备注(可富文本、附图)。修改会记入流转记录,可在流转记录里按「备注」筛选查看修改历史。"),
+      key: "remark",
+      width: 180,
+      render: (_: unknown, r: OpsProjectPoolRow) => {
+        const text = (r.remark || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim(); // 纯文本预览
+        const preview = text || (r.remark ? "[图文备注]" : "");
+        return (
+          <Space size={4} align="start">
+            {preview ? (
+              // 只显示预览;点整行 → 侧边栏看完整备注(含图文)
+              <span style={{ fontSize: 13, color: "#334155", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", maxWidth: 150 }}>{preview}</span>
+            ) : (
+              <Typography.Text type="secondary">—</Typography.Text>
+            )}
+            <Tooltip title="修改备注">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined style={{ fontSize: 15 }} />}
+                style={{ color: "#0f766e" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openRemark(r);
+                }}
+              />
+            </Tooltip>
+          </Space>
+        );
+      },
+    },
+    {
       title: headerTip("目前环节", "该项目未完成工单涉及的环节,及每个环节的未完成工单数。点击环节查看该环节下所有人的未完成工单。"),
       key: "segments",
       width: 180,
@@ -339,19 +399,34 @@ export default function ProjectPoolPage() {
       render: (_: unknown, r: OpsProjectPoolRow) => ticketSummaryCell(r),
     },
     {
-      title: headerTip("状态停留", "项目保持在「当前状态」的时长。超过「设置 → 项目状态时间」里为该状态配置的阈值时标红(超时 = 已停留 − 阈值),提醒尽快跟进。"),
+      title: headerTip("状态停留", "项目保持在「当前状态」的工作时长(按 10:00-19:00 算、排除夜间)。超过「设置 → 项目状态时间」该状态阈值时标红。"),
       key: "stuck",
       width: 124,
       render: (_: unknown, r: OpsProjectPoolRow) =>
         r.isStale ? (
-          <Tag color="red">超时 {fmtH(r.overByHours)}</Tag>
+          <Tag color="red">状态超时 {fmtH(r.overByHours)}</Tag>
         ) : r.stuckHours != null ? (
           <span style={{ color: "#94a3b8" }}>{fmtH(r.stuckHours)}</span>
         ) : (
           "—"
         ),
     },
+    {
+      title: headerTip("阶段停留", "项目保持在「当前阶段」的工作时长(按 10:00-19:00 算)。超过「设置 → 项目阶段时间」该阶段阈值时标红;没设阶段不计。"),
+      key: "stageStuck",
+      width: 124,
+      render: (_: unknown, r: OpsProjectPoolRow) =>
+        r.stageStale ? (
+          <Tag color="volcano">阶段超时 {fmtH(r.stageOverByHours)}</Tag>
+        ) : r.stageStuckHours != null ? (
+          <span style={{ color: "#94a3b8" }}>{fmtH(r.stageStuckHours)}</span>
+        ) : (
+          "—"
+        ),
+    },
   ];
+
+  const shownLogs = logs.filter((lg) => logKind === "all" || lg.kind === logKind); // 流转记录按类型筛选
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 32px)" }}>
@@ -385,7 +460,7 @@ export default function ProjectPoolPage() {
             />
           </>
         ) : (
-          <Typography.Text type="secondary">超过「项目状态时间」阈值仍未变更的项目(整行标红),需重点跟进。</Typography.Text>
+          <Typography.Text type="secondary">超过「状态时间」或「阶段时间」阈值仍未流转的项目(整行标红),需重点跟进。</Typography.Text>
         )}
       </div>
 
@@ -407,14 +482,14 @@ export default function ProjectPoolPage() {
         dataSource={rows}
         columns={columns}
         size="small"
-        scroll={{ x: 1232, y: scrollY }}
+        scroll={{ x: 1536, y: scrollY }}
         pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 个项目`, onChange: (p, ps) => { setPage(p); setPageSize(ps); } }}
         onRow={(r) => ({
           onClick: () => {
             if (window.getSelection()?.toString()) return; // 正在框选文本(复制)→ 不打开抽屉
             openLogs(r);
           },
-          className: r.isStale ? "ops-pool-stale" : undefined,
+          className: r.isStale || r.stageStale ? "ops-pool-stale" : undefined,
           style: { cursor: "pointer" },
         })}
       />
@@ -456,16 +531,41 @@ export default function ProjectPoolPage() {
         </Space>
       </Modal>
 
+      <Modal
+        title={`修改备注 · ${rmTarget?.name ?? ""}`}
+        open={rmOpen}
+        onOk={saveRemark}
+        confirmLoading={rmSaving}
+        onCancel={() => setRmOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={760}
+        destroyOnHidden>
+        <RichTextEditor value={rmValue} onChange={setRmValue} projectId={rmTarget?.id} />
+      </Modal>
+
       <Drawer title={`项目名称:${logsProject?.name ?? ""}`} open={logsOpen} onClose={() => setLogsOpen(false)} width={460}>
-        <div style={{ fontWeight: 600, fontSize: 15, color: "#0f172a", marginBottom: 14 }}>项目流转记录</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 600, fontSize: 15, color: "#0f172a" }}>项目流转记录</span>
+          <SegmentedTabs
+            value={logKind}
+            onChange={setLogKind}
+            options={[
+              { label: "全部", value: "all" },
+              { label: "状态", value: "status" },
+              { label: "阶段", value: "stage" },
+              { label: "备注", value: "remark" },
+            ]}
+          />
+        </div>
         {logsLoading ? (
           <div style={{ textAlign: "center", padding: "48px 0" }}>
             <Spin />
           </div>
-        ) : logs.length ? (
+        ) : shownLogs.length ? (
           <Timeline
-            items={logs.map((lg) => ({
-              color: lg.kind === "stage" ? "purple" : lg.toStatus === "已完成" ? "green" : "blue",
+            items={shownLogs.map((lg) => ({
+              color: lg.kind === "stage" ? "purple" : lg.kind === "remark" ? "gold" : lg.toStatus === "已完成" ? "green" : "blue",
               children: (
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -473,12 +573,14 @@ export default function ProjectPoolPage() {
                       {(lg.actorName || "系").slice(0, 1)}
                     </Avatar>
                     <span style={{ fontWeight: 600 }}>{lg.actorName || "系统"}</span>
-                    <Tag color={lg.kind === "stage" ? "purple" : "blue"} style={{ marginInlineEnd: 0 }}>
-                      {lg.kind === "stage" ? "阶段" : "状态"}
+                    <Tag color={lg.kind === "stage" ? "purple" : lg.kind === "remark" ? "gold" : "blue"} style={{ marginInlineEnd: 0 }}>
+                      {lg.kind === "stage" ? "阶段" : lg.kind === "remark" ? "备注" : "状态"}
                     </Tag>
-                    <span style={{ color: "#64748b" }}>
-                      {lg.fromStatus ? `「${lg.fromStatus}」→ ` : ""}「{lg.toStatus}」
-                    </span>
+                    {lg.kind !== "remark" && (
+                      <span style={{ color: "#64748b" }}>
+                        {lg.fromStatus ? `「${lg.fromStatus}」→ ` : ""}「{lg.toStatus}」
+                      </span>
+                    )}
                   </div>
                   <RichContentView html={lg.commentHtml} linkText="查看备注(含图片/视频)" modalTitle="备注详情" inlineStyle={{ marginTop: 4, fontSize: 13 }} />
                   <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 2 }}>{fmtDateTime(lg.createdAt)}</div>
@@ -487,7 +589,7 @@ export default function ProjectPoolPage() {
             }))}
           />
         ) : (
-          <Typography.Text type="secondary">暂无状态/阶段变更记录</Typography.Text>
+          <Typography.Text type="secondary">暂无{logKind === "all" ? "" : logKind === "status" ? "状态" : logKind === "stage" ? "阶段" : "备注"}变更记录</Typography.Text>
         )}
       </Drawer>
 

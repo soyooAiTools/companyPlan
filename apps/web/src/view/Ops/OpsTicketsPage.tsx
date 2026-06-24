@@ -363,6 +363,7 @@ export default function OpsTicketsPage() {
 	};
 	// 负责人选项:选了环节→该环节成员;没选环节→项目全部成员。带微信头像/网名供下拉「头像｜网名｜姓名」展示
 	const ownerOptions = useMemo(() => {
+		const segNameById = new Map(segments.map((s) => [s.id, s.name]));
 		const toOpt = (m: OpsResponsibleMember) => ({
 			value: m.id,
 			label: m.wechatName ? `${m.wechatName}｜${m.name || m.username}` : m.name || m.username,
@@ -370,6 +371,7 @@ export default function OpsTicketsPage() {
 			wechatName: m.wechatName || "",
 			name: m.name || m.username,
 			username: m.username,
+			segmentNames: (m.segmentIds || []).map((id) => segNameById.get(id)).filter(Boolean) as string[], // 该成员所属环节名(下拉显示)
 		});
 		if (selectedSegmentId) {
 			const seg = segments.find((s) => s.id === selectedSegmentId);

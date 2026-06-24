@@ -1,17 +1,18 @@
 // 项目池业务层:实时查 soyoo 项目 + 聚合 ops 工单 + 改状态(soyoo+飞书+outbox)+ 流转记录 + 状态阈值配置 + 超时筛。
-import dayjs from "dayjs";
 import { prisma } from "../prisma.mjs";
 import { soyooClient, soyooId } from "../soyoo-client.mjs";
 import { getProjectWithMembers } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
 import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
+import { sanitizeRichHtml, isBlankRich } from "../rich-html.mjs";
+import { businessHoursBetween, subBusinessHours, remainingBusinessHours } from "../business-hours.mjs";
 
 // 批量取项目 ops 扩展字段(阶段等)→ { [project_id]: {stage, stageChangedAt} }
 async function loadExt(projectIds) {
   const out = {};
   if (!projectIds.length) return out;
   const rows = await prisma.ops_project_ext.findMany({ where: { project_id: { in: projectIds.map(String) } } });
-  for (const r of rows) out[r.project_id] = { stage: r.stage, stageChangedAt: r.stage_changed_at };
+  for (const r of rows) out[r.project_id] = { stage: r.stage, stageChangedAt: r.stage_changed_at, remark: r.remark };
   return out;
 }
 
@@ -26,8 +27,8 @@ async function aggregateTickets(projectIds) {
   const base = { project_id: { in: projectIds }, status: { not: "已完成" } }; // 未完成
   const [byStatus, overdue, atRisk, bySegment] = await Promise.all([
     prisma.tickets.groupBy({ by: ["project_id", "status"], where: base, _count: { _all: true } }),
-    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, due_at: { lt: now } }, _count: { _all: true } }), // 逾期:已过截止
-    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, warn_at: { lt: now }, due_at: { gte: now } }, _count: { _all: true } }), // 临期:预警内未过期
+    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, warn_at: { lt: now } }, _count: { _all: true } }), // 工单逾期(红):已过预警(base 已排除已完成)
+    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, due_at: { lt: now }, warn_at: { gte: now } }, _count: { _all: true } }), // 工单超时(橙):已过交付、未过预警
     prisma.tickets.groupBy({ by: ["project_id", "segment_id"], where: { ...base, segment_id: { not: null } }, _count: { _all: true } }), // 各环节未完成工单数
   ]);
   for (const g of byStatus) {
@@ -58,19 +59,30 @@ async function settingsMap() {
   const rows = await prisma.ops_project_status_settings.findMany();
   return Object.fromEntries(rows.map((r) => [r.status, { enabled: !!r.enabled, staleHours: r.stale_hours }]));
 }
+async function stageSettingsMap() {
+  const rows = await prisma.ops_project_stage_settings.findMany();
+  return Object.fromEntries(rows.map((r) => [r.stage, { enabled: !!r.enabled, staleHours: r.stale_hours }]));
+}
 // 策划列表:新 soyoo 直接给 planners[{name,avatar}];旧 soyoo 只给 planner_avatar(单头像)→ 兼容回退
 function normalizePlanners(p) {
   if (Array.isArray(p.planners) && p.planners.length) return p.planners.map((x) => ({ name: x.name ?? "", avatar: x.avatar ?? "" }));
   if (p.planner_avatar) return [{ name: p.planner_name ?? "", avatar: p.planner_avatar }];
   return [];
 }
-function buildRow(p, agg, segMap, sm, extMap) {
+function buildRow(p, agg, segMap, sm, extMap, stageSm) {
   const a = agg[String(p.id)] || {};
   const ext = extMap?.[String(p.id)] || {};
+  const now = nowIso();
+  // 状态停留(工作时间:只算每天 10:00-19:00)
   const setting = sm?.[p.status];
-  const stuckHours = p.status_changed_at ? dayjs().diff(dayjs(p.status_changed_at), "hour") : null; // 已停留小时
+  const stuckHours = p.status_changed_at ? Math.round(businessHoursBetween(p.status_changed_at, now)) : null; // 已停留工时
   const staleHours = setting?.enabled ? setting.staleHours : 0;
   const isStale = !!(setting?.enabled && setting.staleHours > 0 && stuckHours != null && stuckHours > setting.staleHours);
+  // 阶段停留(工作时间;没设阶段则不计)
+  const stageSetting = ext.stage ? stageSm?.[ext.stage] : null;
+  const stageStuckHours = ext.stage && ext.stageChangedAt ? Math.round(businessHoursBetween(ext.stageChangedAt, now)) : null;
+  const stageStaleHours = stageSetting?.enabled ? stageSetting.staleHours : 0;
+  const stageStale = !!(stageSetting?.enabled && stageSetting.staleHours > 0 && stageStuckHours != null && stageStuckHours > stageSetting.staleHours);
   return {
     id: String(p.id),
     name: p.name ?? "",
@@ -80,6 +92,7 @@ function buildRow(p, agg, segMap, sm, extMap) {
     planners: normalizePlanners(p), // 拆分后每个策划 {name, avatar}(兼容新旧 soyoo)
     stage: ext.stage || "", // 制作阶段(ops 自有);没设置就空,前端显示「-」
     stageChangedAt: ext.stageChangedAt ?? null,
+    remark: ext.remark || "", // 项目备注(ops 自有,富文本 HTML;空串=无)
     statusChangedAt: p.status_changed_at ?? null,
     memberCount: p.member_count ?? 0,
     segments: orderSegments(a.segCounts || {}, segMap), // 目前环节(各环节未完成工单数,按 sort)
@@ -87,10 +100,14 @@ function buildRow(p, agg, segMap, sm, extMap) {
     ticketTotal: a.total || 0,
     atRisk: a.atRisk || 0, // 工单超时(临期)
     overdue: a.overdue || 0, // 工单逾期(超期)
-    stuckHours, // 项目已停留小时
+    stuckHours, // 项目已停留工时
     staleHours, // 该状态阈值
-    overByHours: isStale ? stuckHours - staleHours : null, // 超出阈值小时
+    overByHours: isStale ? stuckHours - staleHours : null, // 超出阈值工时
     isStale, // 项目状态超时 → 整行标红
+    stageStuckHours, // 阶段已停留工时
+    stageStaleHours, // 该阶段阈值
+    stageOverByHours: stageStale ? stageStuckHours - stageStaleHours : null,
+    stageStale, // 阶段停留超时
   };
 }
 
@@ -111,8 +128,8 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
   const r = await soyooClient.projectsList(opts);
   const projects = Array.isArray(r?.data) ? r.data : [];
   const ids = projects.map((p) => String(p.id));
-  const [agg, segMap, extMap] = await Promise.all([aggregateTickets(ids), loadSegOrder(), loadExt(ids)]);
-  return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap)), total: Number(r?.total ?? projects.length), page, pageSize };
+  const [agg, segMap, extMap, stageSm] = await Promise.all([aggregateTickets(ids), loadSegOrder(), loadExt(ids), stageSettingsMap()]);
+  return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap, stageSm)), total: Number(r?.total ?? projects.length), page, pageSize };
 }
 
 // ---- 某项目某环节下的未完成工单(目前环节点击查看,含所有负责人)----
@@ -133,8 +150,9 @@ export async function listSegmentTickets(projectId, segmentId) {
     ownerName: t.owner_name || "",
     ownerAvatar: t.owner_avatar || "",
     dueAt: t.due_at,
-    overdue: !!(t.due_at && t.due_at < now), // 逾期:已过截止
-    atRisk: !!(t.warn_at && t.warn_at < now && t.due_at && t.due_at >= now), // 临期:已过预警未到截止
+    remainingHours: remainingBusinessHours(t.due_at, now), // 距交付的工作小时(正=剩,负=超期)
+    overdue: !!(t.warn_at && t.warn_at < now), // 逾期(红):已过预警
+    atRisk: !!(t.due_at && t.due_at < now && t.warn_at && t.warn_at >= now), // 超时(橙):过交付未过预警
   }));
 }
 
@@ -216,6 +234,38 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   return { ok: true, stage };
 }
 
+// ---- 改备注(纯 ops:富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
+export async function changeProjectRemark({ user, projectId, remark }) {
+  const { project, members } = await getProjectWithMembers(projectId);
+  if (!project) return { error: "项目不存在", code: 404 };
+  if (!isAdmin(user)) {
+    const m = members.find((x) => x.id === meId(user));
+    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
+  }
+  const pid = String(projectId);
+  const now = nowIso();
+  const html = isBlankRich(remark) ? "" : sanitizeRichHtml(remark); // 富文本白名单清洗;允许清空
+  await prisma.ops_project_ext.upsert({
+    where: { project_id: pid },
+    create: { project_id: pid, remark: html, updated_at: now },
+    update: { remark: html, updated_at: now },
+  });
+  await prisma.ops_project_status_logs.create({
+    data: {
+      project_id: pid,
+      project_name: project.name,
+      kind: "remark",
+      from_status: null,
+      to_status: "修改备注",
+      actor_id: meId(user),
+      actor_name: user?.name || user?.username || "",
+      comment_html: html || null,
+      created_at: now,
+    },
+  });
+  return { ok: true };
+}
+
 // ---- 流转记录(倒序)----
 export async function getStatusLogs(projectId) {
   const rows = await prisma.ops_project_status_logs.findMany({ where: { project_id: String(projectId) }, orderBy: { id: "desc" }, take: 200 });
@@ -255,28 +305,56 @@ export async function saveStatusSettings(list) {
   return getStatusSettings();
 }
 
-// ---- 超时(项目状态停留超过该状态阈值)----
+// ---- 阶段阈值配置 ----
+export async function getStageSettings() {
+  const rows = await prisma.ops_project_stage_settings.findMany({ orderBy: { sort_order: "asc" } });
+  return rows.map((r) => ({ stage: r.stage, enabled: !!r.enabled, staleHours: r.stale_hours, sortOrder: r.sort_order }));
+}
+export async function saveStageSettings(list) {
+  for (const s of Array.isArray(list) ? list : []) {
+    if (!s?.stage) continue;
+    await prisma.ops_project_stage_settings
+      .update({ where: { stage: String(s.stage) }, data: { enabled: s.enabled ? 1 : 0, stale_hours: Math.max(0, Number(s.staleHours) || 0), updated_at: nowIso() } })
+      .catch(() => {});
+  }
+  return getStageSettings();
+}
+
+// ---- 超时(项目状态停留超过该状态阈值,按工作时间)----
 async function staleCutoffs() {
   const settings = await prisma.ops_project_status_settings.findMany();
+  const now = nowIso();
   return settings
     .filter((s) => s.enabled && s.stale_hours > 0)
-    .map((s) => ({ status: s.status, before: dayjs().subtract(s.stale_hours, "hour").toISOString(), staleHours: s.stale_hours }));
+    .map((s) => ({ status: s.status, before: subBusinessHours(now, s.stale_hours), staleHours: s.stale_hours }));
 }
+
+// 阶段超时的项目 id(「超时关注」与状态超时取并集用):每阶段按其阈值,stage_changed_at 早于「现在往前该阈值工时」即超时
+async function stageStaleProjectIds() {
+  const settings = await prisma.ops_project_stage_settings.findMany();
+  const active = settings.filter((s) => s.enabled && s.stale_hours > 0);
+  if (!active.length) return [];
+  const now = nowIso();
+  const or = active.map((s) => ({ stage: s.stage, stage_changed_at: { lt: subBusinessHours(now, s.stale_hours) } }));
+  const rows = await prisma.ops_project_ext.findMany({ where: { OR: or }, select: { project_id: true } });
+  return rows.map((r) => r.project_id);
+}
+
 export async function listStale({ user, page = 1, pageSize = 20 }) {
-  const cutoffs = await staleCutoffs();
-  if (!cutoffs.length) return { rows: [], total: 0, page, pageSize };
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page, limit: pageSize, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
+  if (!cutoffs.length && !extraIds.length) return { rows: [], total: 0, page, pageSize };
+  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page, limit: pageSize, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   const projects = Array.isArray(r?.data) ? r.data : [];
   const ids = projects.map((p) => String(p.id));
-  const [agg, segMap, sm, extMap] = await Promise.all([aggregateTickets(ids), loadSegOrder(), settingsMap(), loadExt(ids)]);
-  return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap)), total: Number(r?.total ?? projects.length), page, pageSize };
+  const [agg, segMap, sm, extMap, stageSm] = await Promise.all([aggregateTickets(ids), loadSegOrder(), settingsMap(), loadExt(ids), stageSettingsMap()]);
+  return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap, stageSm)), total: Number(r?.total ?? projects.length), page, pageSize };
 }
 export async function staleCount({ user }) {
-  const cutoffs = await staleCutoffs();
-  if (!cutoffs.length) return 0;
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), page: 1, limit: 1, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
+  if (!cutoffs.length && !extraIds.length) return 0;
+  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page: 1, limit: 1, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   return Number(r?.total ?? 0);

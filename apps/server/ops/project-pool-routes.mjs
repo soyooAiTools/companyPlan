@@ -72,6 +72,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     res.json(r);
   });
 
+  // 改项目备注(策划本人/管理员;纯 ops,富文本)
+  app.post("/api/ops/project-pool/:id/remark", requireAuth, requirePlanner, async (req, res) => {
+    let r;
+    try {
+      r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark });
+    } catch {
+      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
   // 项目状态/阶段流转记录(同一时间线)
   app.get("/api/ops/project-pool/:id/status-logs", requireAuth, requirePlanner, async (req, res) => {
     res.json({ logs: await pool.getStatusLogs(req.params.id) });
@@ -97,5 +109,13 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   });
   app.put("/api/ops/project-status-settings", requireAuth, requireAdmin, async (req, res) => {
     res.json({ settings: await pool.saveStatusSettings(req.body?.settings) });
+  });
+
+  // 阶段时长阈值配置(仅管理员)
+  app.get("/api/ops/project-stage-settings", requireAuth, requireAdmin, async (_req, res) => {
+    res.json({ settings: await pool.getStageSettings() });
+  });
+  app.put("/api/ops/project-stage-settings", requireAuth, requireAdmin, async (req, res) => {
+    res.json({ settings: await pool.saveStageSettings(req.body?.settings) });
   });
 }

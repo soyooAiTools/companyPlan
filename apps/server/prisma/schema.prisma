@@ -271,10 +271,19 @@ model ops_project_status_settings {
   updated_at  String @db.VarChar(40)
 }
 
+model ops_project_stage_settings {
+  stage       String @id @db.VarChar(40)
+  enabled     Int    @default(1) @db.TinyInt
+  stale_hours Int    @default(72)
+  sort_order  Int    @default(0)
+  updated_at  String @db.VarChar(40)
+}
+
 // 项目「ops 自有扩展字段」(1:1,project_id = soyoo 项目 id)。soyoo 没有、ops 想加的字段都放这。
 model ops_project_ext {
   project_id       String  @id @db.VarChar(64)
   stage            String? @db.VarChar(40)
   stage_changed_at String? @db.VarChar(40)
+  remark           String? @db.MediumText
   updated_at       String? @db.VarChar(40)
 }

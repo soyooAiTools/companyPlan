@@ -66,6 +66,7 @@ export interface OpsTicket {
 	hyperlink: string;
 	blockReason: string;
 	riskWarningHours: number;
+	remainingHours?: number | null; // 距交付的工作小时(后端按工时算;正=剩、负=超期、null=已完成)
 	canEdit: boolean; // 能否改状态(负责人/管理员)
 	canEditContent: boolean; // 能否改需求说明(提单人/管理员)
 	canAssign?: boolean; // 能否指派(负责人/提单人/管理员)
@@ -114,6 +115,7 @@ export interface OpsProjectPoolRow {
 	status: string;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
 	stageChangedAt: string | null;
+	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
 	planners: { name: string; avatar: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
 	statusChangedAt: string | null;
@@ -123,10 +125,14 @@ export interface OpsProjectPoolRow {
 	ticketTotal: number;
 	atRisk: number; // 工单超时(临期)数
 	overdue: number; // 工单逾期(超期)数
-	stuckHours?: number | null; // 项目已停留小时
+	stuckHours?: number | null; // 项目已停留工时
 	staleHours?: number; // 该状态阈值
-	overByHours?: number | null; // 超出阈值小时
+	overByHours?: number | null; // 超出阈值工时
 	isStale?: boolean; // 项目状态超时 → 整行标红
+	stageStuckHours?: number | null; // 阶段已停留工时
+	stageStaleHours?: number; // 该阶段阈值
+	stageOverByHours?: number | null; // 阶段超出阈值工时
+	stageStale?: boolean; // 阶段停留超时
 }
 export interface OpsProjectPoolMember {
 	id: string;
@@ -144,12 +150,13 @@ export interface OpsSegmentTicket {
 	ownerName: string;
 	ownerAvatar: string;
 	dueAt: string | null;
+	remainingHours?: number | null; // 距交付的工作小时(后端按工时算;正=剩、负=超期)
 	overdue: boolean; // 逾期(已过截止)
 	atRisk: boolean; // 临期(已过预警未到截止)
 }
 export interface OpsProjectStatusLog {
 	id: number;
-	kind: "status" | "stage"; // 状态变更 / 阶段变更(同一时间线区分)
+	kind: "status" | "stage" | "remark"; // 状态变更 / 阶段变更 / 备注修改(同一时间线区分)
 	fromStatus: string | null;
 	toStatus: string;
 	actorName: string | null;
@@ -159,6 +166,12 @@ export interface OpsProjectStatusLog {
 }
 export interface OpsProjectStatusSetting {
 	status: string;
+	enabled: boolean;
+	staleHours: number;
+	sortOrder: number;
+}
+export interface OpsProjectStageSetting {
+	stage: string;
 	enabled: boolean;
 	staleHours: number;
 	sortOrder: number;
@@ -283,8 +296,16 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ stage, commentHtml }),
 		}),
+	changeProjectRemark: (projectId: string, remark: string) =>
+		requestJson<{ ok: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/remark`, {
+			method: "POST",
+			body: JSON.stringify({ remark }),
+		}),
 	projectStatusLogs: (projectId: string) => requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs`),
 	projectStatusSettings: () => requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings"),
 	saveProjectStatusSettings: (settings: OpsProjectStatusSetting[]) =>
 		requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+	projectStageSettings: () => requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings"),
+	saveProjectStageSettings: (settings: OpsProjectStageSetting[]) =>
+		requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
 };

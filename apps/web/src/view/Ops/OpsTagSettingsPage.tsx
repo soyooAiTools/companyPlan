@@ -159,9 +159,11 @@ export default function OpsTagSettingsPage() {
     {
       title: "绑定 soyoo 标签",
       key: "tags",
+      width: 300,
       render: (_: unknown, seg: OpsSegment) => (
         <Select
           mode="multiple"
+          maxTagCount="responsive"
           style={{ width: "100%" }}
           placeholder="选择要绑定的标签"
           value={valOf(seg).tagIds}
@@ -176,7 +178,7 @@ export default function OpsTagSettingsPage() {
       key: "d",
       width: 130,
       render: (_: unknown, seg: OpsSegment) => (
-        <InputNumber min={1} max={720} value={valOf(seg).defaultDeliveryHours} onChange={(v) => patch(seg, { defaultDeliveryHours: Number(v) || 1 })} />
+        <InputNumber min={1} max={720} style={{ width: "100%" }} value={valOf(seg).defaultDeliveryHours} onChange={(v) => patch(seg, { defaultDeliveryHours: Number(v) || 1 })} />
       ),
     },
     {
@@ -187,6 +189,7 @@ export default function OpsTagSettingsPage() {
         <InputNumber
           min={(valOf(seg).defaultDeliveryHours || 1) + 1}
           max={720}
+          style={{ width: "100%" }}
           value={valOf(seg).riskWarningHours}
           onChange={(v) => patch(seg, { riskWarningHours: Number(v) || 1 })}
         />
@@ -213,21 +216,20 @@ export default function OpsTagSettingsPage() {
 
   return (
     <div>
-      <Space direction="vertical" size={4} style={{ marginBottom: 12 }}>
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          环节配置 / 标签绑定
-        </Typography.Title>
-        <Typography.Text type="secondary">
-          环节是 ops 自己的分类;把 soyoo 标签绑到环节(如 程序 ← cocos开发 / unity开发)。建单按环节筛选负责人。
-          时间按环节生效:<b>交付时长</b> = 目标交付(超过后「剩余」变橙);<b>预警时长</b> = 最后死线(超过后变红,并进「延期任务预警」),<b>必须大于交付时长</b>。
-        </Typography.Text>
-      </Space>
-      <Space style={{ marginBottom: 12 }}>
-        <Input placeholder="新环节名(如 音效)" value={newName} onChange={(e) => setNewName(e.target.value)} onPressEnter={create} style={{ width: 200 }} />
-        <Button type="dashed" loading={creating} onClick={create}>
-          + 新增环节
-        </Button>
-      </Space>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 12 }}>
+        <Space direction="vertical" size={4}>
+          <Typography.Title level={4} style={{ margin: 0 }}>
+            环节配置 / 标签绑定
+          </Typography.Title>
+          <Typography.Text type="secondary">把 soyoo 标签绑到 ops 环节;建单按环节选负责人,交付/预警时间也按环节算。</Typography.Text>
+        </Space>
+        <Space style={{ flexShrink: 0 }}>
+          <Input placeholder="新环节名(如 音效)" value={newName} onChange={(e) => setNewName(e.target.value)} onPressEnter={create} style={{ width: 180 }} />
+          <Button type="dashed" loading={creating} onClick={create}>
+            + 新增环节
+          </Button>
+        </Space>
+      </div>
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <SortableContext items={segments.map((s) => String(s.id))} strategy={verticalListSortingStrategy}>
           <Table

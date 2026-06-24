@@ -11,6 +11,7 @@ type OwnerOption = {
 	wechatName: string;
 	name: string;
 	username: string;
+	segmentNames?: string[];
 };
 
 type CreateTicketModalProps = {
@@ -109,6 +110,12 @@ export default function CreateTicketModal({
 										{opt.data?.wechatName ? <span style={{ color: "#64748b" }}>{opt.data.wechatName}</span> : null}
 										{opt.data?.wechatName ? <span style={{ color: "#cbd5e1" }}>｜</span> : null}
 										<span>{opt.data?.name}</span>
+										{opt.data?.segmentNames?.length ? (
+											<>
+												<span style={{ color: "#cbd5e1" }}>｜</span>
+												<span style={{ color: "#0f766e" }}>{opt.data.segmentNames.join("、")}</span>
+											</>
+										) : null}
 									</Space>
 								)}
 								notFoundContent="该项目暂无可分配成员"

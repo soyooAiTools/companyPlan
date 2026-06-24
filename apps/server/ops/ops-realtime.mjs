@@ -5,12 +5,26 @@ import { soyooClient } from "./soyoo-client.mjs";
 // 我参与的项目(提单选项目下拉)
 export async function listMyProjects(user) {
   const data = await soyooClient.myProjects(user.id);
-  return (data?.projects ?? []).map((p) => ({
+  return (data?.projects ?? [])
+    .filter((p) => p.project_status !== "回收中") // 回收中项目不参与提单(与管理员口径一致)
+    .map((p) => ({
     id: String(p.project_id),
     name: p.project_name ?? "",
     clientId: String(p.tenant_id ?? ""),
     client: p.tenant_name ?? "",
     status: p.project_status ?? "",
+  }));
+}
+
+// 管理员:全部非回收项目(提单选项目用)。soyoo 无 tenant 过滤,取全量(短缓存),由 handler 按客户筛
+export async function listAllProjects() {
+  const rows = await soyooClient.allProjects();
+  return (rows ?? []).map((p) => ({
+    id: String(p.id),
+    name: p.name ?? "",
+    clientId: String(p.tenant_id ?? ""),
+    client: p.tenant_name ?? "",
+    status: p.status ?? "",
   }));
 }
 

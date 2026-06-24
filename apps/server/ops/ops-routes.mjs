@@ -1,40 +1,18 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
-import dayjs from "dayjs";
-import sanitizeHtml from "sanitize-html";
+import { addBusinessHours, remainingBusinessHours } from "./business-hours.mjs";
+import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "./rich-html.mjs";
 import { prisma } from "./prisma.mjs";
 import { isOssConfigured, uploadObject } from "./oss.mjs";
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner } from "./ops-helpers.mjs";
-import { listMyProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
+import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
 
-// —— 富文本正文:白名单 sanitize(防存储型 XSS)+ 派生纯文本摘要 ——
-const MAX_CONTENT_HTML = 8_000_000; // ~8MB,给 base64 内联图片留空间(列为 MEDIUMTEXT 16MB)
-const SANITIZE_OPTS = {
-  allowedTags: ["p", "br", "span", "strong", "b", "em", "i", "u", "s", "strike", "del", "mark", "ul", "ol", "li", "blockquote", "code", "pre", "h1", "h2", "h3", "h4", "a", "img", "video", "hr"],
-  allowedAttributes: { a: ["href", "target", "rel"], img: ["src", "alt", "title"], video: ["src", "controls", "width", "height", "poster"] },
-  allowedSchemes: ["http", "https", "mailto"],
-  allowedSchemesByTag: { img: ["http", "https", "data"] }, // 允许图片用 data: base64
-  nonTextTags: ["script", "style", "noscript", "textarea"], // 连同标签内文本一并丢弃
-  transformTags: { a: sanitizeHtml.simpleTransform("a", { rel: "noopener noreferrer nofollow", target: "_blank" }) },
-};
-const sanitizeRichHtml = (html) => sanitizeHtml(String(html ?? ""), SANITIZE_OPTS).trim();
-function htmlToPlain(html) {
-  return String(html ?? "")
-    .replace(/<\s*(br|\/p|\/li|\/h[1-6]|\/div)\s*>/gi, " ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-const isBlankRich = (html) => (html ? (/<img/i.test(html) ? false : htmlToPlain(html) === "") : true);
+// 富文本 sanitize / 纯文本派生 / 空判断 / 大小上限 → 公用模块 ./rich-html.mjs(提单正文与项目备注共用)
 
 function mapTicket(t, segNameById) {
   return {
@@ -59,6 +37,7 @@ function mapTicket(t, segNameById) {
     hyperlink: t.hyperlink ?? "",
     blockReason: t.block_reason ?? "",
     riskWarningHours: t.risk_warning_hours ?? 8,
+    remainingHours: t.status === "已完成" ? null : remainingBusinessHours(t.due_at), // 距交付的工作小时(正=剩,负=超期);已完成=null
     createdAt: t.created_at,
     statusUpdatedAt: t.status_updated_at,
   };
@@ -182,7 +161,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // 项目:只返当前用户参与的(实时查 soyoo「我的项目」),可按客户过滤
   app.get("/api/ops/projects", requireAuth, async (req, res) => {
     try {
-      const all = await listMyProjects(req.user);
+      const all = isAdmin(req.user) ? await listAllProjects() : await listMyProjects(req.user); // 管理员看全部非回收项目
       const tenantId = req.query.tenantId ? String(req.query.tenantId) : "";
       const projects = (tenantId ? all.filter((p) => p.clientId === tenantId) : all).map((p) => ({
         id: p.id,
@@ -363,8 +342,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
 
     const now = nowIso();
     // 两个绝对时刻固化进工单:交付时刻(目标)<  预警时刻(最后死线)。超过交付=橙、超过预警=红;延期预警 tab 筛「超过预警」。
-    const dueAt = dayjs(now).add(segment.default_delivery_hours, "hour").toISOString(); // 交付时刻 = 创建 + 交付时长
-    const warnAt = dayjs(now).add(segment.risk_warning_hours, "hour").toISOString(); // 预警时刻 = 创建 + 预警时长(应 > 交付时长)
+    const dueAt = addBusinessHours(now, segment.default_delivery_hours); // 交付时刻 = 建单 + 交付工时(只算 10:00-19:00)
+    const warnAt = addBusinessHours(now, segment.risk_warning_hours); // 预警时刻 = 建单 + 预警工时(应 > 交付)
     const created = await prisma.tickets.create({
       data: {
         id: crypto.randomUUID(),

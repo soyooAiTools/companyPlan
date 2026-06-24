@@ -651,6 +651,19 @@ async function migrateSchema() {
     )
     .run();
 
+  // 项目阶段时长阈值配置(每阶段:是否监控 enabled + 在该阶段停留多久算超时 stale_hours,按工作时间)
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_project_stage_settings (
+        stage VARCHAR(40) PRIMARY KEY,
+        enabled TINYINT NOT NULL DEFAULT 1,
+        stale_hours INT NOT NULL DEFAULT 72,
+        sort_order INT NOT NULL DEFAULT 0,
+        updated_at VARCHAR(40) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+
   // 项目「ops 自有扩展字段」(1:1,project_id = soyoo 项目 id)。soyoo 没有、ops 想加的字段都放这,以后扩展加列即可。
   await db
     .prepare(
@@ -662,6 +675,8 @@ async function migrateSchema() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
     .run();
+  // 项目备注(ops 自有,富文本;并入流转记录 kind=remark,此列存当前值)
+  await ensureColumn("ops_project_ext", "remark", "MEDIUMTEXT");
 }
 
 async function ensureColumn(tableName, columnName, definition) {
@@ -771,6 +786,15 @@ async function seedConfigRows(now) {
   ];
   for (const [index, s] of statusDefaults.entries()) {
     await insertStatusSetting.run(s.status, s.enabled, s.hours, index, now);
+  }
+
+  // 项目阶段时长阈值默认值(工作小时;管理员可在配置页改)。顺序与 PROJECT_STAGES 一致
+  const insertStageSetting = db.prepare(
+    `INSERT IGNORE INTO ops_project_stage_settings (stage, enabled, stale_hours, sort_order, updated_at) VALUES (?, ?, ?, ?, ?)`
+  );
+  const stageDefaults = ["资产确认", "场景单帧版本", "可交互初版", "功能完整版", "最终交付版"];
+  for (const [index, stage] of stageDefaults.entries()) {
+    await insertStageSetting.run(stage, 1, 72, index, now);
   }
 }
 
