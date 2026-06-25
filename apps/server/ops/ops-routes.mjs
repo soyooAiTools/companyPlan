@@ -8,6 +8,7 @@ import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner } from "./ops-helpers.mjs";
 import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
+import * as notif from "./services/ops-notifications.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
@@ -43,8 +44,8 @@ function mapTicket(t, segNameById) {
   };
 }
 
-// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派=负责人/提单人/管理员;优先级=管理员
-function withCanEdit(t, user, segNameById) {
+// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派=负责人/提单人/管理员;优先级=管理员/策划
+function withCanEdit(t, user, segNameById, planner = false) {
   const admin = isAdmin(user);
   const userId = meId(user);
   return {
@@ -52,8 +53,16 @@ function withCanEdit(t, user, segNameById) {
     canEdit: admin || t.owner_id === userId,
     canEditContent: admin || t.requester_id === userId,
     canAssign: admin || t.owner_id === userId || t.requester_id === userId,
-    canEditPriority: admin,
+    canEditPriority: admin || planner,
   };
+}
+
+// 给工单(单条或数组)打权限标记;planner(=改优先级权限)按用户算一次,避免逐条查 soyoo;admin 直接放行不查。
+async function decorateTickets(rowsOrRow, user, segNameById) {
+  const planner = isAdmin(user) ? false : await isPlanner(user);
+  return Array.isArray(rowsOrRow)
+    ? rowsOrRow.map((t) => withCanEdit(t, user, segNameById, planner))
+    : withCanEdit(rowsOrRow, user, segNameById, planner);
 }
 
 // 环节 id→当前名 映射:工单显示「环节」时按 segment_id 取当前名(改名即时反映,不依赖名字快照)
@@ -307,7 +316,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const counts = {};
     for (const g of grouped) counts[g.status] = g._count._all;
     const segNameById = await loadSegNameMap();
-    res.json({ tickets: rows.map((t) => withCanEdit(t, user, segNameById)), total, page, pageSize, counts });
+    res.json({ tickets: await decorateTickets(rows, user, segNameById), total, page, pageSize, counts });
   });
 
   // 建单:按环节(segmentId)。owner 须为该项目下、标签 ∈ 环节绑定标签 的成员
@@ -384,7 +393,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       },
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
-    res.status(201).json({ ticket: withCanEdit(created, user, await loadSegNameMap()) });
+    await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
+    res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()) });
   });
 
   // 项目成员(指派候选 / 选负责人):实时查 soyoo
@@ -433,7 +443,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       },
     });
     await logTicketEvent({ ticketId: id, user, action: "指派", note: `指派给 ${member.name}` });
-    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
+    await notif.notifyTicketAssigned(updated, meId(user)); // 改派后通知新负责人(指给自己不通知)
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
   // 改状态(仅负责人或管理员;提单人不能改,不满意线下沟通)
@@ -451,10 +462,11 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (status === "阻塞") data.block_reason = reason;
     const updated = await prisma.tickets.update({ where: { id }, data });
     await logTicketEvent({ ticketId: id, user, action: statusActionLabel(t.status, status), fromStatus: t.status, toStatus: status, note: reason });
-    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
+    await notif.notifyStatusChanged(updated, t.status, status, meId(user)); // 通知负责人(自己改自己的单不通知)
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
-  // 改优先级(仅管理员),并记入流转记录
+  // 改优先级(管理员或策划),记入流转记录,并通知负责人
   app.patch("/api/ops/tickets/:id/priority", requireAuth, async (req, res) => {
     const id = String(req.params.id);
     const priority = String(req.body?.priority ?? "");
@@ -462,14 +474,16 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user)) return res.status(403).json({ error: "无权修改(仅管理员)" });
-    if (t.priority === priority) return res.json({ ticket: withCanEdit(t, user, await loadSegNameMap()) });
+    const planner = isAdmin(user) ? false : await isPlanner(user);
+    if (!isAdmin(user) && !planner) return res.status(403).json({ error: "无权修改(仅管理员或策划)" });
+    if (t.priority === priority) return res.json({ ticket: withCanEdit(t, user, await loadSegNameMap(), planner) });
     const updated = await prisma.tickets.update({
       where: { id },
       data: { priority, updated_at: nowIso() },
     });
     await logTicketEvent({ ticketId: id, user, action: "修改优先级", note: `优先级「${t.priority}」→「${priority}」` });
-    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
+    await notif.notifyPriorityChanged(updated, t.priority, priority, meId(user)); // 通知负责人(自己改自己不通知)
+    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap(), planner) });
   });
 
   // 改需求说明(富文本;仅提单人或管理员)。建单后正文可改,其它字段不可改。
@@ -489,7 +503,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       data: { content_html: contentHtml || null, summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""), updated_at: now },
     });
     await logTicketEvent({ ticketId: id, user, action: "修改需求说明" });
-    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap()) });
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
   // 流转记录(时间线)
@@ -508,5 +522,14 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const user = req.user;
     if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权查看" });
     res.json({ contentHtml: t.content_html ?? "" });
+  });
+
+  // 单工单(通知深链点击打开详情用):owner/requester/admin 可看
+  app.get("/api/ops/tickets/:id", requireAuth, async (req, res) => {
+    const t = await prisma.tickets.findUnique({ where: { id: String(req.params.id) } });
+    if (!t) return res.status(404).json({ error: "提单不存在" });
+    const user = req.user;
+    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权查看" });
+    res.json({ ticket: await decorateTickets(t, user, await loadSegNameMap()) });
   });
 }

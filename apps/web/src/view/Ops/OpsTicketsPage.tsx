@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { App, Button, Card, Form, Input, Modal, Segmented, Select, Space, Tag, Table, Tooltip, Typography } from "antd";
 import { BarsOutlined, EditOutlined, ProjectOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
@@ -174,6 +175,24 @@ export default function OpsTicketsPage() {
 		setDetailLoading(true);
 		setDetail(t);
 	};
+
+	// 通知深链:URL 带 ?ticket=<id> 时拉该工单并打开详情(可能不在当前列表/筛选内)
+	const [searchParams, setSearchParams] = useSearchParams();
+	const ticketParam = searchParams.get("ticket");
+	useEffect(() => {
+		if (!ticketParam) return;
+		let active = true;
+		opsApi
+			.ticket(ticketParam)
+			.then((r) => {
+				if (active) openDetail(r.ticket);
+			})
+			.catch((e) => messageApi.error(e instanceof Error ? e.message : "打开工单失败"));
+		return () => {
+			active = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [ticketParam]);
 
 	const changeStatus = async (id: string, status: string, reason?: string) => {
 		try {
@@ -707,7 +726,13 @@ export default function OpsTicketsPage() {
 				statusControl={statusControl}
 				priorityControl={priorityControl}
 				personCell={personCell}
-				onClose={() => setDetail(null)}
+				onClose={() => {
+					setDetail(null);
+					if (ticketParam) {
+						searchParams.delete("ticket");
+						setSearchParams(searchParams, { replace: true });
+					}
+				}}
 				onAssign={openAssign}
 				onEditContent={openEditContent}
 			/>

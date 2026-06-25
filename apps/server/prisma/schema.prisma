@@ -287,3 +287,35 @@ model ops_project_ext {
   remark           String? @db.MediumText
   updated_at       String? @db.VarChar(40)
 }
+
+// 通知(铃铛数据源):一条 = 发给某人的一条消息;dedup_key 唯一防重,read_at 空=未读
+model ops_notifications {
+  id           Int     @id @default(autoincrement())
+  recipient_id String  @db.VarChar(64)
+  event_key    String  @db.VarChar(64)
+  title        String  @default("") @db.VarChar(255)
+  body         String? @db.MediumText
+  link         String  @default("") @db.VarChar(512)
+  ref_type     String  @default("") @db.VarChar(32)
+  ref_id       String  @default("") @db.VarChar(64)
+  dedup_key    String  @unique(map: "uniq_dedup") @db.VarChar(191)
+  read_at      String? @db.VarChar(40)
+  created_at   String  @db.VarChar(40)
+
+  @@index([recipient_id, read_at, created_at], map: "idx_recipient_unread")
+}
+
+// 通知事件配置(每事件:是否启用 + 事件专属配置 json,如 project_overdue 收件人环节)
+model ops_notification_settings {
+  event_key   String  @id @db.VarChar(64)
+  enabled     Int     @default(1) @db.TinyInt
+  config_json String? @db.MediumText
+  updated_at  String  @db.VarChar(40)
+}
+
+// 通用可调参数(k/v):如 scan_interval_min 通知扫描间隔(分钟)
+model ops_config {
+  k          String @id @db.VarChar(64)
+  v          String @default("") @db.VarChar(255)
+  updated_at String @db.VarChar(40)
+}

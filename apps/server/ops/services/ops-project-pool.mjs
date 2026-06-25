@@ -359,3 +359,32 @@ export async function staleCount({ user }) {
   const r = await soyooClient.staleProjects(body);
   return Number(r?.total ?? 0);
 }
+
+// 通知扫描用:当前「状态超时或阶段超时」的项目(全局,不按成员过滤)。复用 staleCutoffs/stageStaleProjectIds + soyoo 取数。
+export async function listOverdueProjectsForNotify() {
+  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
+  if (!cutoffs.length && !extraIds.length) return [];
+  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page: 1, limit: 1000, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  const r = await soyooClient.staleProjects(body);
+  const projects = Array.isArray(r?.data) ? r.data : [];
+  const total = Number(r?.total ?? projects.length);
+  if (total > projects.length) console.warn(`[notif-scan] 超时项目共 ${total},本轮仅取前 ${projects.length} 条通知(如需更多调大 limit)`);
+  const stageSet = new Set(extraIds.map(String));
+  return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: stageSet.has(String(p.id)) ? "stage" : "status" }));
+}
+
+// 环节 + 绑定标签 id(供「按环节算项目负责人」复用;getResponsibles 只需 tag id,不查 soyoo 标签名)。传 ids 则只取这些环节。
+export async function loadSegmentsWithTagIds(segmentIds) {
+  const ids = (segmentIds ?? []).map(Number).filter((n) => Number.isInteger(n));
+  const where = ids.length ? { id: { in: ids } } : {};
+  const [segments, links] = await Promise.all([
+    prisma.ops_segments.findMany({ where, orderBy: [{ sort_order: "asc" }] }),
+    prisma.ops_segment_tags.findMany({ where: ids.length ? { segment_id: { in: ids } } : {} }),
+  ]);
+  const bySeg = new Map();
+  for (const l of links) {
+    if (!bySeg.has(l.segment_id)) bySeg.set(l.segment_id, []);
+    bySeg.get(l.segment_id).push({ id: l.tag_id });
+  }
+  return segments.map((s) => ({ id: s.id, name: s.name, tags: bySeg.get(s.id) ?? [] }));
+}

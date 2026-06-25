@@ -1,6 +1,7 @@
 // 项目池:策划看自己(制片)的项目、管理员看全部。可改项目状态(同步 soyoo+飞书)、留富文本评论、看状态流转。
 // 两个 tab:全部项目 / 超时关注;项目状态超时整行标红。超时是服务端按「项目状态时间」阈值实时算的。
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { App, Avatar, Button, Drawer, Empty, Input, List, Modal, Select, Space, Spin, Table, Tag, Timeline, Tooltip, Typography } from "antd";
 import { EditOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import SegmentedTabs from "../../components/SegmentedTabs";
@@ -178,6 +179,20 @@ export default function ProjectPoolPage() {
     }
   };
 
+  // 通知深链:URL 带 ?project=<id> 时,在已加载的项目里找到它并打开流转抽屉(找到即打开并清掉参数)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectParam = searchParams.get("project");
+  useEffect(() => {
+    if (!projectParam || !rows.length) return;
+    const row = rows.find((r) => r.id === projectParam);
+    if (row) {
+      void openLogs(row);
+      searchParams.delete("project");
+      setSearchParams(searchParams, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectParam, rows]);
+
   const openMembers = async (r: OpsProjectPoolRow) => {
     setMemProject(r);
     setMemOpen(true);
@@ -271,28 +286,6 @@ export default function ProjectPoolPage() {
       },
     },
     {
-      title: "当前状态",
-      key: "status",
-      width: 132,
-      render: (_: unknown, r: OpsProjectPoolRow) => (
-        <Space size={6}>
-          <Tag style={{ ...statusStyle(r.status), padding: "2px 10px", fontSize: 13, borderRadius: 6, border: "none", margin: 0 }}>{r.status || "—"}</Tag>
-          <Tooltip title="修改状态">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined style={{ fontSize: 15 }} />}
-              style={{ color: "#0f766e" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                openChange(r, "status");
-              }}
-            />
-          </Tooltip>
-        </Space>
-      ),
-    },
-    {
       title: headerTip("制作阶段", "项目制作进度的 5 个里程碑:资产确认 → 场景单帧版本 → 可交互初版 → 功能完整版 → 最终交付版。可任意调整,变更会记入流转。"),
       key: "stage",
       width: 150,
@@ -308,6 +301,28 @@ export default function ProjectPoolPage() {
               onClick={(e) => {
                 e.stopPropagation();
                 openChange(r, "stage");
+              }}
+            />
+          </Tooltip>
+        </Space>
+      ),
+    },
+    {
+      title: "当前状态",
+      key: "status",
+      width: 132,
+      render: (_: unknown, r: OpsProjectPoolRow) => (
+        <Space size={6}>
+          <Tag style={{ ...statusStyle(r.status), padding: "2px 10px", fontSize: 13, borderRadius: 6, border: "none", margin: 0 }}>{r.status || "—"}</Tag>
+          <Tooltip title="修改状态">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined style={{ fontSize: 15 }} />}
+              style={{ color: "#0f766e" }}
+              onClick={(e) => {
+                e.stopPropagation();
+                openChange(r, "status");
               }}
             />
           </Tooltip>

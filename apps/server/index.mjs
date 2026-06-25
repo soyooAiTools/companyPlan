@@ -49,7 +49,9 @@ import { securityHeaders, validateWriteOrigin } from "./middleware/security.mjs"
 import { registerCompanyPlanRoutes } from "./router/company-plan-routes.mjs";
 import { registerOpsRoutes } from "./ops/ops-routes.mjs";
 import { registerProjectPoolRoutes } from "./ops/project-pool-routes.mjs";
+import { registerNotificationRoutes } from "./ops/notification-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
+import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
 
 mkdirSync(dataDir, { recursive: true });
@@ -118,6 +120,7 @@ registerCompanyPlanRoutes(app, companyPlanController, {
 // 新需求提单接口(Prisma,/api/ops/*),与旧接口共存
 registerOpsRoutes(app, { requireAuth, requireAdmin });
 registerProjectPoolRoutes(app, { requireAuth, requireAdmin });
+registerNotificationRoutes(app, { requireAuth, requireAdmin });
 
 const distDir = join(repoRoot, "apps", "web", "dist");
 if (existsSync(distDir)) {
@@ -137,4 +140,6 @@ app.listen(port, () => {
   logger.info(`companyPlan production server listening on http://127.0.0.1:${port}`);
   // 去同步:不再跑全量同步。改为消费 soyoo 变更 outbox,刷新工单快照(改名/换头像等)。
   startOpsChangeConsumer({ logger });
+  // 通知扫描:周期性发现超时工单/项目并落库 + SSE 推送(间隔后台可改)
+  startNotificationScan({ logger });
 });

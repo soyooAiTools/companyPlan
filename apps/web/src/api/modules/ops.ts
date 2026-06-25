@@ -204,6 +204,27 @@ export interface OpsSyncLog {
 	startedAt: string;
 	finishedAt: string;
 }
+export interface OpsNotification {
+	id: string;
+	eventKey: string;
+	title: string;
+	body: string;
+	link: string;
+	refType: string;
+	refId: string;
+	readAt: string | null;
+	createdAt: string;
+	realert?: boolean; // 仅 SSE 推送时出现:超时的"重复提醒",前端只重弹桌面、不计未读
+}
+export interface OpsNotifSettingEvent {
+	eventKey: string;
+	enabled: boolean;
+	config: { recipientSegmentIds?: number[] };
+}
+export interface OpsNotifSettings {
+	events: OpsNotifSettingEvent[];
+	scanIntervalMin: number;
+}
 
 export const opsApi = {
 	tags: () => requestJson<{ tags: OpsTag[] }>("/api/ops/tags"),
@@ -232,6 +253,7 @@ export const opsApi = {
 		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
 	},
 	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	ticket: (id: string) => requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`),
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)
 	ticketContent: (id: string) => requestJson<{ contentHtml: string }>(`/api/ops/tickets/${encodeURIComponent(id)}/content`),
@@ -308,4 +330,15 @@ export const opsApi = {
 	projectStageSettings: () => requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings"),
 	saveProjectStageSettings: (settings: OpsProjectStageSetting[]) =>
 		requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+	// 通知(站内消息):列表/未读、已读、配置。SSE 流由 EventSource 直连,不走这里。
+	notifications: (status: "unread" | "all" = "all", page = 1, pageSize = 10) =>
+		requestJson<{ items: OpsNotification[]; total: number; unread: number }>(
+			`/api/ops/notifications?status=${status}&page=${page}&pageSize=${pageSize}`,
+		),
+	notifRead: (id: string) => requestJson<{ ok: boolean }>(`/api/ops/notifications/${encodeURIComponent(id)}/read`, { method: "POST" }),
+	notifReadAll: () => requestJson<{ ok: boolean }>("/api/ops/notifications/read-all", { method: "POST" }),
+	notifTest: () => requestJson<{ ok: boolean }>("/api/ops/notifications/test", { method: "POST" }),
+	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
+	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number }) =>
+		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
 };

@@ -23,7 +23,6 @@ import {
 } from "../config/runtime.mjs";
 
 let db;
-let externalDirectoryActive = false;
 
 export function bindCompanyPlanStore(database) {
   db = database;
@@ -328,163 +327,6 @@ async function seedDatabase() {
   await backfillStoredAttachments();
 }
 
-async function syncOpsDirectory(directory) {
-  const now = new Date().toISOString();
-  const passwordHash = hashPassword(seedPassword);
-  const knownPersonIds = new Set(directory.people.map((person) => person.id));
-  knownPersonIds.add("u-admin");
-
-  await db.transaction(async () => {
-    const upsertPerson = db.prepare(
-      `INSERT INTO people (id, username, password_hash, name, wechat_name, wechat_avatar, role_key, title, discipline, capacity, completion, disabled_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
-       ON DUPLICATE KEY UPDATE
-         username = VALUES(username),
-         name = VALUES(name),
-         wechat_name = VALUES(wechat_name),
-         wechat_avatar = VALUES(wechat_avatar),
-         role_key = VALUES(role_key),
-         title = VALUES(title),
-         discipline = VALUES(discipline),
-         capacity = VALUES(capacity),
-         completion = VALUES(completion),
-         disabled_at = NULL`
-    );
-    for (const person of directory.people) {
-      await upsertPerson.run(
-        person.id,
-        person.username,
-        passwordHash,
-        person.name,
-        person.wechatName ?? "",
-        person.wechatAvatar ?? "",
-        person.roleKey,
-        person.title,
-        person.discipline,
-        person.capacity,
-        person.completion
-      );
-    }
-
-    const upsertProject = db.prepare(
-      `INSERT INTO projects (
-        id, name, client, genre, channel, owner_id, status, phase, health, progress, due_in_days,
-        ticket_count, open_ticket_count, discipline_progress_json, blocker,
-        tenant_id, planner_name, developer_name
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        name = VALUES(name),
-        client = VALUES(client),
-        genre = VALUES(genre),
-        channel = VALUES(channel),
-        owner_id = VALUES(owner_id),
-        status = VALUES(status),
-        phase = VALUES(phase),
-        health = VALUES(health),
-        progress = VALUES(progress),
-        due_in_days = VALUES(due_in_days),
-        ticket_count = VALUES(ticket_count),
-        open_ticket_count = VALUES(open_ticket_count),
-        discipline_progress_json = VALUES(discipline_progress_json),
-        blocker = VALUES(blocker),
-        tenant_id = VALUES(tenant_id),
-        planner_name = VALUES(planner_name),
-        developer_name = VALUES(developer_name)`
-    );
-    for (const project of directory.projects) {
-      await upsertProject.run(
-        project.id,
-        project.name,
-        project.client,
-        project.genre,
-        project.channel,
-        knownPersonIds.has(project.ownerId) ? project.ownerId : "u-admin",
-        project.status,
-        project.phase,
-        project.health,
-        project.progress,
-        project.dueInDays,
-        project.ticketCount,
-        project.openTicketCount,
-        JSON.stringify(project.disciplineProgress),
-        project.blocker,
-        project.tenantId ?? "",
-        project.plannerName ?? "",
-        project.developerName ?? ""
-      );
-    }
-
-    const deleteTeam = db.prepare("DELETE FROM project_team WHERE project_id = ?");
-    const insertTeam = db.prepare("INSERT IGNORE INTO project_team (project_id, person_id) VALUES (?, ?)");
-    for (const project of directory.projects) {
-      await deleteTeam.run(project.id);
-      for (const personId of project.teamIds) {
-        if (knownPersonIds.has(personId)) {
-          await insertTeam.run(project.id, personId);
-        }
-      }
-    }
-
-    // 客户(tenant)落库
-    const upsertTenant = db.prepare(
-      `INSERT INTO tenants (id, name, updated_at) VALUES (?, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), updated_at = VALUES(updated_at)`
-    );
-    for (const tenant of directory.tenants ?? []) {
-      await upsertTenant.run(tenant.id, tenant.name, now);
-    }
-
-    // 标签(=环节)落库:只更新 name/color;default_delivery_hours/risk_warning_hours/sort_order 为后台维护,同步不覆盖
-    const upsertTag = db.prepare(
-      `INSERT INTO tags (id, name, color, updated_at) VALUES (?, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE name = VALUES(name), color = VALUES(color), updated_at = VALUES(updated_at)`
-    );
-    for (const tag of directory.tags ?? []) {
-      await upsertTag.run(tag.id, tag.name, tag.color ?? "", now);
-    }
-
-    // 项目-成员-标签 映射:按项目重建(只插已知人员;tag 无外键)
-    const deletePmt = db.prepare("DELETE FROM project_member_tags WHERE project_id = ?");
-    const insertPmt = db.prepare(
-      "INSERT IGNORE INTO project_member_tags (project_id, person_id, tag_id) VALUES (?, ?, ?)"
-    );
-    for (const project of directory.projects) {
-      await deletePmt.run(project.id);
-    }
-    for (const row of directory.projectMemberTags ?? []) {
-      if (knownPersonIds.has(row.personId)) {
-        await insertPmt.run(row.projectId, row.personId, row.tagId);
-      }
-    }
-
-    const insertProjectName = db.prepare(
-      `INSERT INTO project_name_options (id, name, is_active, sort_order, created_at, updated_at)
-       VALUES (?, ?, 1, ?, ?, ?)
-       ON DUPLICATE KEY UPDATE
-         name = VALUES(name),
-         is_active = 1,
-         sort_order = VALUES(sort_order),
-         updated_at = VALUES(updated_at)`
-    );
-    if (!opsIntegration.includeLocalData) {
-      await db.prepare("DELETE FROM project_name_options").run();
-    }
-    for (const [index, option] of directory.projectNameOptions.entries()) {
-      await insertProjectName.run(option.id, option.name, index, now, now);
-    }
-
-    await audit(null, "ops_directory_synced", "system", "ops", null, {
-      people: directory.people.length,
-      projects: directory.projects.length,
-      tenants: directory.tenants.length,
-      tags: directory.tags.length,
-      includeLocalData: opsIntegration.includeLocalData,
-    });
-  });
-
-  externalDirectoryActive = true;
-}
-
 // 删外键(若存在):本系统不强制 FK,表间用 id join。MySQL 无 DROP FK IF EXISTS,先查 information_schema。
 async function dropForeignKeyIfExists(tableName, fkName) {
   const rows = await db
@@ -677,6 +519,50 @@ async function migrateSchema() {
     .run();
   // 项目备注(ops 自有,富文本;并入流转记录 kind=remark,此列存当前值)
   await ensureColumn("ops_project_ext", "remark", "MEDIUMTEXT");
+
+  // 通知(铃铛数据源):一条 = 发给某人的一条消息;dedup_key 唯一防重,read_at 空=未读
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_notifications (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        recipient_id VARCHAR(64) NOT NULL,
+        event_key VARCHAR(64) NOT NULL,
+        title VARCHAR(255) NOT NULL DEFAULT '',
+        body MEDIUMTEXT,
+        link VARCHAR(512) NOT NULL DEFAULT '',
+        ref_type VARCHAR(32) NOT NULL DEFAULT '',
+        ref_id VARCHAR(64) NOT NULL DEFAULT '',
+        dedup_key VARCHAR(191) NOT NULL,
+        read_at VARCHAR(40),
+        created_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uniq_dedup (dedup_key),
+        KEY idx_recipient_unread (recipient_id, read_at, created_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+
+  // 通知事件配置(每事件:是否启用 enabled + 事件专属配置 config_json,如 project_overdue 的收件人环节)
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_notification_settings (
+        event_key VARCHAR(64) PRIMARY KEY,
+        enabled TINYINT NOT NULL DEFAULT 1,
+        config_json MEDIUMTEXT,
+        updated_at VARCHAR(40) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+
+  // 通用可调参数(k/v):如 scan_interval_min 通知扫描间隔(分钟),管理员可在配置页改
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_config (
+        k VARCHAR(64) PRIMARY KEY,
+        v VARCHAR(255) NOT NULL DEFAULT '',
+        updated_at VARCHAR(40) NOT NULL
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
 }
 
 async function ensureColumn(tableName, columnName, definition) {
@@ -796,6 +682,17 @@ async function seedConfigRows(now) {
   for (const [index, stage] of stageDefaults.entries()) {
     await insertStageSetting.run(stage, 1, 72, index, now);
   }
+
+  // 通知事件默认开关(幂等;管理员可在「设置→通知」改)。config_json 留空,project_overdue 收件人环节由管理员配
+  const insertNotifSetting = db.prepare(
+    `INSERT IGNORE INTO ops_notification_settings (event_key, enabled, config_json, updated_at) VALUES (?, 1, NULL, ?)`
+  );
+  for (const eventKey of ["ticket_assigned", "ticket_overdue_deliver", "ticket_overdue_warn", "project_overdue", "ticket_priority_changed", "ticket_status_changed"]) {
+    await insertNotifSetting.run(eventKey, now);
+  }
+  // 通用配置默认值:通知扫描间隔 15 分钟(最小 10);老库里 <10 的旧值统一抬到 15
+  await db.prepare(`INSERT IGNORE INTO ops_config (k, v, updated_at) VALUES ('scan_interval_min', '15', ?)`).run(now);
+  await db.prepare(`UPDATE ops_config SET v = '15', updated_at = ? WHERE k = 'scan_interval_min' AND CAST(v AS UNSIGNED) < 10`).run(now);
 }
 
 async function getBootstrap(user) {
@@ -840,18 +737,15 @@ async function getCompanyConfig() {
 
 async function getVisibleProjectIds(user) {
   if (user.roleKey === "admin") {
-    const where = shouldUseExternalDirectoryOnly() ? "WHERE id LIKE 'ops-project-%'" : "";
-    return (await db.prepare(`SELECT id FROM projects ${where} ORDER BY id`).all()).map((row) => row.id);
+    return (await db.prepare(`SELECT id FROM projects ORDER BY id`).all()).map((row) => row.id);
   }
 
-  const externalProjectFilter = shouldUseExternalDirectoryOnly() ? "AND projects.id LIKE 'ops-project-%'" : "";
   return (await db
     .prepare(
       `SELECT DISTINCT projects.id
        FROM projects
        LEFT JOIN project_team ON project_team.project_id = projects.id
        WHERE (projects.owner_id = ? OR project_team.person_id = ?)
-       ${externalProjectFilter}
        ORDER BY projects.id`
     )
     .all(user.id, user.id))
@@ -867,10 +761,7 @@ async function getVisibleProjects(user) {
 
 async function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
   if (user.roleKey === "admin") {
-    const where = shouldUseExternalDirectoryOnly()
-      ? "WHERE disabled_at IS NULL AND (id = 'u-admin' OR id LIKE 'ops-user-%')"
-      : "WHERE disabled_at IS NULL";
-    const rows = await db.prepare(`SELECT * FROM people ${where} ORDER BY id`).all();
+    const rows = await db.prepare(`SELECT * FROM people WHERE disabled_at IS NULL ORDER BY id`).all();
     return Promise.all(rows.map(async (row) => mapPerson(row, await getPersonProjectIds(row.id))));
   }
 
@@ -893,20 +784,14 @@ async function getVisiblePeople(user, projectIds, ticketPersonIds = []) {
 
 async function getVisibleTickets(user) {
   let rows;
-  const externalTicketFilter = shouldUseExternalDirectoryOnly()
-    ? "(project_id LIKE 'ops-project-%' OR requester_id LIKE 'ops-user-%' OR owner_id LIKE 'ops-user-%')"
-    : "";
   if (user.roleKey === "admin") {
-    const where = externalTicketFilter ? `WHERE ${externalTicketFilter}` : "";
-    rows = await db.prepare(`SELECT * FROM tickets ${where} ORDER BY created_at DESC, id DESC`).all();
+    rows = await db.prepare(`SELECT * FROM tickets ORDER BY created_at DESC, id DESC`).all();
   } else {
-    const andExternal = externalTicketFilter ? `AND ${externalTicketFilter}` : "";
     rows = await db
       .prepare(
         `SELECT DISTINCT *
          FROM tickets
          WHERE (requester_id = ? OR owner_id = ?)
-         ${andExternal}
          ORDER BY created_at DESC, id DESC`
       )
       .all(user.id, user.id);
@@ -1472,10 +1357,6 @@ function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 102.4) / 10} KB`;
   return `${Math.round(bytes / 1024 / 102.4) / 10} MB`;
-}
-
-function shouldUseExternalDirectoryOnly() {
-  return externalDirectoryActive && opsIntegration.enabled && !opsIntegration.includeLocalData;
 }
 
 function getProjectNameOptionSource(id) {

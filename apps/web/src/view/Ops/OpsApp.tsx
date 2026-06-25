@@ -13,6 +13,7 @@ import OpsSettingsPage from "./OpsSettingsPage";
 import OverviewPage from "./OverviewPage";
 import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
+import NotificationCenter from "./components/NotificationCenter";
 
 const { Sider, Content } = Layout;
 
@@ -88,12 +89,13 @@ export default function OpsApp() {
                     <Avatar size={32} src={me?.avatar || undefined} style={{ flexShrink: 0, background: "#e2e8f0", color: "#475569" }}>
                       {(me?.name || "?").slice(0, 1)}
                     </Avatar>
-                    <div style={{ overflow: "hidden", lineHeight: 1.3 }}>
+                    <div style={{ overflow: "hidden", lineHeight: 1.3, flex: 1 }}>
                       <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me?.name || "-"}</div>
                       {me?.wechatName ? (
                         <div style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me.wechatName}</div>
                       ) : null}
                     </div>
+                    <NotificationCenter enabled={auth === "ready"} />
                   </div>
                   <Button block icon={<LogoutOutlined />} onClick={logout}>
                     退出登录
