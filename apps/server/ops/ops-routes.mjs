@@ -6,7 +6,7 @@ import { prisma } from "./prisma.mjs";
 import { isOssConfigured, uploadObject } from "./oss.mjs";
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
-import { isAdmin, meId, nowIso, clip, isPlanner } from "./ops-helpers.mjs";
+import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
 import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
 
@@ -180,8 +180,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
         status: p.status,
       }));
       res.json({ projects });
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
@@ -258,8 +258,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     try {
       const result = await getResponsibles(projectId, segments);
       res.json(result);
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
@@ -343,8 +343,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     let built;
     try {
       built = await buildTicketSnapshot({ projectId, ownerId, requesterUserId: meId(user), segTags });
-    } catch {
-      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
     }
     if (built.error) return res.status(400).json({ error: built.error });
     const s = built.snapshot;
@@ -410,8 +410,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
         return { ...m, segmentNames };
       });
       res.json({ members: enriched });
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
@@ -428,8 +428,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     try {
       const { members } = await getProjectWithMembers(t.project_id);
       member = members.find((m) => m.id === newOwnerId);
-    } catch {
-      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
     }
     if (!member) return res.status(400).json({ error: "该负责人不在此项目" });
     const updated = await prisma.tickets.update({

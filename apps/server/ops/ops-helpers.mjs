@@ -9,6 +9,12 @@ export const meId = (user) => soyooId(user?.id);
 export const nowIso = () => dayjs().toISOString();
 export const clip = (v, n) => (v == null ? "" : String(v)).slice(0, n);
 
+// soyoo 调用失败 → 统一响应:soyoo 有原始错误(如 404「项目不存在」)就透传给前端,否则当连接失败。
+export function soyooErrorResponse(res, e) {
+  if (e?.soyooError) return res.status(e.status || 502).json({ error: e.soyooError });
+  return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+}
+
 // 是否「策划」= soyoo 用户带「制片」标签(项目池菜单可见/访问;实时查 soyoo,失败降级 false)
 export async function isPlanner(user) {
   if (!user) return false;

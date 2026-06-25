@@ -11,7 +11,8 @@ export function registerNotificationRoutes(app, { requireAuth, requireAdmin }) {
 
   // SSE 长连接:服务器有新通知就推过来(no-transform 防代理缓冲;心跳在传输层)
   app.get("/api/ops/notifications/stream", requireAuth, (req, res) => {
-    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive" });
+    // X-Accel-Buffering: no 关键:告诉 Nginx 这条响应别缓冲,否则 SSE 推送会被 Nginx 卡住发不出去(线上必加)
+    res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
     res.flushHeaders?.();
     res.write(": connected\n\n");
     addConnection(meId(req.user), res);

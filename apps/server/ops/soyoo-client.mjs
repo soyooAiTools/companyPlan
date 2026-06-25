@@ -22,8 +22,18 @@ async function callRaw(path, opts = {}) {
       init.body = JSON.stringify(opts.body);
     }
     const res = await fetch(`${BASE}${path}`, init);
-    if (!res.ok) throw new Error(`soyoo ${path} -> ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({})); // soyoo 错误体形如 {"error":"项目不存在"}
+      const err = new Error(body?.error || `soyoo ${path} -> ${res.status}`);
+      err.status = res.status; // soyoo 的状态码(如 404)
+      err.soyooError = typeof body?.error === "string" ? body.error : ""; // soyoo 的原始错误文案,供透传
+      throw err;
+    }
     return await res.json().catch(() => ({}));
+  } catch (e) {
+    // 集中记录所有 soyoo 调用失败的真实原因(超时/网络/非2xx);下游 catch 会吞成"无法连接 soyoo",这里先打日志
+    console.error(`[soyoo] 调用失败 ${path}:`, e?.name === "AbortError" ? `超时 ${TIMEOUT}ms` : e?.message || e);
+    throw e;
   } finally {
     clearTimeout(timer);
   }

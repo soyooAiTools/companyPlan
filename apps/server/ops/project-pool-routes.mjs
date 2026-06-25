@@ -1,6 +1,6 @@
 // 项目池路由:只注册 + 调 service(分层)。挂 /api/ops/*。可见=策划(制片)或管理员。
 import * as pool from "./services/ops-project-pool.mjs";
-import { isAdmin, isPlanner } from "./ops-helpers.mjs";
+import { isAdmin, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
 
 // 仅 管理员 或 策划(制片)可访问项目池
 async function requirePlanner(req, res, next) {
@@ -25,8 +25,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           status: String(req.query.status ?? ""), // 不传则后端默认按「开启监控」的状态查
         }),
       );
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
@@ -34,8 +34,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/project-pool/stale", requireAuth, requirePlanner, async (req, res) => {
     try {
       res.json(await pool.listStale({ user: req.user, page: Number(req.query.page) || 1, pageSize: Math.min(100, Number(req.query.pageSize) || 20) }));
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
@@ -53,8 +53,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     let r;
     try {
       r = await pool.changeProjectStatus({ user: req.user, projectId: req.params.id, status: String(req.body?.status ?? ""), commentHtml: req.body?.commentHtml, force: req.body?.force === true });
-    } catch {
-      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
     }
     if (r.error) return res.status(r.code || 400).json({ error: r.error });
     res.json(r);
@@ -65,8 +65,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     let r;
     try {
       r = await pool.changeProjectStage({ user: req.user, projectId: req.params.id, stage: String(req.body?.stage ?? ""), commentHtml: req.body?.commentHtml });
-    } catch {
-      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
     }
     if (r.error) return res.status(r.code || 400).json({ error: r.error });
     res.json(r);
@@ -77,8 +77,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     let r;
     try {
       r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark });
-    } catch {
-      return res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
     }
     if (r.error) return res.status(r.code || 400).json({ error: r.error });
     res.json(r);
@@ -98,8 +98,8 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/project-pool/:id/members", requireAuth, requirePlanner, async (req, res) => {
     try {
       res.json({ members: await pool.getProjectMembers(req.params.id) });
-    } catch {
-      res.status(502).json({ error: "无法连接 soyoo,请稍后重试" });
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 
