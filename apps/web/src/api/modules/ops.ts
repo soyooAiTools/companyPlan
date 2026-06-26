@@ -105,6 +105,8 @@ export interface OpsMe {
 	isPlanner: boolean; // soyoo 带「制片」标签 = 策划(决定「项目池」菜单可见)
 	avatar?: string; // 微信头像 URL
 	wechatName?: string; // 微信名
+	notifyStart?: string; // 通知时段开始 HH:mm(此窗口外前端不弹桌面)
+	notifyEnd?: string; // 通知时段结束 HH:mm
 }
 
 // ===== 项目池 =====
@@ -224,6 +226,8 @@ export interface OpsNotifSettingEvent {
 export interface OpsNotifSettings {
 	events: OpsNotifSettingEvent[];
 	scanIntervalMin: number;
+	notifyStart: string; // 通知时段 HH:mm
+	notifyEnd: string;
 }
 
 export const opsApi = {
@@ -339,6 +343,6 @@ export const opsApi = {
 	notifReadAll: () => requestJson<{ ok: boolean }>("/api/ops/notifications/read-all", { method: "POST" }),
 	notifTest: () => requestJson<{ ok: boolean }>("/api/ops/notifications/test", { method: "POST" }),
 	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
-	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number }) =>
+	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number; notifyStart: string; notifyEnd: string }) =>
 		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
 };

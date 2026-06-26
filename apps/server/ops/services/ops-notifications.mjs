@@ -159,18 +159,31 @@ function toClient(n) {
 
 // ===== 事件配置 / 通用参数 =====
 
+// ops_config 通用读写
+async function getConfig(keys) {
+  const rows = await prisma.ops_config.findMany({ where: { k: { in: keys } } });
+  return Object.fromEntries(rows.map((c) => [c.k, c.v]));
+}
+async function setConfig(k, v, now) {
+  await prisma.ops_config.upsert({ where: { k }, update: { v: String(v), updated_at: now }, create: { k, v: String(v), updated_at: now } });
+}
+// 校验 "HH:mm",非法用兜底
+const validHHmm = (v, fb) => (/^([01]\d|2[0-3]):[0-5]\d$/.test(String(v)) ? String(v) : fb);
+
 export async function getSettings() {
   const [rows, cfg] = await Promise.all([
     prisma.ops_notification_settings.findMany(),
-    prisma.ops_config.findUnique({ where: { k: "scan_interval_min" } }),
+    getConfig(["scan_interval_min", "notify_start_time", "notify_end_time"]),
   ]);
   return {
     events: rows.map((r) => ({ eventKey: r.event_key, enabled: !!r.enabled, config: parseConfig(r.config_json) })),
-    scanIntervalMin: Number(cfg?.v ?? 15) || 15,
+    scanIntervalMin: Number(cfg.scan_interval_min ?? 15) || 15,
+    notifyStart: cfg.notify_start_time || "10:00", // 通知时段开始(本地 HH:mm)
+    notifyEnd: cfg.notify_end_time || "22:00", // 通知时段结束;此窗口外前端不弹桌面
   };
 }
 
-export async function saveSettings({ events = [], scanIntervalMin } = {}) {
+export async function saveSettings({ events = [], scanIntervalMin, notifyStart, notifyEnd } = {}) {
   const now = nowIso();
   for (const e of events) {
     if (!e?.eventKey) continue;
@@ -179,15 +192,16 @@ export async function saveSettings({ events = [], scanIntervalMin } = {}) {
       data: { enabled: e.enabled ? 1 : 0, config_json: e.config ? JSON.stringify(e.config) : null, updated_at: now },
     });
   }
-  if (scanIntervalMin != null) {
-    const v = String(Math.max(10, Number(scanIntervalMin) || 15)); // 最小 10 分钟,默认 15
-    await prisma.ops_config.upsert({
-      where: { k: "scan_interval_min" },
-      update: { v, updated_at: now },
-      create: { k: "scan_interval_min", v, updated_at: now },
-    });
-  }
+  if (scanIntervalMin != null) await setConfig("scan_interval_min", String(Math.max(10, Number(scanIntervalMin) || 15)), now);
+  if (notifyStart != null) await setConfig("notify_start_time", validHHmm(notifyStart, "10:00"), now);
+  if (notifyEnd != null) await setConfig("notify_end_time", validHHmm(notifyEnd, "22:00"), now);
   return getSettings();
+}
+
+// 通知时段(给所有用户 /me 下发,前端据此决定是否弹桌面)
+export async function getNotifyWindow() {
+  const cfg = await getConfig(["notify_start_time", "notify_end_time"]);
+  return { start: cfg.notify_start_time || "10:00", end: cfg.notify_end_time || "22:00" };
 }
 
 export async function isEventEnabled(eventKey) {

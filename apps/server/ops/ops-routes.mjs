@@ -124,7 +124,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const p = await prisma.people.findUnique({ where: { id: String(u.id) }, select: { wechat_avatar: true, wechat_name: true } }).catch(() => null);
     // isPlanner:soyoo 用户带「制片」标签 = 策划(决定「项目池」菜单可见 + 策划视角)
     const planner = await isPlanner(u);
-    res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", isPlanner: planner, avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "" } });
+    const notifyWindow = await notif.getNotifyWindow();
+    res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", isPlanner: planner, avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "", notifyStart: notifyWindow.start, notifyEnd: notifyWindow.end } });
   });
 
   // 原始 soyoo 标签(供环节配置页绑定):实时查 soyoo

@@ -95,7 +95,7 @@ export default function OpsApp() {
                         <div style={{ fontSize: 11, color: "#94a3b8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{me.wechatName}</div>
                       ) : null}
                     </div>
-                    <NotificationCenter enabled={auth === "ready"} />
+                    <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
                   </div>
                   <Button block icon={<LogoutOutlined />} onClick={logout}>
                     退出登录

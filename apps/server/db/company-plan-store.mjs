@@ -693,6 +693,9 @@ async function seedConfigRows(now) {
   // 通用配置默认值:通知扫描间隔 15 分钟(最小 10);老库里 <10 的旧值统一抬到 15
   await db.prepare(`INSERT IGNORE INTO ops_config (k, v, updated_at) VALUES ('scan_interval_min', '15', ?)`).run(now);
   await db.prepare(`UPDATE ops_config SET v = '15', updated_at = ? WHERE k = 'scan_interval_min' AND CAST(v AS UNSIGNED) < 10`).run(now);
+  // 通知时段默认 10:00–22:00(本地时间);此窗口外前端不弹桌面通知
+  await db.prepare(`INSERT IGNORE INTO ops_config (k, v, updated_at) VALUES ('notify_start_time', '10:00', ?)`).run(now);
+  await db.prepare(`INSERT IGNORE INTO ops_config (k, v, updated_at) VALUES ('notify_end_time', '22:00', ?)`).run(now);
 }
 
 async function getBootstrap(user) {

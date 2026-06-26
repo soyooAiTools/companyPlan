@@ -1,6 +1,8 @@
 // 设置 > 通知:管理员配「哪些事件通知 + 项目超时通知给哪些环节的负责人 + 扫描间隔」。普通用户无开关。
 import { useEffect, useState } from "react";
-import { App, Button, InputNumber, Select, Space, Switch, Table, Typography } from "antd";
+import dayjs from "dayjs";
+import { App, Button, InputNumber, Select, Space, Switch, TimePicker, Table, Tooltip, Typography } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsNotifSettingEvent, OpsSegment } from "../../api/modules/ops";
 
@@ -18,6 +20,8 @@ export default function OpsNotificationSettingsPage() {
 	const { message } = App.useApp();
 	const [events, setEvents] = useState<OpsNotifSettingEvent[]>([]);
 	const [scanIntervalMin, setScanIntervalMin] = useState(15);
+	const [notifyStart, setNotifyStart] = useState("10:00");
+	const [notifyEnd, setNotifyEnd] = useState("22:00");
 	const [segments, setSegments] = useState<OpsSegment[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -28,6 +32,8 @@ export default function OpsNotificationSettingsPage() {
 			const [s, seg] = await Promise.all([opsApi.notifSettings(), opsApi.segments()]);
 			setEvents(s.events);
 			setScanIntervalMin(s.scanIntervalMin);
+			setNotifyStart(s.notifyStart);
+			setNotifyEnd(s.notifyEnd);
 			setSegments(seg.segments);
 		} catch (e) {
 			message.error(e instanceof Error ? e.message : "加载失败");
@@ -44,9 +50,11 @@ export default function OpsNotificationSettingsPage() {
 	const save = async () => {
 		setSaving(true);
 		try {
-			const r = await opsApi.saveNotifSettings({ events, scanIntervalMin });
+			const r = await opsApi.saveNotifSettings({ events, scanIntervalMin, notifyStart, notifyEnd });
 			setEvents(r.events);
 			setScanIntervalMin(r.scanIntervalMin);
+			setNotifyStart(r.notifyStart);
+			setNotifyEnd(r.notifyEnd);
 			message.success("已保存");
 		} catch (e) {
 			message.error(e instanceof Error ? e.message : "保存失败");
@@ -97,13 +105,43 @@ export default function OpsNotificationSettingsPage() {
 		},
 	];
 
+	// "HH:mm" → dayjs(手动设时分,避免依赖 customParseFormat 插件)
+	const toDayjs = (hhmm: string) => {
+		const [h, m] = (hhmm || "0:0").split(":").map(Number);
+		return dayjs()
+			.hour(h || 0)
+			.minute(m || 0)
+			.second(0)
+			.millisecond(0);
+	};
+
 	return (
 		<div>
 			
-			<Space style={{ marginBottom: 12 }}>
+			<Space style={{ display: "flex", justifyContent: "flex-start", marginBottom: 16 }}>
+				<span>通知时段</span>
+				<TimePicker.RangePicker
+					format="HH:mm"
+					minuteStep={10}
+					allowClear={false}
+					value={[toDayjs(notifyStart), toDayjs(notifyEnd)]}
+					onChange={(v) => {
+						if (v?.[0] && v?.[1]) {
+							setNotifyStart(v[0].format("HH:mm"));
+							setNotifyEnd(v[1].format("HH:mm"));
+						}
+					}}
+				/>
+				<Tooltip title="只在这个时段内弹桌面通知,其他时间(含凌晨)静默;默认 10:00–22:00">
+					<QuestionCircleOutlined style={{ color: "#94a3b8", cursor: "help" }} />
+				</Tooltip>
+			</Space>
+			<Space style={{ display: "flex", justifyContent: "flex-start", marginBottom: 16 }}>
 				<span>服务端扫描间隔</span>
 				<InputNumber min={10} max={1440} value={scanIntervalMin} onChange={(v) => setScanIntervalMin(Number(v) || 15)} addonAfter="分钟" style={{ width: 160 }} />
-        <span className="text-red-500 font-bold text-xs ml-2">针对项目中 状态 / 阶段 停留多久触发一次通知</span>
+				<Tooltip title="针对项目中 状态 / 阶段 停留多久触发一次通知">
+					<QuestionCircleOutlined style={{ color: "#94a3b8", cursor: "help" }} />
+				</Tooltip>
 			</Space>
 			<Table rowKey="eventKey" loading={loading} dataSource={events} columns={columns} pagination={false} size="middle" style={{ maxWidth: 920 }} />
 			<Button type="primary" loading={saving} onClick={save} style={{ marginTop: 12 }}>
