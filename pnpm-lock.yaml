@@ -6,7 +6,11 @@ settings:
 
 importers:
 
-  .: {}
+  .:
+    devDependencies:
+      ali-oss:
+        specifier: ^6.23.0
+        version: 6.23.0
 
   apps/server:
     dependencies:
