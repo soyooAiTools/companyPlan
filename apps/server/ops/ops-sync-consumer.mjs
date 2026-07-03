@@ -16,10 +16,29 @@ async function setLastSeq(seq) {
   });
 }
 
-// 用户改名/换头像 → 刷该用户在所有工单里的 owner/requester 快照
+function userIdCandidates(userId) {
+  const id = String(userId);
+  return id.startsWith("ops-user-") ? [id, id.replace(/^ops-user-/, "")] : [id, `ops-user-${id}`];
+}
+
+// 用户改名/换头像/管理员/禁用状态 → 同步本地身份 + 刷该用户在所有工单里的 owner/requester 快照
 async function refreshUser(userId) {
   const u = await getUser(userId);
-  if (!u) return;
+  const ids = userIdCandidates(userId);
+  if (!u) {
+    await prisma.people.updateMany({ where: { id: { in: ids } }, data: { disabled_at: new Date().toISOString() } });
+    return;
+  }
+  await prisma.people.updateMany({
+    where: { id: { in: ids } },
+    data: {
+      name: u.name,
+      wechat_name: u.wechatName,
+      wechat_avatar: u.avatar,
+      role_key: u.isAdmin ? "admin" : "member",
+      disabled_at: u.status === "disabled" ? new Date().toISOString() : null,
+    },
+  });
   await prisma.tickets.updateMany({ where: { owner_id: u.id }, data: { owner_name: u.name, owner_avatar: u.avatar, owner_username: u.username } });
   await prisma.tickets.updateMany({ where: { requester_id: u.id }, data: { requester_name: u.name, requester_avatar: u.avatar, requester_username: u.username } });
 }

@@ -91,6 +91,7 @@ function buildRow(p, agg, segMap, sm, extMap, stageSm) {
     plannerName: p.planner_name ?? "", // 原始串(可能含多个策划),文字展示用
     planners: normalizePlanners(p), // 拆分后每个策划 {name, avatar}(兼容新旧 soyoo)
     stage: ext.stage || "", // 制作阶段(ops 自有);没设置就空,前端显示「-」
+    stageDeadlines: Array.isArray(p.stage_deadlines) ? p.stage_deadlines : [],
     stageChangedAt: ext.stageChangedAt ?? null,
     remark: ext.remark || "", // 项目备注(ops 自有,富文本 HTML;空串=无)
     statusChangedAt: p.status_changed_at ?? null,
