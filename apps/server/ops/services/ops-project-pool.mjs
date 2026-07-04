@@ -114,7 +114,7 @@ function buildRow(p, agg, segMap, sm, extMap, stageSm) {
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "" }) {
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "" }) {
   const sm = await settingsMap();
   let statusFilter = status;
   if (!statusFilter) {
@@ -126,6 +126,16 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
   }
   const opts = { page, limit: pageSize, keyword: q, status: statusFilter, excludeTenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) opts.memberUserId = meId(user);
+  const stageFilter = String(stage || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (stageFilter.length) {
+    const rows = await prisma.ops_project_ext.findMany({ where: { stage: { in: stageFilter } }, select: { project_id: true } });
+    const ids = rows.map((r) => String(r.project_id)).filter(Boolean);
+    if (!ids.length) return { rows: [], total: 0, page, pageSize };
+    opts.projectIds = ids;
+  }
   const r = await soyooClient.projectsList(opts);
   const projects = Array.isArray(r?.data) ? r.data : [];
   const ids = projects.map((p) => String(p.id));

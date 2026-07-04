@@ -33,6 +33,16 @@ const fmtStageDate = (date?: string) => {
   return m ? `${m[2]}-${m[3]}` : date;
 };
 
+const deadlineRemain = (date?: string) => {
+  if (!date) return null;
+  const d = dayjs(date, "YYYY-MM-DD");
+  if (!d.isValid()) return null;
+  const diff = d.startOf("day").diff(dayjs().startOf("day"), "day");
+  if (diff > 0) return { text: `剩${diff}天`, color: "#0f766e" };
+  if (diff === 0) return { text: "今天", color: "#0f766e" };
+  return { text: `逾${Math.abs(diff)}天`, color: "#cf1322" };
+};
+
 const stageDescriptionFallback: Record<string, string> = {
   interactive_alpha: String.raw`不含灯光\UI音效`,
   feature_complete: String.raw`含UI\音效`,
@@ -83,9 +93,9 @@ const stageDeadlineName = (item: { key: string; name: string; description?: stri
 const nextStageDeadline = (stage: string, items: { key: string; name: string; description?: string; date: string }[]) => {
   if (!items.length) return null;
   const currentIndex = items.findIndex((item) => item.name === stage || item.key === stage);
-  if (currentIndex < 0) return { ...items[0], label: "首个交付" };
-  if (currentIndex >= items.length - 1) return { ...items[currentIndex], label: "最终阶段" };
-  return { ...items[currentIndex + 1], label: "下版交付" };
+  if (currentIndex < 0) return items[0];
+  if (currentIndex >= items.length - 1) return items[currentIndex];
+  return items[currentIndex + 1];
 };
 
 // 带问号提示的表头(鼠标移上去说明该列含义)
@@ -109,6 +119,7 @@ export default function ProjectPoolPage() {
   const [search, setSearch] = useState("");
   const [debounced, setDebounced] = useState("");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
 
   // 修改 状态/阶段 通用弹框(两者交互一致,共用)
   const [chOpen, setChOpen] = useState(false);
@@ -159,7 +170,7 @@ export default function ProjectPoolPage() {
         tab === "stale"
           ? await opsApi.projectPoolStale({ page, pageSize })
           : // 选了具体状态(可多选)就按状态查;没选则后端默认只查「开启监控」的状态
-            await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter });
+            await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter });
       setRows(r.rows);
       setTotal(r.total);
     } catch (e) {
@@ -171,7 +182,7 @@ export default function ProjectPoolPage() {
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, page, pageSize, statusFilter, debounced]);
+  }, [tab, page, pageSize, statusFilter, stageFilter, debounced]);
   useEffect(() => {
     const t = setTimeout(() => {
       setDebounced(search);
@@ -403,21 +414,25 @@ export default function ProjectPoolPage() {
         </Space>
       );
     }
+    const currentDeadlineIndex = items.findIndex((item) => item.name === r.stage || item.key === r.stage);
+    const isNextOverdue = !!next.date && dayjs(next.date, "YYYY-MM-DD").isBefore(dayjs(), "day");
+    const remain = deadlineRemain(next.date);
     const full = (
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 44px", gap: "6px 10px", fontSize: 12, color: "#334155", width: 256, maxWidth: 256 }}>
-        {items.map((item) => {
+        {items.map((item, index) => {
           const isCurrent = item.name === r.stage || item.key === r.stage;
           const isNext = item.key === next.key;
+          const isPast = currentDeadlineIndex >= 0 && index < currentDeadlineIndex;
           const description = item.description || stageDescriptionFallback[item.key] || "";
           return (
             <div key={item.key} style={{ display: "contents" }}>
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : "#334155", fontWeight: isCurrent || isNext ? 700 : 400 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : isPast ? "#94a3b8" : "#334155", fontWeight: isCurrent || isNext ? 700 : 400 }}>
                 <span
                   style={{
                     width: 6,
                     height: 6,
                     borderRadius: 999,
-                    background: isCurrent ? "#3b82f6" : isNext ? "#14b8a6" : "#cbd5e1",
+                    background: isCurrent ? "#3b82f6" : isNext ? "#14b8a6" : isPast ? "#e2e8f0" : "#cbd5e1",
                     flexShrink: 0,
                   }}
                 />
@@ -426,9 +441,9 @@ export default function ProjectPoolPage() {
                   {description ? <span style={{ marginLeft: 4, color: "#64748b", fontSize: 10, fontWeight: 400 }}>({description})</span> : null}
                 </span>
                 {isCurrent ? <Tag color="blue" style={{ marginInlineEnd: 0, lineHeight: "16px", fontSize: 11, flexShrink: 0 }}>当前</Tag> : null}
-                {!isCurrent && isNext ? <Tag color="green" style={{ marginInlineEnd: 0, lineHeight: "16px", fontSize: 11, flexShrink: 0 }}>下个</Tag> : null}
+                {!isCurrent && isNext ? <Tag color="green" style={{ marginInlineEnd: 0, lineHeight: "16px", fontSize: 11, flexShrink: 0 }}>下版</Tag> : null}
               </span>
-              <span style={{ fontVariantNumeric: "tabular-nums", textAlign: "right", color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : "#0f172a", fontWeight: isCurrent || isNext ? 700 : 600 }}>{fmtStageDate(item.date)}</span>
+              <span style={{ fontVariantNumeric: "tabular-nums", textAlign: "right", color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : isPast ? "#94a3b8" : "#0f172a", fontWeight: isCurrent || isNext ? 700 : 600 }}>{fmtStageDate(item.date)}</span>
             </div>
           );
         })}
@@ -442,11 +457,11 @@ export default function ProjectPoolPage() {
           color="#fff"
           overlayStyle={{ maxWidth: "none" }}
           overlayInnerStyle={{ width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" }}>
-          <div style={{ display: "inline-flex", flexDirection: "column", gap: 3, maxWidth: 180 }}>
-            <span style={{ fontSize: 12, color: "#64748b" }}>{next.label}</span>
-            <span style={{ color: "#0f172a", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {stageDeadlineName(next)} · {fmtStageDate(next.date)}
+          <div style={{ display: "inline-flex", flexDirection: "column", gap: 2, maxWidth: 190 }}>
+            <span style={{ color: "#0f172a", fontWeight: 700, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              ({fmtStageDate(next.date)}){next.name || next.key}
             </span>
+            {remain ? <span style={{ color: remain.color, fontSize: 13, lineHeight: "15px", fontWeight: isNextOverdue ? 700 : 500 }}>{remain.text}</span> : null}
           </div>
         </Tooltip>
         {edit}
@@ -490,7 +505,7 @@ export default function ProjectPoolPage() {
       },
     },
     {
-      title: headerTip("制作阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
+      title: headerTip("当前阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
       key: "stage",
       width: 150,
       render: (_: unknown, r: OpsProjectPoolRow) => (
@@ -512,7 +527,7 @@ export default function ProjectPoolPage() {
       ),
     },
     {
-      title: headerTip("下版交付", "根据当前制作阶段推算下一阶段的计划交付日期;鼠标悬停可查看完整阶段交付计划。这里只展示,不参与阶段停留超时判断。"),
+      title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。这里只展示,不参与阶段停留超时判断。"),
       key: "stageDeadlines",
       width: 210,
       render: (_: unknown, r: OpsProjectPoolRow) => stageDeadlinesCell(r),
@@ -674,7 +689,7 @@ export default function ProjectPoolPage() {
               allowClear
               mode="multiple"
               placeholder="项目状态(可多选)"
-              style={{ minWidth: 220, maxWidth: 420 }}
+              style={{ minWidth: 190, maxWidth: 360 }}
               value={statusFilter}
               onChange={(v) => {
                 setStatusFilter(v);
@@ -682,6 +697,19 @@ export default function ProjectPoolPage() {
               }}
               maxTagCount="responsive"
               options={PROJECT_STATUSES.map((s) => ({ value: s, label: s }))}
+            />
+            <Select
+              allowClear
+              mode="multiple"
+              placeholder="制作阶段(可多选)"
+              style={{ minWidth: 190, maxWidth: 360 }}
+              value={stageFilter}
+              onChange={(v) => {
+                setStageFilter(v);
+                setPage(1);
+              }}
+              maxTagCount="responsive"
+              options={PROJECT_STAGES.map((s) => ({ value: s, label: s }))}
             />
           </>
         ) : (

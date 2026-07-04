@@ -91,6 +91,7 @@ export const soyooClient = {
     if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的状态(逗号分隔),如 回收中,未启动
     if (Array.isArray(opts.excludeTenants) && opts.excludeTenants.length) q.set("exclude_tenants", opts.excludeTenants.join(",")); // 排除的客户名(逗号分隔)
     if (opts.memberUserId) q.set("member_user_id", String(opts.memberUserId));
+    if (Array.isArray(opts.projectIds) && opts.projectIds.length) q.set("ids", opts.projectIds.join(","));
     return callRaw(`/integration/projects?${q.toString()}`);
   },
   setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/status`, { method: "POST", body: { status } }),

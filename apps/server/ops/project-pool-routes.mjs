@@ -23,6 +23,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           pageSize: Math.min(100, Number(req.query.pageSize) || 20),
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""), // 不传则后端默认按「开启监控」的状态查
+          stage: String(req.query.stage ?? ""), // 制作阶段多选(逗号分隔)
         }),
       );
     } catch (e) {

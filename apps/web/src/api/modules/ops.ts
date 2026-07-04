@@ -298,12 +298,13 @@ export const opsApi = {
 		}),
 
 	// ===== 项目池 =====
-	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[] } = {}) => {
+	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[] } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
 		if (params.status?.length) qs.set("status", params.status.join(",")); // 多选 → 逗号分隔,后端 IN;不传则后端按「开启监控」状态查
+		if (params.stage?.length) qs.set("stage", params.stage.join(",")); // 制作阶段多选 → 逗号分隔
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
