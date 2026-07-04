@@ -85,7 +85,7 @@ const nextStageDeadline = (stage: string, items: { key: string; name: string; de
   const currentIndex = items.findIndex((item) => item.name === stage || item.key === stage);
   if (currentIndex < 0) return { ...items[0], label: "首个交付" };
   if (currentIndex >= items.length - 1) return { ...items[currentIndex], label: "最终阶段" };
-  return { ...items[currentIndex + 1], label: "下个交付" };
+  return { ...items[currentIndex + 1], label: "下版交付" };
 };
 
 // 带问号提示的表头(鼠标移上去说明该列含义)
@@ -404,18 +404,44 @@ export default function ProjectPoolPage() {
       );
     }
     const full = (
-      <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "4px 12px", fontSize: 12 }}>
-        {items.map((item) => (
-          <div key={item.key} style={{ display: "contents" }}>
-            <span>{stageDeadlineName(item)}</span>
-            <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmtStageDate(item.date)}</span>
-          </div>
-        ))}
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 44px", gap: "6px 10px", fontSize: 12, color: "#334155", width: 256, maxWidth: 256 }}>
+        {items.map((item) => {
+          const isCurrent = item.name === r.stage || item.key === r.stage;
+          const isNext = item.key === next.key;
+          const description = item.description || stageDescriptionFallback[item.key] || "";
+          return (
+            <div key={item.key} style={{ display: "contents" }}>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0, color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : "#334155", fontWeight: isCurrent || isNext ? 700 : 400 }}>
+                <span
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 999,
+                    background: isCurrent ? "#3b82f6" : isNext ? "#14b8a6" : "#cbd5e1",
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+                  {item.name || item.key}
+                  {description ? <span style={{ marginLeft: 4, color: "#64748b", fontSize: 10, fontWeight: 400 }}>({description})</span> : null}
+                </span>
+                {isCurrent ? <Tag color="blue" style={{ marginInlineEnd: 0, lineHeight: "16px", fontSize: 11, flexShrink: 0 }}>当前</Tag> : null}
+                {!isCurrent && isNext ? <Tag color="green" style={{ marginInlineEnd: 0, lineHeight: "16px", fontSize: 11, flexShrink: 0 }}>下个</Tag> : null}
+              </span>
+              <span style={{ fontVariantNumeric: "tabular-nums", textAlign: "right", color: isCurrent ? "#1d4ed8" : isNext ? "#0f766e" : "#0f172a", fontWeight: isCurrent || isNext ? 700 : 600 }}>{fmtStageDate(item.date)}</span>
+            </div>
+          );
+        })}
       </div>
     );
     return (
       <Space size={4}>
-        <Tooltip title={full} placement="topLeft">
+        <Tooltip
+          title={full}
+          placement="topLeft"
+          color="#fff"
+          overlayStyle={{ maxWidth: "none" }}
+          overlayInnerStyle={{ width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" }}>
           <div style={{ display: "inline-flex", flexDirection: "column", gap: 3, maxWidth: 180 }}>
             <span style={{ fontSize: 12, color: "#64748b" }}>{next.label}</span>
             <span style={{ color: "#0f172a", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -486,7 +512,7 @@ export default function ProjectPoolPage() {
       ),
     },
     {
-      title: headerTip("下个交付", "根据当前制作阶段推算下一阶段的计划交付日期;鼠标悬停可查看完整阶段交付计划。这里只展示,不参与阶段停留超时判断。"),
+      title: headerTip("下版交付", "根据当前制作阶段推算下一阶段的计划交付日期;鼠标悬停可查看完整阶段交付计划。这里只展示,不参与阶段停留超时判断。"),
       key: "stageDeadlines",
       width: 210,
       render: (_: unknown, r: OpsProjectPoolRow) => stageDeadlinesCell(r),
