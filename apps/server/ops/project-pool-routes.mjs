@@ -72,6 +72,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     res.json(r);
   });
 
+  // 改项目计划交付日期(策划本人/管理员;临时校准入口,写回 soyoo)
+  app.post("/api/ops/project-pool/:id/stage-deadlines", requireAuth, requirePlanner, async (req, res) => {
+    let r;
+    try {
+      r = await pool.changeProjectStageDeadlines({ user: req.user, projectId: req.params.id, stageBaseDate: req.body?.stageBaseDate, stageDeadlines: req.body?.stageDeadlines });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
   // 改项目备注(策划本人/管理员;纯 ops,富文本)
   app.post("/api/ops/project-pool/:id/remark", requireAuth, requirePlanner, async (req, res) => {
     let r;

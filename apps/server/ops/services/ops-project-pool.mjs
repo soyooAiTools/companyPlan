@@ -235,6 +235,22 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   return { ok: true, stage };
 }
 
+// ---- 改计划交付日期(临时校准入口):校验权限 → 写 soyoo projects.stage_deadlines ----
+export async function changeProjectStageDeadlines({ user, projectId, stageBaseDate, stageDeadlines }) {
+  const { project, members } = await getProjectWithMembers(projectId);
+  if (!project) return { error: "项目不存在", code: 404 };
+  if (!isAdmin(user)) {
+    const m = members.find((x) => x.id === meId(user));
+    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
+  }
+  const body = {};
+  if (stageBaseDate) body.stage_base_date = String(stageBaseDate);
+  if (Array.isArray(stageDeadlines) && stageDeadlines.length) body.stage_deadlines = stageDeadlines;
+  if (!body.stage_base_date && !body.stage_deadlines) return { error: "缺少阶段交付日期", code: 400 };
+  const r = await soyooClient.setProjectStageDeadlines(projectId, body);
+  return { ok: true, stageDeadlines: Array.isArray(r?.data?.stage_deadlines) ? r.data.stage_deadlines : [] };
+}
+
 // ---- 改备注(纯 ops:富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
 export async function changeProjectRemark({ user, projectId, remark }) {
   const { project, members } = await getProjectWithMembers(projectId);

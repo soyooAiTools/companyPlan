@@ -2,15 +2,22 @@
 // 两个 tab:全部项目 / 超时关注;项目状态超时整行标红。超时是服务端按「项目状态时间」阈值实时算的。
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { App, Avatar, Button, Drawer, Empty, Input, List, Modal, Select, Space, Spin, Table, Tag, Timeline, Tooltip, Typography } from "antd";
+import dayjs from "dayjs";
+import "dayjs/locale/zh-cn";
+import zhCN from "antd/es/date-picker/locale/zh_CN";
+import { App, Avatar, Button, Checkbox, DatePicker, Drawer, Empty, Input, InputNumber, List, Modal, Select, Space, Spin, Table, Tag, Timeline, Tooltip, Typography } from "antd";
 import { EditOutlined, QuestionCircleOutlined } from "@ant-design/icons";
 import SegmentedTabs from "../../components/SegmentedTabs";
 import RichContentView from "../../components/RichContentView";
 import { opsApi } from "../../api/modules/ops";
-import type { OpsProjectPoolRow, OpsProjectStatusLog, OpsProjectPoolMember, OpsSegmentTicket } from "../../api/modules/ops";
+import type { OpsProjectPoolRow, OpsProjectStatusLog, OpsProjectPoolMember, OpsSegmentTicket, OpsProjectStageDeadline } from "../../api/modules/ops";
 import RichTextEditor from "./RichTextEditor";
 import { fmtDateTime, fmtDuration } from "../../utils/format";
 import { PROJECT_STATUSES, PROJECT_STAGES, statusStyle, OPS_TOOLBAR_CARD } from "./constants";
+
+dayjs.locale("zh-cn");
+
+console.log("%c[OPS PROJECT POOL] ProjectPoolPage loaded: stage deadline editor enabled", "background:#111827;color:#facc15;font-size:14px;font-weight:700;padding:6px 10px;border-radius:4px;");
 
 const fmtH = (h?: number | null) => {
   if (h == null) return "-";
@@ -18,6 +25,67 @@ const fmtH = (h?: number | null) => {
   const a = Math.abs(h);
   const s = a >= 24 ? `${Math.floor(a / 24)}天${a % 24 ? `${a % 24}h` : ""}` : `${a}h`;
   return neg ? `-${s}` : s;
+};
+
+const fmtStageDate = (date?: string) => {
+  if (!date) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  return m ? `${m[2]}-${m[3]}` : date;
+};
+
+const stageDescriptionFallback: Record<string, string> = {
+  interactive_alpha: String.raw`不含灯光\UI音效`,
+  feature_complete: String.raw`含UI\音效`,
+  final_delivery: "封包版",
+};
+
+const stageDeadlineTemplates: OpsProjectStageDeadline[] = [
+  { key: "asset_confirm", name: "资产确认", date: "" },
+  { key: "scene_still", name: "场景单帧版本", date: "" },
+  { key: "interactive_alpha", name: "可交互初版", description: String.raw`不含灯光\UI音效`, date: "" },
+  { key: "feature_complete", name: "功能完整版", description: String.raw`含UI\音效`, date: "" },
+  { key: "final_delivery", name: "最终交付版", description: "封包版", date: "" },
+];
+const defaultStageIntervals = [2, 3, 7, 3];
+
+const normalizeStageDeadlines = (items?: OpsProjectStageDeadline[]) => {
+  const byKey = new Map((items || []).map((item) => [item.key, item]));
+  return stageDeadlineTemplates.map((tpl) => {
+    const old = byKey.get(tpl.key);
+    return { ...tpl, date: old?.date || "" };
+  });
+};
+
+const addDeadlineDays = (date: dayjs.Dayjs, days: number, skipWeekend: boolean) => {
+  let cursor = date;
+  let remaining = Math.max(0, Number(days) || 0);
+  while (remaining > 0) {
+    cursor = cursor.add(1, "day");
+    if (!skipWeekend || (cursor.day() !== 0 && cursor.day() !== 6)) remaining -= 1;
+  }
+  return cursor;
+};
+
+const inferStageDeadlines = (baseDate: string, intervals: number[], skipWeekend: boolean) => {
+  if (!baseDate) return normalizeStageDeadlines();
+  let cursor = dayjs(baseDate);
+  return stageDeadlineTemplates.map((tpl, index) => {
+    if (index > 0) cursor = addDeadlineDays(cursor, intervals[index - 1], skipWeekend);
+    return { ...tpl, date: cursor.format("YYYY-MM-DD") };
+  });
+};
+
+const stageDeadlineName = (item: { key: string; name: string; description?: string }) => {
+  const description = item.description || stageDescriptionFallback[item.key] || "";
+  return description ? `${item.name || item.key}（${description}）` : item.name || item.key;
+};
+
+const nextStageDeadline = (stage: string, items: { key: string; name: string; description?: string; date: string }[]) => {
+  if (!items.length) return null;
+  const currentIndex = items.findIndex((item) => item.name === stage || item.key === stage);
+  if (currentIndex < 0) return { ...items[0], label: "首个交付" };
+  if (currentIndex >= items.length - 1) return { ...items[currentIndex], label: "最终阶段" };
+  return { ...items[currentIndex + 1], label: "下个交付" };
 };
 
 // 带问号提示的表头(鼠标移上去说明该列含义)
@@ -74,6 +142,15 @@ export default function ProjectPoolPage() {
   const [segTitle, setSegTitle] = useState("");
   const [segTickets, setSegTickets] = useState<OpsSegmentTicket[]>([]);
   const [segLoading, setSegLoading] = useState(false);
+
+  // 临时校准计划交付日期:写 soyoo stage_deadlines,不改变当前制作阶段
+  const [deadlineOpen, setDeadlineOpen] = useState(false);
+  const [deadlineTarget, setDeadlineTarget] = useState<OpsProjectPoolRow | null>(null);
+  const [deadlineRows, setDeadlineRows] = useState<OpsProjectStageDeadline[]>(normalizeStageDeadlines());
+  const [deadlineAuto, setDeadlineAuto] = useState(true);
+  const [deadlineSkipWeekend, setDeadlineSkipWeekend] = useState(true);
+  const [deadlineIntervals, setDeadlineIntervals] = useState(defaultStageIntervals);
+  const [deadlineSaving, setDeadlineSaving] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -223,6 +300,49 @@ export default function ProjectPoolPage() {
     }
   };
 
+  const openDeadlineEdit = (r: OpsProjectPoolRow) => {
+    setDeadlineTarget(r);
+    setDeadlineRows(normalizeStageDeadlines(r.stageDeadlines));
+    setDeadlineIntervals(defaultStageIntervals);
+    setDeadlineAuto(true);
+    setDeadlineSkipWeekend(true);
+    setDeadlineOpen(true);
+  };
+  const updateDeadlineDate = (index: number, date: string) => {
+    if (index === 0 && deadlineAuto) {
+      setDeadlineRows(inferStageDeadlines(date, deadlineIntervals, deadlineSkipWeekend));
+      return;
+    }
+    setDeadlineRows((old) => old.map((item, i) => (i === index ? { ...item, date } : item)));
+  };
+  const updateDeadlineInterval = (index: number, value: number | string | null) => {
+    const next = deadlineIntervals.map((n, i) => (i === index ? Math.max(0, Number(value) || 0) : n));
+    setDeadlineIntervals(next);
+    if (deadlineAuto && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, next, deadlineSkipWeekend));
+  };
+  const toggleDeadlineSkipWeekend = (checked: boolean) => {
+    setDeadlineSkipWeekend(checked);
+    if (deadlineAuto && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, deadlineIntervals, checked));
+  };
+  const saveDeadlineRows = async () => {
+    if (!deadlineTarget) return;
+    if (deadlineRows.some((item) => !item.date)) {
+      message.warning("请补全 5 个阶段的交付日期");
+      return;
+    }
+    setDeadlineSaving(true);
+    try {
+      await opsApi.changeProjectStageDeadlines(deadlineTarget.id, deadlineRows);
+      message.success("计划交付日期已更新");
+      setDeadlineOpen(false);
+      await load();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setDeadlineSaving(false);
+    }
+  };
+
   // 剩余时间(后端按工作时间算好:正=剩、负=超期)
   const segRemain = (t: OpsSegmentTicket) => {
     const r = t.remainingHours;
@@ -247,6 +367,64 @@ export default function ProjectPoolPage() {
         {item("工单超时", r.atRisk || 0, "#d46b08")}
         {item("工单逾期", r.overdue || 0, "#cf1322")}
       </div>
+    );
+  };
+
+  const stageDeadlinesCell = (r: OpsProjectPoolRow) => {
+    const items = Array.isArray(r.stageDeadlines) ? r.stageDeadlines : [];
+    const edit = (
+      <Tooltip title="校准计划交付日期">
+        <Button
+          type="text"
+          size="small"
+          icon={<EditOutlined style={{ fontSize: 15 }} />}
+          style={{ color: "#0f766e" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            openDeadlineEdit(r);
+          }}
+        />
+      </Tooltip>
+    );
+    if (!items.length) {
+      return (
+        <Space size={6}>
+          <Typography.Text type="secondary">未设置</Typography.Text>
+          {edit}
+        </Space>
+      );
+    }
+    const next = nextStageDeadline(r.stage, items);
+    if (!next) {
+      return (
+        <Space size={6}>
+          <Typography.Text type="secondary">未设置</Typography.Text>
+          {edit}
+        </Space>
+      );
+    }
+    const full = (
+      <div style={{ display: "grid", gridTemplateColumns: "auto auto", gap: "4px 12px", fontSize: 12 }}>
+        {items.map((item) => (
+          <div key={item.key} style={{ display: "contents" }}>
+            <span>{stageDeadlineName(item)}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmtStageDate(item.date)}</span>
+          </div>
+        ))}
+      </div>
+    );
+    return (
+      <Space size={4}>
+        <Tooltip title={full} placement="topLeft">
+          <div style={{ display: "inline-flex", flexDirection: "column", gap: 3, maxWidth: 180 }}>
+            <span style={{ fontSize: 12, color: "#64748b" }}>{next.label}</span>
+            <span style={{ color: "#0f172a", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {stageDeadlineName(next)} · {fmtStageDate(next.date)}
+            </span>
+          </div>
+        </Tooltip>
+        {edit}
+      </Space>
     );
   };
 
@@ -286,7 +464,7 @@ export default function ProjectPoolPage() {
       },
     },
     {
-      title: headerTip("制作阶段", "项目制作进度的 5 个里程碑:资产确认 → 场景单帧版本 → 可交互初版 → 功能完整版 → 最终交付版。可任意调整,变更会记入流转。"),
+      title: headerTip("制作阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
       key: "stage",
       width: 150,
       render: (_: unknown, r: OpsProjectPoolRow) => (
@@ -306,6 +484,12 @@ export default function ProjectPoolPage() {
           </Tooltip>
         </Space>
       ),
+    },
+    {
+      title: headerTip("下个交付", "根据当前制作阶段推算下一阶段的计划交付日期;鼠标悬停可查看完整阶段交付计划。这里只展示,不参与阶段停留超时判断。"),
+      key: "stageDeadlines",
+      width: 210,
+      render: (_: unknown, r: OpsProjectPoolRow) => stageDeadlinesCell(r),
     },
     {
       title: "当前状态",
@@ -497,7 +681,7 @@ export default function ProjectPoolPage() {
         dataSource={rows}
         columns={columns}
         size="small"
-        scroll={{ x: 1536, y: scrollY }}
+        scroll={{ x: 1740, y: scrollY }}
         pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 个项目`, onChange: (p, ps) => { setPage(p); setPageSize(ps); } }}
         onRow={(r) => ({
           onClick: () => {
@@ -557,6 +741,99 @@ export default function ProjectPoolPage() {
         width={760}
         destroyOnHidden>
         <RichTextEditor value={rmValue} onChange={setRmValue} projectId={rmTarget?.id} />
+      </Modal>
+
+      <Modal
+        title={`校准计划交付日期 · ${deadlineTarget?.name ?? ""}`}
+        open={deadlineOpen}
+        onOk={saveDeadlineRows}
+        confirmLoading={deadlineSaving}
+        onCancel={() => setDeadlineOpen(false)}
+        okText="保存"
+        cancelText="取消"
+        width={760}
+        destroyOnHidden>
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          {deadlineAuto ? (
+            <div style={{ color: "#cf1322", fontSize: 15, fontWeight: 700 }}>
+              填写 <span style={{ fontWeight: 800 }}>【资产确认】</span> 时间后自动推算后续交付时间
+            </div>
+          ) : null}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <Space size={14}>
+              <Checkbox checked={deadlineAuto} onChange={(e) => setDeadlineAuto(e.target.checked)}>
+                自动推断时间
+              </Checkbox>
+              <Checkbox checked={deadlineSkipWeekend} disabled={!deadlineAuto} onChange={(e) => toggleDeadlineSkipWeekend(e.target.checked)}>
+                排除周末
+              </Checkbox>
+            </Space>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, auto)", gap: 8, alignItems: "center" }}>
+              {stageDeadlineTemplates.slice(1).map((tpl, index) => (
+                <span key={tpl.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#64748b", fontSize: 12 }}>
+                  {tpl.name}
+                  <InputNumber
+                    min={0}
+                    size="small"
+                    value={deadlineIntervals[index]}
+                    controls={false}
+                    style={{ width: 44 }}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(v) => updateDeadlineInterval(index, v)}
+                  />
+                  天
+                </span>
+              ))}
+            </div>
+          </div>
+          <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
+            {deadlineRows.map((item, index) => (
+              <div
+                key={item.key}
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "34px minmax(190px, 1fr) 170px",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "10px 12px",
+                  borderTop: index ? "1px solid #e2e8f0" : "none",
+                  background: index % 2 ? "#fff" : "#f8fafc",
+                }}>
+                <span
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: 999,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    background: "#eef2ff",
+                    color: "#4f46e5",
+                    fontSize: 12,
+                    fontWeight: 600,
+                  }}>
+                  {index + 1}
+                </span>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, color: "#0f172a" }}>{item.name}</span>
+                  {item.description ? <span style={{ marginLeft: 6, color: "#cf1322", fontSize: 12 }}>({item.description})</span> : null}
+                  <div style={{ marginTop: 3, color: "#64748b", fontSize: 12 }}>
+                    {index === 0 ? "资产确认结果交付客户" : `${stageDeadlineTemplates[index - 1].name} → ${item.name}`}
+                  </div>
+                </div>
+                <DatePicker
+                  allowClear={false}
+                  locale={zhCN}
+                  value={item.date ? dayjs(item.date) : null}
+                  format="YYYY-MM-DD"
+                  style={{ width: 160 }}
+                  onClick={(e) => e.stopPropagation()}
+                  onChange={(date) => updateDeadlineDate(index, date ? date.format("YYYY-MM-DD") : "")}
+                />
+              </div>
+            ))}
+          </div>
+        </Space>
       </Modal>
 
       <Drawer title={`项目名称:${logsProject?.name ?? ""}`} open={logsOpen} onClose={() => setLogsOpen(false)} width={460}>

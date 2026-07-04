@@ -94,5 +94,6 @@ export const soyooClient = {
     return callRaw(`/integration/projects?${q.toString()}`);
   },
   setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/status`, { method: "POST", body: { status } }),
+  setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/stage-deadlines`, { method: "POST", body }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
 };

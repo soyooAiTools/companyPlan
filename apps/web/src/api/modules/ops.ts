@@ -116,6 +116,7 @@ export interface OpsProjectPoolRow {
 	tenantName: string; // 客户名(= soyoo tenant_name)
 	status: string;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
+	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
 	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
@@ -135,6 +136,12 @@ export interface OpsProjectPoolRow {
 	stageStaleHours?: number; // 该阶段阈值
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
+}
+export interface OpsProjectStageDeadline {
+	key: string;
+	name: string;
+	description?: string;
+	date: string;
 }
 export interface OpsProjectPoolMember {
 	id: string;
@@ -321,6 +328,11 @@ export const opsApi = {
 		requestJson<{ ok: boolean; stage: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage`, {
 			method: "POST",
 			body: JSON.stringify({ stage, commentHtml }),
+		}),
+	changeProjectStageDeadlines: (projectId: string, stageDeadlines: OpsProjectStageDeadline[]) =>
+		requestJson<{ ok: boolean; stageDeadlines: OpsProjectStageDeadline[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage-deadlines`, {
+			method: "POST",
+			body: JSON.stringify({ stageDeadlines }),
 		}),
 	changeProjectRemark: (projectId: string, remark: string) =>
 		requestJson<{ ok: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/remark`, {
