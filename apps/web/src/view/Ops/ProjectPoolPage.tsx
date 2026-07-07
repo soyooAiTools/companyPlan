@@ -1,5 +1,5 @@
 // 项目池:策划看自己(制片)的项目、管理员看全部。可改项目状态(同步 soyoo+飞书)、留富文本评论、看状态流转。
-// 两个 tab:全部项目 / 超时关注;项目状态超时整行标红。超时是服务端按「项目状态时间」阈值实时算的。
+// 两个 tab:全部项目 / 超时关注;当前超时关注只按「阶段停留」统计。
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
@@ -638,6 +638,8 @@ export default function ProjectPoolPage() {
       width: 200,
       render: (_: unknown, r: OpsProjectPoolRow) => ticketSummaryCell(r),
     },
+    /*
+    // 临时隐藏：状态流程时间暂不参与项目池展示和超时关注，后面需要恢复时打开这一列即可。
     {
       title: headerTip("状态停留", "项目保持在「当前状态」的工作时长(按 10:00-19:00 算、排除夜间)。超过「设置 → 项目状态时间」该状态阈值时标红。"),
       key: "stuck",
@@ -651,6 +653,7 @@ export default function ProjectPoolPage() {
           "—"
         ),
     },
+    */
     {
       title: headerTip("阶段停留", "项目保持在「当前阶段」的工作时长(按 10:00-19:00 算)。超过「设置 → 项目阶段时间」该阶段阈值时标红;没设阶段不计。"),
       key: "stageStuck",
@@ -735,14 +738,14 @@ export default function ProjectPoolPage() {
         dataSource={rows}
         columns={columns}
         size="small"
-        scroll={{ x: 1740, y: scrollY }}
+        scroll={{ x: 1620, y: scrollY }}
         pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 个项目`, onChange: (p, ps) => { setPage(p); setPageSize(ps); } }}
         onRow={(r) => ({
           onClick: () => {
             if (window.getSelection()?.toString()) return; // 正在框选文本(复制)→ 不打开抽屉
             openLogs(r);
           },
-          className: r.isStale || r.stageStale ? "ops-pool-stale" : undefined,
+          className: r.stageStale ? "ops-pool-stale" : undefined,
           style: { cursor: "pointer" },
         })}
       />

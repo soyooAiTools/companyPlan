@@ -356,7 +356,7 @@ async function staleCutoffs() {
     .map((s) => ({ status: s.status, before: subBusinessHours(now, s.stale_hours), staleHours: s.stale_hours }));
 }
 
-// 阶段超时的项目 id(「超时关注」与状态超时取并集用):每阶段按其阈值,stage_changed_at 早于「现在往前该阈值工时」即超时
+// 阶段超时的项目 id:每阶段按其阈值,stage_changed_at 早于「现在往前该阈值工时」即超时
 async function stageStaleProjectIds() {
   const settings = await prisma.ops_project_stage_settings.findMany();
   const active = settings.filter((s) => s.enabled && s.stale_hours > 0);
@@ -368,9 +368,11 @@ async function stageStaleProjectIds() {
 }
 
 export async function listStale({ user, page = 1, pageSize = 20 }) {
-  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
-  if (!cutoffs.length && !extraIds.length) return { rows: [], total: 0, page, pageSize };
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page, limit: pageSize, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
+  // const cutoffs = await staleCutoffs();
+  const extraIds = await stageStaleProjectIds();
+  if (!extraIds.length) return { rows: [], total: 0, page, pageSize };
+  const body = { cutoffs: [], extra_ids: extraIds, page, limit: pageSize, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   const projects = Array.isArray(r?.data) ? r.data : [];
@@ -379,25 +381,28 @@ export async function listStale({ user, page = 1, pageSize = 20 }) {
   return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap, stageSm)), total: Number(r?.total ?? projects.length), page, pageSize };
 }
 export async function staleCount({ user }) {
-  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
-  if (!cutoffs.length && !extraIds.length) return 0;
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page: 1, limit: 1, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
+  // const cutoffs = await staleCutoffs();
+  const extraIds = await stageStaleProjectIds();
+  if (!extraIds.length) return 0;
+  const body = { cutoffs: [], extra_ids: extraIds, page: 1, limit: 1, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   if (!isAdmin(user)) body.member_user_id = Number(meId(user)) || 0;
   const r = await soyooClient.staleProjects(body);
   return Number(r?.total ?? 0);
 }
 
-// 通知扫描用:当前「状态超时或阶段超时」的项目(全局,不按成员过滤)。复用 staleCutoffs/stageStaleProjectIds + soyoo 取数。
+// 通知扫描用:当前「阶段超时」的项目(全局,不按成员过滤)。状态流程时间暂不计入。
 export async function listOverdueProjectsForNotify() {
-  const [cutoffs, extraIds] = await Promise.all([staleCutoffs(), stageStaleProjectIds()]);
-  if (!cutoffs.length && !extraIds.length) return [];
-  const body = { cutoffs: cutoffs.map((c) => ({ status: c.status, before: c.before })), extra_ids: extraIds, page: 1, limit: 1000, exclude_tenants: EXCLUDED_CLIENT_NAMES };
+  // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
+  // const cutoffs = await staleCutoffs();
+  const extraIds = await stageStaleProjectIds();
+  if (!extraIds.length) return [];
+  const body = { cutoffs: [], extra_ids: extraIds, page: 1, limit: 1000, exclude_tenants: EXCLUDED_CLIENT_NAMES };
   const r = await soyooClient.staleProjects(body);
   const projects = Array.isArray(r?.data) ? r.data : [];
   const total = Number(r?.total ?? projects.length);
   if (total > projects.length) console.warn(`[notif-scan] 超时项目共 ${total},本轮仅取前 ${projects.length} 条通知(如需更多调大 limit)`);
-  const stageSet = new Set(extraIds.map(String));
-  return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: stageSet.has(String(p.id)) ? "stage" : "status" }));
+  return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: "stage" }));
 }
 
 // 环节 + 绑定标签 id(供「按环节算项目负责人」复用;getResponsibles 只需 tag id,不查 soyoo 标签名)。传 ids 则只取这些环节。
