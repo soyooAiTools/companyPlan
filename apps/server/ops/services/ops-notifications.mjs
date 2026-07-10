@@ -257,7 +257,7 @@ export const buildProjectOverdue = (project, kind, recipientId) => ({
   recipientId,
   eventKey: "project_overdue",
   title: "项目超时",
-  body: `项目「${project.name}」${kind === "stage" ? "阶段" : "状态"}停留超时`,
+  body: kind === "deadline" ? `项目「${project.name}」下版交付时间逾期` : `项目「${project.name}」${kind === "stage" ? "阶段" : "状态"}停留超时`,
   link: `/projects?project=${project.id}`,
   refType: "project",
   refId: project.id,

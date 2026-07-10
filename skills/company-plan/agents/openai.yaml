@@ -1,4 +1,0 @@
-interface:
-  display_name: "companyPlan"
-  short_description: "Production playable-ad SaaS guide"
-  default_prompt: "Use $company-plan to refine or deploy the playable-ad demand-ticket production SaaS."

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath, URL } from "node:url";
 
 // 每次构建生成唯一版本号 → 写进 dist/version.json;前端 VersionChecker 轮询它,发现新版本就提示刷新
 const BUILD_ID = String(Date.now());
@@ -7,6 +8,11 @@ const BUILD_ID = String(Date.now());
 export default defineConfig(() => ({
 	// 部署在(子)域名根路径下,用绝对根 base;子路由刷新也能正确取到 /assets/*
 	base: "/",
+	resolve: {
+		alias: {
+			"@": fileURLToPath(new URL("./src", import.meta.url)),
+		},
+	},
 	define: {
 		__APP_VERSION__: JSON.stringify(BUILD_ID),
 	},

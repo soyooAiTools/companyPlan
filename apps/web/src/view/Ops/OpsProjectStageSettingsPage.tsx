@@ -63,7 +63,7 @@ export default function OpsProjectStageSettingsPage() {
   return (
     <div>
       <Typography.Paragraph type="secondary">
-        每个制作阶段设「是否监控 + 在该阶段停留多久算超时」。项目停在某阶段超过阈值还没流转,就在「项目池」整行标红、显示「阶段超时」。
+        每个制作阶段设「是否监控 + 在该阶段停留多久算超时」。项目停在某阶段超过阈值还没流转,会按通知配置提醒对应负责人;项目池不再展示单独的阶段停留状态列。
       </Typography.Paragraph>
       <Table rowKey="stage" loading={loading} dataSource={rows} columns={columns} pagination={false} size="middle" style={{ maxWidth: 600 }} />
       <Button type="primary" loading={saving} onClick={save} style={{ marginTop: 12 }}>

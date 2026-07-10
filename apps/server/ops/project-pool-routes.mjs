@@ -24,6 +24,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""), // 不传则后端默认按「开启监控」的状态查
           stage: String(req.query.stage ?? ""), // 制作阶段多选(逗号分隔)
+          segment: String(req.query.segment ?? ""), // 环节多选(逗号分隔):只看包含这些未完成环节工单的项目
         }),
       );
     } catch (e) {
@@ -105,6 +106,17 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   // 某环节下的未完成工单(目前环节点击查看,纯本地工单表)
   app.get("/api/ops/project-pool/:id/segment-tickets", requireAuth, requirePlanner, async (req, res) => {
     res.json({ tickets: await pool.listSegmentTickets(req.params.id, req.query.segmentId) });
+  });
+
+  // 项目池里的环节工单详情:查看「谁提给谁」及需求说明/流转记录
+  app.get("/api/ops/project-pool/:id/segment-tickets/:ticketId", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      const r = await pool.getSegmentTicketDetail({ user: req.user, projectId: req.params.id, segmentId: req.query.segmentId, ticketId: req.params.ticketId });
+      if (r?.error) return res.status(r.code || 400).json({ error: r.error });
+      res.json(r);
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
   });
 
   // 项目协作成员(协作列点击查看)

@@ -11,7 +11,7 @@ const EVENT_META: Record<string, { label: string; desc: string }> = {
 	ticket_assigned: { label: "别人给我提单", desc: "有人给你提单 / 把工单改派给你时通知" },
 	ticket_overdue_deliver: { label: "工单超时·过交付", desc: "工单过了交付时间(橙)时通知负责人" },
 	ticket_overdue_warn: { label: "工单超时·过预警", desc: "工单过了预警时间(红)时通知负责人" },
-	project_overdue: { label: "项目超时", desc: "项目状态/阶段停留超时,通知选定环节的负责人" },
+	project_overdue: { label: "项目超时", desc: "项目下版交付时间逾期,通知选定环节的负责人" },
 	ticket_priority_changed: { label: "工单优先级变更", desc: "管理员/策划改了工单优先级时通知负责人" },
 	ticket_status_changed: { label: "工单状态变更", desc: "工单状态变更时通知负责人(操作人就是负责人则不发)" },
 };

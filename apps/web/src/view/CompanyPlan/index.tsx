@@ -713,7 +713,7 @@ function ProjectSituationTable({
         <span>当前阶段</span>
         <span>我的职责</span>
         <span>我的环节</span>
-        <span>协作人员</span>
+        <span>人员人员</span>
         <span>需求提单</span>
         <span>风险/阻塞</span>
         <span>交付</span>

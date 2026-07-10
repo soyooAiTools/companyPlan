@@ -118,6 +118,7 @@ export interface OpsProjectPoolRow {
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
+	startedAt: string | null; // soyoo 项目启动时间
 	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
 	planners: { name: string; avatar: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
@@ -156,6 +157,8 @@ export interface OpsSegmentTicket {
 	title: string;
 	status: string;
 	priority: string;
+	requesterName: string;
+	requesterAvatar: string;
 	ownerName: string;
 	ownerAvatar: string;
 	dueAt: string | null;
@@ -165,7 +168,7 @@ export interface OpsSegmentTicket {
 }
 export interface OpsProjectStatusLog {
 	id: number;
-	kind: "status" | "stage" | "remark"; // 状态变更 / 阶段变更 / 备注修改(同一时间线区分)
+	kind: "status" | "stage" | "remark" | "deadline"; // 状态变更 / 阶段变更 / 备注修改 / 下版交付时间修改(同一时间线区分)
 	fromStatus: string | null;
 	toStatus: string;
 	actorName: string | null;
@@ -298,13 +301,14 @@ export const opsApi = {
 		}),
 
 	// ===== 项目池 =====
-	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[] } = {}) => {
+	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[] } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
 		if (params.status?.length) qs.set("status", params.status.join(",")); // 多选 → 逗号分隔,后端 IN;不传则后端按「开启监控」状态查
 		if (params.stage?.length) qs.set("stage", params.stage.join(",")); // 制作阶段多选 → 逗号分隔
+		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
@@ -312,6 +316,10 @@ export const opsApi = {
 		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),
 	projectSegmentTickets: (projectId: string, segmentId: number) =>
 		requestJson<{ tickets: OpsSegmentTicket[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets?segmentId=${segmentId}`),
+	projectSegmentTicketDetail: (projectId: string, segmentId: number, ticketId: string) =>
+		requestJson<{ ticket: OpsTicket; events: OpsTicketEvent[] }>(
+			`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets/${encodeURIComponent(ticketId)}?segmentId=${segmentId}`,
+		),
 	projectPoolStale: (params: { page?: number; pageSize?: number } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
