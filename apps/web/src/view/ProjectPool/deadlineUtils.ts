@@ -91,13 +91,13 @@ export const fmtProjectDate = (date?: string | null) => {
 };
 
 export const projectDurationText = (startedAt?: string | null, deadlines?: { key: string; name: string; date: string }[]) => {
-  const start = dayjs(startedAt).startOf("day");
+  const start = dayjs(startedAt);
   if (!startedAt || !start.isValid()) return null;
   const final = finalStageDeadline(deadlines);
   const finalDate = final?.date ? dayjs(final.date, "YYYY-MM-DD").startOf("day") : null;
   if (!finalDate?.isValid()) return null;
   const today = dayjs().startOf("day");
-  const developedDays = Math.max(0, today.diff(start, "day") + 1);
+  const developedDays = Math.max(0, dayjs().diff(start, "hour", true) / 24);
   const developedWeeks = Math.round((developedDays / 7) * 10) / 10;
   const remainingDays = finalDate.diff(today, "day");
   return {

@@ -27,7 +27,7 @@ dayjs.locale("zh-cn");
 const headerTip = (text: string, tip: string) => (
 	<span>
 		{text}{" "}
-		<Tooltip title={tip}>
+		<Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{tip}</span>}>
 			<QuestionCircleOutlined style={{ color: "#94a3b8", cursor: "help" }} />
 		</Tooltip>
 	</span>
@@ -415,7 +415,7 @@ export default function ProjectPoolPage() {
 			render: (_: unknown, r: OpsProjectPoolRow) => <span style={{ color: r.startedAt ? "#334155" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{fmtProjectDate(r.startedAt)}</span>,
 		},
 		{
-			title: headerTip("项目持续时间", "已开发=项目启动时间到今天;剩余/逾期=最终交付版日期到今天。"),
+			title: headerTip("项目持续时间", "已开发=当前时间 - 项目启动时间\n剩余=最终交付版日期 - 今天"),
 			key: "duration",
 			width: 190,
 			render: (_: unknown, r: OpsProjectPoolRow) => {
