@@ -18,7 +18,7 @@ import SegmentTicketDetailDrawer from "./components/SegmentTicketDetailDrawer";
 import SegmentTicketsModal from "./components/SegmentTicketsModal";
 import StageDeadlineCell from "./components/StageDeadlineCell";
 import StageDeadlineModal from "./components/StageDeadlineModal";
-import { defaultStageIntervals, fmtProjectDate, inferStageDeadlines, isNextDeadlineOverdue, normalizeStageDeadlines, projectDurationText } from "./deadlineUtils";
+import { defaultStageIntervals, fmtProjectDate, inferStageDeadlines, isNextDeadlineOverdue, normalizeStageDeadlines, projectDurationText, projectStartDate } from "./deadlineUtils";
 import type { ProjectLogKind } from "./logUtils";
 
 dayjs.locale("zh-cn");
@@ -412,7 +412,16 @@ export default function ProjectPoolPage() {
 			title: "项目启动时间",
 			key: "startedAt",
 			width: 120,
-			render: (_: unknown, r: OpsProjectPoolRow) => <span style={{ color: r.startedAt ? "#334155" : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{fmtProjectDate(r.startedAt)}</span>,
+			render: (_: unknown, r: OpsProjectPoolRow) => {
+				const startDate = projectStartDate(r.startedAt, r.stageDeadlines);
+				const fromAssetConfirm = !!r.stageDeadlines?.some((item) => (item.key === "asset_confirm" || item.name === "资产确认") && item.date === startDate);
+				const text = fmtProjectDate(startDate);
+				return (
+					<Tooltip title={fromAssetConfirm ? "按资产确认日期计算" : undefined}>
+						<span style={{ color: startDate ? (fromAssetConfirm ? "#64748b" : "#334155") : "#94a3b8", fontVariantNumeric: "tabular-nums" }}>{text}</span>
+					</Tooltip>
+				);
+			},
 		},
 		{
 			title: headerTip("项目持续时间", "已开发=当前时间 - 项目启动时间\n剩余=最终交付版日期 - 今天"),

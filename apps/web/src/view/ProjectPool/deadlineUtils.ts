@@ -84,6 +84,16 @@ export const finalStageDeadline = (items?: { key: string; name: string; date: st
   return items.find((item) => item.key === "final_delivery") || items[items.length - 1] || null;
 };
 
+export const assetConfirmDeadline = (items?: { key: string; name: string; date: string }[]) => {
+  if (!Array.isArray(items) || !items.length) return null;
+  return items.find((item) => item.key === "asset_confirm") || items.find((item) => item.name === "资产确认") || null;
+};
+
+export const projectStartDate = (startedAt?: string | null, deadlines?: { key: string; name: string; date: string }[]) => {
+  const assetConfirm = assetConfirmDeadline(deadlines);
+  return assetConfirm?.date || startedAt || null;
+};
+
 export const fmtProjectDate = (date?: string | null) => {
   if (!date) return "—";
   const d = dayjs(date);
@@ -91,8 +101,9 @@ export const fmtProjectDate = (date?: string | null) => {
 };
 
 export const projectDurationText = (startedAt?: string | null, deadlines?: { key: string; name: string; date: string }[]) => {
-  const start = dayjs(startedAt);
-  if (!startedAt || !start.isValid()) return null;
+  const startDate = projectStartDate(startedAt, deadlines);
+  const start = dayjs(startDate);
+  if (!startDate || !start.isValid()) return null;
   const final = finalStageDeadline(deadlines);
   const finalDate = final?.date ? dayjs(final.date, "YYYY-MM-DD").startOf("day") : null;
   if (!finalDate?.isValid()) return null;
