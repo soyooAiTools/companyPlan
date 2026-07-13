@@ -13,6 +13,25 @@ async function requirePlanner(req, res, next) {
 }
 
 export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
+  // 我的项目:当前登录人参与的项目,所有登录用户可访问
+  app.get("/api/ops/my-projects", requireAuth, async (req, res) => {
+    try {
+      res.json(
+        await pool.listMyProjectPool({
+          user: req.user,
+          page: Number(req.query.page) || 1,
+          pageSize: Math.min(100, Number(req.query.pageSize) || 20),
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          stage: String(req.query.stage ?? ""),
+          segment: String(req.query.segment ?? ""),
+        }),
+      );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 列表(管理员全部 / 策划=自己负责的)
   app.get("/api/ops/project-pool", requireAuth, requirePlanner, async (req, res) => {
     try {
@@ -47,6 +66,15 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
       res.json({ count: await pool.staleCount({ user: req.user }) });
     } catch {
       res.json({ count: 0 });
+    }
+  });
+
+  // 按负责人查看:按项目成员标签批量取负责人,避免前端逐项目请求成员
+  app.post("/api/ops/project-pool/owner-members", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json(await pool.listOwnerMembersByTags({ projectIds: req.body?.projectIds, tagNames: req.body?.tagNames }));
+    } catch (e) {
+      soyooErrorResponse(res, e);
     }
   });
 

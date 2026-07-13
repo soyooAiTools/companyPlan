@@ -1,11 +1,12 @@
 // 项目池业务层:实时查 soyoo 项目 + 聚合 ops 工单 + 改状态(soyoo+飞书+outbox)+ 流转记录 + 状态阈值配置 + 超时筛。
+import crypto from "node:crypto";
 import { prisma } from "../prisma.mjs";
 import { soyooClient, soyooId } from "../soyoo-client.mjs";
 import { getProjectWithMembers } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
 import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
 import { sanitizeRichHtml, isBlankRich } from "../rich-html.mjs";
-import { businessHoursBetween, subBusinessHours, remainingBusinessHours } from "../business-hours.mjs";
+import { addBusinessHours, businessHoursBetween, subBusinessHours, remainingBusinessHours } from "../business-hours.mjs";
 
 // 批量取项目 ops 扩展字段(阶段等)→ { [project_id]: {stage, stageChangedAt} }
 async function loadExt(projectIds) {
@@ -152,6 +153,52 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
   return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap)), total: Number(r?.total ?? projects.length), page, pageSize };
 }
 
+// ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", segment = "" }) {
+  const sm = await settingsMap();
+  let statusFilter = status;
+  if (!statusFilter) {
+    const enabled = Object.entries(sm)
+      .filter(([, v]) => v.enabled)
+      .map(([k]) => k);
+    if (!enabled.length) return { rows: [], total: 0, page, pageSize };
+    statusFilter = enabled.join(",");
+  }
+  const opts = { page, limit: pageSize, keyword: q, status: statusFilter, excludeTenants: EXCLUDED_CLIENT_NAMES, memberUserId: meId(user) };
+  let filterIds = null;
+  const stageFilter = String(stage || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (stageFilter.length) {
+    const rows = await prisma.ops_project_ext.findMany({ where: { stage: { in: stageFilter } }, select: { project_id: true } });
+    const ids = rows.map((r) => String(r.project_id)).filter(Boolean);
+    if (!ids.length) return { rows: [], total: 0, page, pageSize };
+    filterIds = new Set(ids);
+  }
+  const segmentFilter = String(segment || "")
+    .split(",")
+    .map((s) => Number(s))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (segmentFilter.length) {
+    const rows = await prisma.tickets.findMany({
+      where: { segment_id: { in: segmentFilter }, status: { not: "已完成" } },
+      select: { project_id: true },
+      distinct: ["project_id"],
+    });
+    const ids = rows.map((r) => String(r.project_id)).filter(Boolean);
+    if (!ids.length) return { rows: [], total: 0, page, pageSize };
+    filterIds = filterIds ? new Set(ids.filter((id) => filterIds.has(id))) : new Set(ids);
+    if (!filterIds.size) return { rows: [], total: 0, page, pageSize };
+  }
+  if (filterIds) opts.projectIds = [...filterIds];
+  const r = await soyooClient.projectsList(opts);
+  const projects = Array.isArray(r?.data) ? r.data : [];
+  const ids = projects.map((p) => String(p.id));
+  const [agg, segMap, extMap] = await Promise.all([aggregateTickets(ids), loadSegOrder(), loadExt(ids)]);
+  return { rows: projects.map((p) => buildRow(p, agg, segMap, sm, extMap)), total: Number(r?.total ?? projects.length), page, pageSize };
+}
+
 // ---- 某项目某环节下的未完成工单(目前环节点击查看,含所有负责人)----
 export async function listSegmentTickets(projectId, segmentId) {
   const sid = Number(segmentId);
@@ -264,6 +311,156 @@ export async function getProjectMembers(projectId) {
   }));
 }
 
+// ---- 批量取项目负责人:按 soyoo 标签名过滤项目成员,供项目池「按负责人查看」使用 ----
+export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] }) {
+  const ids = [...new Set((projectIds ?? []).map(String).filter(Boolean))];
+  const names = [...new Set((tagNames ?? []).map(String).map((s) => s.trim()).filter(Boolean))];
+  if (!ids.length || !names.length) return { members: [] };
+
+  const tagRows = await prisma.tags.findMany({ where: { name: { in: names } }, select: { id: true, name: true } });
+  const tagIds = tagRows.map((tag) => tag.id);
+  if (!tagIds.length) return { members: [] };
+  const tagNameById = new Map(tagRows.map((tag) => [tag.id, tag.name]));
+
+  const rows = await prisma.project_member_tags.findMany({
+    where: { project_id: { in: ids }, tag_id: { in: tagIds } },
+    select: {
+      project_id: true,
+      tag_id: true,
+      people: { select: { id: true, username: true, name: true, wechat_avatar: true, wechat_name: true, disabled_at: true } },
+    },
+  });
+
+  const merged = new Map();
+  for (const row of rows) {
+    const person = row.people;
+    if (!person || person.disabled_at) continue;
+    const key = `${row.project_id}:${person.id}`;
+    const item =
+      merged.get(key) || {
+        projectId: String(row.project_id),
+        id: String(person.id),
+        username: person.username || "",
+        name: person.name || person.username || "",
+        avatar: person.wechat_avatar || "",
+        wechatName: person.wechat_name || "",
+        tags: [],
+      };
+    const tagName = tagNameById.get(row.tag_id);
+    if (tagName && !item.tags.includes(tagName)) item.tags.push(tagName);
+    merged.set(key, item);
+  }
+
+  const ticketRows = await prisma.tickets.findMany({
+    where: { project_id: { in: ids }, tag_name: { in: names }, status: { not: "已完成" } },
+    select: {
+      project_id: true,
+      tag_name: true,
+      owner_id: true,
+      owner_username: true,
+      owner_name: true,
+      owner_avatar: true,
+    },
+  });
+  for (const ticket of ticketRows) {
+    if (!ticket.owner_id) continue;
+    const key = `${ticket.project_id}:${ticket.owner_id}`;
+    const item =
+      merged.get(key) || {
+        projectId: String(ticket.project_id),
+        id: String(ticket.owner_id),
+        username: ticket.owner_username || "",
+        name: ticket.owner_name || ticket.owner_username || "",
+        avatar: ticket.owner_avatar || "",
+        wechatName: "",
+        tags: [],
+      };
+    if (ticket.tag_name && !item.tags.includes(ticket.tag_name)) {
+      item.tags.push(ticket.tag_name);
+    }
+    merged.set(key, item);
+  }
+
+  return { members: [...merged.values()] };
+}
+
+const AUTO_PROGRAM_STAGE = "场景单帧版本";
+const AUTO_PROGRAM_SEGMENT = "程序第一版";
+const AUTO_PROGRAM_TITLE = "程序第一版";
+const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
+
+async function autoCreateProgramFirstTicket({ user, project, members, projectId }) {
+  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+  if (!segment) return;
+  const segTags = await prisma.ops_segment_tags.findMany({ where: { segment_id: segment.id }, select: { tag_id: true } });
+  const tagIds = segTags.map((row) => String(row.tag_id));
+  if (!tagIds.length) return;
+  const owner = members.find((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))));
+  if (!owner) return;
+  const exists = await prisma.tickets.findFirst({
+    where: { project_id: String(projectId), segment_id: segment.id, title: AUTO_PROGRAM_TITLE, status: { not: "已完成" } },
+    select: { id: true },
+  });
+  if (exists) return;
+
+  const matched = owner.tags.find((tag) => tagIds.includes(String(tag.id)));
+  const now = nowIso();
+  const dueAt = addBusinessHours(now, segment.default_delivery_hours);
+  const warnAt = addBusinessHours(now, segment.risk_warning_hours);
+  const requesterId = meId(user);
+  const created = await prisma.tickets.create({
+    data: {
+      id: crypto.randomUUID(),
+      title: AUTO_PROGRAM_TITLE,
+      source_project_name: project.client || "",
+      client_id: project.clientId || "",
+      client_name: project.client || "",
+      project_name: project.name || "",
+      project_id: String(projectId),
+      project_status: project.status || "",
+      tag_id: matched?.id || tagIds[0] || "",
+      tag_name: matched?.name || "",
+      segment_id: segment.id,
+      discipline: segment.name,
+      requester_id: requesterId,
+      requester_name: user?.name || user?.username || "",
+      requester_avatar: "",
+      requester_username: user?.username || "",
+      owner_id: String(owner.id),
+      owner_name: owner.name || owner.username || "",
+      owner_avatar: owner.avatar || "",
+      owner_username: owner.username || "",
+      status: "排队中",
+      priority: "普通",
+      start_at: now,
+      due_in_hours: segment.default_delivery_hours,
+      risk_warning_hours: segment.risk_warning_hours,
+      due_at: dueAt,
+      warn_at: warnAt,
+      need_type: segment.name,
+      summary: "系统自动生成",
+      content_html: AUTO_PROGRAM_HTML,
+      hyperlink: null,
+      text: null,
+      created_at: now,
+      updated_at: now,
+      status_updated_at: now,
+    },
+  });
+  await prisma.ticket_events.create({
+    data: {
+      ticket_id: created.id,
+      actor_id: requesterId,
+      actor_name: user?.name || user?.username || "",
+      action: "系统自动建单",
+      from_status: null,
+      to_status: "排队中",
+      note: "阶段流转到场景单帧版本后自动生成",
+      created_at: now,
+    },
+  });
+}
+
 // ---- 改状态:先调 soyoo(落库+飞书+outbox)成功,才写 ops 流转记录 ----
 export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false }) {
   if (!status) return { error: "缺少状态", code: 400 };
@@ -307,6 +504,9 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   const cur = await prisma.ops_project_ext.findUnique({ where: { project_id: pid }, select: { stage: true } });
   const from = cur?.stage || null; // 没设置过阶段 → from 为空,日志只显示「→ X」
   if ((from || "") === stage) return { error: "阶段未变化,无需修改", code: 400 }; // 相同阶段不重置 stage_changed_at
+  const fromIndex = PROJECT_STAGES.indexOf(from || "");
+  const toIndex = PROJECT_STAGES.indexOf(stage);
+  if (fromIndex >= 0 && toIndex <= fromIndex) return { error: "制作阶段只能向后修改,不能回退", code: 400 };
   const now = nowIso();
   await prisma.ops_project_ext.upsert({
     where: { project_id: pid },
@@ -326,6 +526,9 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
       created_at: now,
     },
   });
+  if (stage === AUTO_PROGRAM_STAGE) {
+    await autoCreateProgramFirstTicket({ user, project, members, projectId: pid });
+  }
   return { ok: true, stage };
 }
 

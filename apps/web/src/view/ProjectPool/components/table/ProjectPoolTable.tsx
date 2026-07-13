@@ -7,23 +7,51 @@ type ProjectPoolTableProps = {
   rows: OpsProjectPoolRow[];
   columns: ColumnsType<OpsProjectPoolRow>;
   loading: boolean;
-  page: number;
-  pageSize: number;
-  total: number;
-  scrollY: number;
-  onPageChange: (page: number, pageSize: number) => void;
-  onOpenLogs: (row: OpsProjectPoolRow) => void;
+  page?: number;
+  pageSize?: number;
+  total?: number;
+  scrollY?: number;
+  pagination?: false;
+  onPageChange?: (page: number, pageSize: number) => void;
+  onOpenLogs?: (row: OpsProjectPoolRow) => void;
 };
 
-export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, onPageChange, onOpenLogs }: ProjectPoolTableProps) {
+export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onOpenLogs }: ProjectPoolTableProps) {
+  const tablePagination =
+    pagination === false || !onPageChange || page == null || pageSize == null || total == null
+      ? false
+      : {
+          current: page,
+          pageSize,
+          total,
+          showSizeChanger: true,
+          showTotal: (count: number) => `共 ${count} 个项目`,
+          onChange: onPageChange,
+        };
   return (
     <>
       <style>{`
         .ops-pool-table .ant-table-tbody > tr > td { padding-top: 14px; padding-bottom: 14px; }
-        .ops-pool-table .ant-table-thead > tr > th { padding-top: 11px; padding-bottom: 11px; background: #f8fafc; font-weight: 600; }
+        .ops-pool-table .ant-table,
+        .ops-pool-table .ant-table-container,
+        .ops-pool-table .ant-table-content,
+        .ops-pool-table .ant-table-header {
+          border-start-start-radius: 0 !important;
+          border-start-end-radius: 0 !important;
+          border-top-left-radius: 0 !important;
+          border-top-right-radius: 0 !important;
+        }
+        .ops-pool-table .ant-table-thead > tr:first-child > th:first-child,
+        .ops-pool-table .ant-table-thead > tr:first-child > th:last-child {
+          border-start-start-radius: 0 !important;
+          border-start-end-radius: 0 !important;
+          border-top-left-radius: 0 !important;
+          border-top-right-radius: 0 !important;
+        }
+        .ops-pool-table .ant-table-thead > tr > th { padding-top: 11px; padding-bottom: 11px; background: #fff; font-weight: 600; }
         .ops-pool-table .ant-table-tbody > tr:not(.ops-pool-stale):hover > td { background: transparent !important; }
-        .ops-pool-table .ops-pool-stale > td { background: #fff1f0 !important; }
-        .ops-pool-table .ops-pool-stale:hover > td { background: #fff1f0 !important; }
+        .ops-pool-table .ops-pool-stale > td { background: #fff7f6 !important; }
+        .ops-pool-table .ops-pool-stale:hover > td { background: #fff7f6 !important; }
         .ops-pool-table .ant-table-tbody > tr:hover > td:first-child { box-shadow: inset 3px 0 0 #0f766e; }
       `}</style>
       <Table
@@ -33,22 +61,16 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         dataSource={rows}
         columns={columns}
         size="small"
-        scroll={{ x: 1350, y: scrollY }}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 个项目`,
-          onChange: onPageChange,
-        }}
+        scroll={scrollY ? { x: 1350, y: scrollY } : { x: 1350 }}
+        pagination={tablePagination}
         onRow={(row) => ({
           onClick: () => {
+            if (!onOpenLogs) return;
             if (window.getSelection()?.toString()) return;
             onOpenLogs(row);
           },
           className: isNextDeadlineOverdue(row) ? "ops-pool-stale" : undefined,
-          style: { cursor: "pointer" },
+          style: { cursor: onOpenLogs ? "pointer" : "default" },
         })}
       />
     </>

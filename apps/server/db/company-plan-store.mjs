@@ -217,6 +217,7 @@ async function initializeSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await ensureIndex("idx_tickets_project", "tickets", "project_id");
+  await ensureIndex("idx_tickets_project_tag_status", "tickets", "project_id, tag_name, status");
   await ensureIndex("idx_tickets_requester", "tickets", "requester_id");
   await ensureIndex("idx_tickets_owner", "tickets", "owner_id");
   await ensureIndex("idx_sessions_person", "sessions", "person_id");

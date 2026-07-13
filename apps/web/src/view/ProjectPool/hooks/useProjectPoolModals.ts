@@ -6,6 +6,13 @@ import { defaultStageIntervals, inferStageDeadlines, normalizeStageDeadlines } f
 import type { ProjectLogKind } from "../logUtils";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
+type SegmentTicketWithSource = OpsSegmentTicket & {
+  projectId?: string;
+  projectName?: string;
+  projectStage?: string;
+  segmentId?: number;
+  segmentName?: string;
+};
 
 export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>) {
   const [chOpen, setChOpen] = useState(false);
@@ -37,7 +44,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const [segTickets, setSegTickets] = useState<OpsSegmentTicket[]>([]);
   const [segLoading, setSegLoading] = useState(false);
   const [segProjectId, setSegProjectId] = useState("");
-  const [segSegmentId, setSegSegmentId] = useState<number | null>(null);
+  const [segProjectName, setSegProjectName] = useState("");
+  const [segSegmentId, setSegSegmentId] = useState<number[]>([]);
   const [segDetailOpen, setSegDetailOpen] = useState(false);
   const [segDetail, setSegDetail] = useState<OpsTicket | null>(null);
   const [segDetailEvents, setSegDetailEvents] = useState<OpsTicketEvent[]>([]);
@@ -128,16 +136,24 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     }
   };
 
-  const loadSegTickets = async (projectId: string, segmentId: number) => {
-    setSegSegmentId(segmentId);
+  const loadSegTickets = async (projectId: string, segmentIds: number[], segments = segTabs, projectName = "") => {
+    setSegSegmentId(segmentIds);
     setSegDetailOpen(false);
     setSegDetail(null);
     setSegDetailEvents([]);
     setSegTickets([]);
     setSegLoading(true);
     try {
-      const result = await opsApi.projectSegmentTickets(projectId, segmentId);
-      setSegTickets(result.tickets);
+      const results = await Promise.all(
+        segmentIds.map(async (segmentId) => {
+          const segment = segments.find((item) => item.id === segmentId);
+          const result = await opsApi.projectSegmentTickets(projectId, segmentId);
+          return result.tickets.map((ticket) => ({ ...ticket, projectId, projectName, segmentId, segmentName: segment?.name }) satisfies SegmentTicketWithSource);
+        }),
+      );
+      const unique = new Map<string, SegmentTicketWithSource>();
+      for (const ticket of results.flat()) unique.set(ticket.id, ticket);
+      setSegTickets([...unique.values()]);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载工单失败");
     } finally {
@@ -146,26 +162,66 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   };
 
   const openSegTickets = (row: OpsProjectPoolRow, segment: { id: number; name: string }) => {
-    setSegTitle(row.name);
+    setSegTitle(`环节工单 · ${row.name}`);
     setSegTabs(row.segments);
     setSegProjectId(row.id);
+    setSegProjectName(row.name);
     setSegOpen(true);
-    void loadSegTickets(row.id, segment.id);
+    void loadSegTickets(row.id, [segment.id], row.segments, row.name);
   };
 
-  const switchSegTab = (segmentId: number) => {
-    if (!segProjectId || segmentId === segSegmentId) return;
-    void loadSegTickets(segProjectId, segmentId);
+  const openGroupTickets = async (title: string, rows: OpsProjectPoolRow[], mode: "overdue" | "unfinished", segmentIds?: number[], ownerName?: string) => {
+    setSegTitle(title);
+    setSegTabs([]);
+    setSegProjectId("");
+    setSegProjectName("");
+    setSegSegmentId([]);
+    setSegOpen(true);
+    setSegDetailOpen(false);
+    setSegDetail(null);
+    setSegDetailEvents([]);
+    setSegTickets([]);
+    setSegLoading(true);
+    try {
+      const segmentFilter = new Set((segmentIds || []).filter(Boolean));
+      const pairs = rows.flatMap((row) => row.segments.filter((segment) => !segmentFilter.size || segmentFilter.has(segment.id)).map((segment) => ({ row, segment })));
+      const results = await Promise.all(
+        pairs.map(async ({ row, segment }) => {
+          const result = await opsApi.projectSegmentTickets(row.id, segment.id);
+          return result.tickets.map((ticket) => ({ ...ticket, projectId: row.id, projectName: row.name, projectStage: row.stage, segmentId: segment.id, segmentName: segment.name }) satisfies SegmentTicketWithSource);
+        }),
+      );
+      const unique = new Map<string, SegmentTicketWithSource>();
+      for (const ticket of results.flat()) {
+        if (mode === "overdue" && !ticket.overdue) continue;
+        if (ownerName && ticket.ownerName !== ownerName) continue;
+        unique.set(ticket.id, ticket);
+      }
+      setSegTickets([...unique.values()]);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "加载工单失败");
+    } finally {
+      setSegLoading(false);
+    }
+  };
+
+  const switchSegTab = (segmentId: number | number[]) => {
+    const segmentIds = Array.isArray(segmentId) ? segmentId : [segmentId];
+    if (!segProjectId || !segmentIds.length) return;
+    void loadSegTickets(segProjectId, segmentIds, segTabs, segProjectName);
   };
 
   const openSegTicketDetail = async (ticket: OpsSegmentTicket) => {
-    if (!segProjectId || segSegmentId == null) return;
+    const source = ticket as SegmentTicketWithSource;
+    const projectId = source.projectId || segProjectId;
+    const segmentId = source.segmentId ?? segSegmentId[0];
+    if (!projectId || segmentId == null) return;
     setSegDetailOpen(true);
     setSegDetail(null);
     setSegDetailEvents([]);
     setSegDetailLoading(true);
     try {
-      const result = await opsApi.projectSegmentTicketDetail(segProjectId, segSegmentId, ticket.id);
+      const result = await opsApi.projectSegmentTicketDetail(projectId, segmentId, ticket.id);
       setSegDetail(result.ticket);
       setSegDetailEvents(result.events);
     } catch (e) {
@@ -179,7 +235,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setSegOpen(false);
     setSegDetailOpen(false);
     setSegTabs([]);
-    setSegSegmentId(null);
+    setSegProjectName("");
+    setSegSegmentId([]);
   };
 
   const openDeadlineEdit = (row: OpsProjectPoolRow) => {
@@ -305,6 +362,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       openLogs,
       openMembers,
       openSegTickets,
+      openGroupTickets,
       openSegTicketDetail,
       openDeadlineEdit,
     },

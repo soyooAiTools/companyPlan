@@ -1,8 +1,9 @@
-import { Button, Avatar, Space, Tag, Tooltip, Typography } from "antd";
+import { useEffect, useState } from "react";
+import { Button, Avatar, Checkbox, Input, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { EditOutlined, QuestionCircleOutlined } from "@ant-design/icons";
-import type { OpsProjectPoolRow } from "@/api/modules/ops";
-import { statusStyle } from "@/view/Ops/constants";
+import { EditOutlined, FilterFilled, QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
+import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
+import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { fmtProjectDate, projectDurationText, projectStartDate } from "../deadlineUtils";
 
@@ -12,6 +13,18 @@ export type ProjectPoolColumnActions = {
   openRemark: (row: OpsProjectPoolRow) => void;
   openSegTickets: (row: OpsProjectPoolRow, segment: { id: number; name: string }) => void;
   openMembers: (row: OpsProjectPoolRow) => void;
+};
+
+export type ProjectPoolColumnFilters = {
+  search: string;
+  statusFilter: string[];
+  stageFilter: string[];
+  segmentFilter: number[];
+  segmentOptions: OpsSegment[];
+  onSearchChange: (value: string) => void;
+  onStatusFilterChange: (value: string[]) => void;
+  onStageFilterChange: (value: string[]) => void;
+  onSegmentFilterChange: (value: number[]) => void;
 };
 
 const headerTip = (text: string, tip: string) => (
@@ -41,16 +54,93 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
   );
 };
 
-export function useProjectPoolColumns(actions: ProjectPoolColumnActions): ColumnsType<OpsProjectPoolRow> {
+const filterIcon = (active: boolean) => <FilterFilled style={{ color: active ? "#1677ff" : "#94a3b8" }} />;
+
+function HeaderSearchDropdown({ value, onApply, close }: { value: string; onApply: (value: string) => void; close: () => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const apply = (nextValue: string) => {
+    onApply(nextValue);
+    close();
+  };
+  return (
+    <div style={{ width: 240, padding: 10 }} onClick={(e) => e.stopPropagation()}>
+      <Input
+        autoFocus
+        allowClear
+        placeholder="搜索项目/客户/策划"
+        value={draft}
+        prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+        onChange={(e) => setDraft(e.target.value)}
+        onPressEnter={() => apply(draft)}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+        <Button size="small" type="text" disabled={!draft && !value} onClick={() => apply("")}>
+          清空
+        </Button>
+        <Button size="small" type="primary" onClick={() => apply(draft)}>
+          OK
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function HeaderMultiDropdown<T extends string | number>({
+  value,
+  options,
+  onApply,
+  close,
+}: {
+  value: T[];
+  options: { label: string; value: T }[];
+  onApply: (value: T[]) => void;
+  close: () => void;
+}) {
+  const [draft, setDraft] = useState<T[]>(value);
+  useEffect(() => setDraft(value), [value]);
+  const apply = (nextValue: T[]) => {
+    onApply(nextValue);
+    close();
+  };
+  return (
+    <div style={{ minWidth: 180, maxWidth: 240, padding: 10 }} onClick={(e) => e.stopPropagation()}>
+      <Checkbox.Group value={draft} onChange={(nextValue) => setDraft(nextValue as T[])} style={{ display: "grid", gap: 8 }}>
+        {options.map((option) => (
+          <Checkbox key={String(option.value)} value={option.value}>
+            {option.label}
+          </Checkbox>
+        ))}
+      </Checkbox.Group>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
+        <Button size="small" type="text" disabled={!draft.length && !value.length} onClick={() => apply([])}>
+          清空
+        </Button>
+        <Button size="small" type="primary" onClick={() => apply(draft)}>
+          OK
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function useProjectPoolColumns(actions: ProjectPoolColumnActions, rowNumberOffset = 0, filters?: ProjectPoolColumnFilters, options: { readonly?: boolean } = {}): ColumnsType<OpsProjectPoolRow> {
   return [
     {
       title: "项目名称",
       key: "name",
       width: 220,
-      render: (_: unknown, row) => (
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all" }}>{row.name || "—"}</div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 3 }}>{row.tenantName || "未填客户"}</div>
+      filterDropdown: filters
+        ? ({ close }) => <HeaderSearchDropdown value={filters.search} onApply={filters.onSearchChange} close={close} />
+        : undefined,
+      filterIcon: filters ? () => (filters.search ? <SearchOutlined style={{ color: "#1677ff" }} /> : <SearchOutlined style={{ color: "#94a3b8" }} />) : undefined,
+      render: (_: unknown, row, index) => (
+        <div style={{ display: "flex", alignItems: "baseline", gap: 9, minWidth: 0 }}>
+          <span style={{ width: 24, flexShrink: 0, textAlign: "right", color: "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{rowNumberOffset + index + 1}</span>
+          <div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all" }}>
+            {row.name || "—"}
+            <span style={{ color: "#64748b", fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
+          </div>
         </div>
       ),
     },
@@ -81,10 +171,14 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
       title: headerTip("当前阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
       key: "stage",
       width: 150,
+      filterDropdown: filters
+        ? ({ close }) => <HeaderMultiDropdown value={filters.stageFilter} options={PROJECT_STAGES.map((stage) => ({ label: stage, value: stage }))} onApply={filters.onStageFilterChange} close={close} />
+        : undefined,
+      filterIcon: filters ? () => filterIcon(filters.stageFilter.length > 0) : undefined,
       render: (_: unknown, row) => (
         <Space size={6}>
           <Tag style={{ background: "#f0f5ff", color: "#1d39c4", padding: "2px 10px", fontSize: 13, borderRadius: 6, border: "none", margin: 0 }}>{row.stage || "—"}</Tag>
-          <Tooltip title="修改阶段">
+          {options.readonly ? null : <Tooltip title="修改阶段">
             <Button
               type="text"
               size="small"
@@ -95,7 +189,7 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
                 actions.openChange(row, "stage");
               }}
             />
-          </Tooltip>
+          </Tooltip>}
         </Space>
       ),
     },
@@ -137,10 +231,14 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
       title: "当前状态",
       key: "status",
       width: 132,
+      filterDropdown: filters
+        ? ({ close }) => <HeaderMultiDropdown value={filters.statusFilter} options={PROJECT_STATUSES.map((status) => ({ label: status, value: status }))} onApply={filters.onStatusFilterChange} close={close} />
+        : undefined,
+      filterIcon: filters ? () => filterIcon(filters.statusFilter.length > 0) : undefined,
       render: (_: unknown, row) => (
         <Space size={6}>
           <Tag style={{ ...statusStyle(row.status), padding: "2px 10px", fontSize: 13, borderRadius: 6, border: "none", margin: 0 }}>{row.status || "—"}</Tag>
-          <Tooltip title="修改状态">
+          {options.readonly ? null : <Tooltip title="修改状态">
             <Button
               type="text"
               size="small"
@@ -151,7 +249,7 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
                 actions.openChange(row, "status");
               }}
             />
-          </Tooltip>
+          </Tooltip>}
         </Space>
       ),
     },
@@ -175,7 +273,7 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
             ) : (
               <Typography.Text type="secondary">—</Typography.Text>
             )}
-            <Tooltip title="修改备注">
+            {options.readonly ? null : <Tooltip title="修改备注">
               <Button
                 type="text"
                 size="small"
@@ -186,7 +284,7 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
                   actions.openRemark(row);
                 }}
               />
-            </Tooltip>
+            </Tooltip>}
           </Space>
         );
       },
@@ -195,6 +293,10 @@ export function useProjectPoolColumns(actions: ProjectPoolColumnActions): Column
       title: headerTip("目前环节", "该项目未完成工单涉及的环节,及每个环节的未完成工单数。点击环节查看该环节下所有人的未完成工单。"),
       key: "segments",
       width: 180,
+      filterDropdown: filters
+        ? ({ close }) => <HeaderMultiDropdown value={filters.segmentFilter} options={filters.segmentOptions.map((segment) => ({ label: segment.name, value: segment.id }))} onApply={filters.onSegmentFilterChange} close={close} />
+        : undefined,
+      filterIcon: filters ? () => filterIcon(filters.segmentFilter.length > 0) : undefined,
       render: (_: unknown, row) =>
         row.segments.length ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-start" }}>

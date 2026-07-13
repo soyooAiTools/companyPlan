@@ -5,7 +5,8 @@ import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
-export function useProjectPoolData(message: MessageApi) {
+export function useProjectPoolData(message: MessageApi, options: { mine?: boolean } = {}) {
+  const mine = !!options.mine;
   const [tab, setTab] = useState<"all" | "stale">("all");
   const [rows, setRows] = useState<OpsProjectPoolRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -18,6 +19,8 @@ export function useProjectPoolData(message: MessageApi) {
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
+  const [allRows, setAllRows] = useState<OpsProjectPoolRow[]>([]);
+  const [allRowsLoading, setAllRowsLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -25,7 +28,9 @@ export function useProjectPoolData(message: MessageApi) {
       const result =
         tab === "stale"
           ? await opsApi.projectPoolStale({ page, pageSize })
-          : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter });
+          : mine
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter });
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
@@ -35,10 +40,48 @@ export function useProjectPoolData(message: MessageApi) {
     }
   };
 
+  const loadAllRows = async () => {
+    if (tab !== "all") {
+      setAllRows([]);
+      return;
+    }
+    setAllRowsLoading(true);
+    try {
+      const pageSizeForAll = 100;
+      const base = { q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter };
+      const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...base });
+      const nextRows = [...first.rows];
+      const pageCount = Math.ceil(first.total / pageSizeForAll);
+      for (let nextPage = 2; nextPage <= pageCount; nextPage += 1) {
+        const result = mine ? await opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...base });
+        nextRows.push(...result.rows);
+      }
+      setAllRows(nextRows);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "加载分组数据失败");
+      setAllRows([]);
+    } finally {
+      setAllRowsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setTab("all");
+    setRows([]);
+    setAllRows([]);
+    setTotal(0);
+    setPage(1);
+    setSearch("");
+    setDebounced("");
+    setStatusFilter([]);
+    setStageFilter([]);
+    setSegmentFilter([]);
+  }, [mine]);
+
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, page, pageSize, statusFilter, stageFilter, segmentFilter, debounced]);
+  }, [mine, tab, page, pageSize, statusFilter, stageFilter, segmentFilter, debounced]);
 
   useEffect(() => {
     opsApi
@@ -74,6 +117,10 @@ export function useProjectPoolData(message: MessageApi) {
     segmentFilter,
     setSegmentFilter,
     segmentOptions,
+    allRows,
+    allRowsLoading,
+    filterKey: [debounced.trim(), statusFilter.join(","), stageFilter.join(","), segmentFilter.join(",")].join("|"),
     load,
+    loadAllRows,
   };
 }

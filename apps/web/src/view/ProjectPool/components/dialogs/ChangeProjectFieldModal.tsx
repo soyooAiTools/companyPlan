@@ -18,6 +18,7 @@ type ChangeProjectFieldModalProps = {
 
 export default function ChangeProjectFieldModal({ open, field, target, value, comment, saving, onValueChange, onCommentChange, onConfirm, onCancel }: ChangeProjectFieldModalProps) {
   const current = field === "status" ? target?.status : target?.stage;
+  const currentStageIndex = field === "stage" ? PROJECT_STAGES.indexOf(current || "") : -1;
   return (
     <Modal
       title={`${field === "status" ? "修改项目状态" : "修改制作阶段"} · ${target?.name ?? ""}`}
@@ -40,7 +41,7 @@ export default function ChangeProjectFieldModal({ open, field, target, value, co
             options={(field === "status" ? PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({
               value: s,
               label: s === current ? `${s}(当前)` : s,
-              disabled: s === current,
+              disabled: field === "stage" ? PROJECT_STAGES.indexOf(s) <= currentStageIndex : s === current,
             }))}
             onChange={onValueChange}
           />

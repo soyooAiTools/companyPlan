@@ -152,6 +152,9 @@ export interface OpsProjectPoolMember {
 	username: string;
 	tags: string[]; // 角色标签名(如 制片/美术)
 }
+export interface OpsProjectPoolOwnerMember extends OpsProjectPoolMember {
+	projectId: string;
+}
 export interface OpsSegmentTicket {
 	id: string;
 	title: string;
@@ -312,8 +315,21 @@ export const opsApi = {
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
+	myProjects: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[] } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.stage?.length) qs.set("stage", params.stage.join(","));
+		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		const s = qs.toString();
+		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
+	},
 	projectPoolMembers: (projectId: string) =>
 		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),
+	projectPoolOwnerMembers: (body: { projectIds: string[]; tagNames: string[] }) =>
+		requestJson<{ members: OpsProjectPoolOwnerMember[] }>("/api/ops/project-pool/owner-members", { method: "POST", body: JSON.stringify(body) }),
 	projectSegmentTickets: (projectId: string, segmentId: number) =>
 		requestJson<{ tickets: OpsSegmentTicket[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets?segmentId=${segmentId}`),
 	projectSegmentTicketDetail: (projectId: string, segmentId: number, ticketId: string) =>
