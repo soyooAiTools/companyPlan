@@ -3,7 +3,7 @@ import SegmentedTabs from "@/components/SegmentedTabs";
 import RichContentView from "@/components/RichContentView";
 import type { OpsProjectPoolRow, OpsProjectStatusLog } from "@/api/modules/ops";
 import { fmtDateTime } from "@/utils/format";
-import { emptyLogKindText, projectLogKindColor, projectLogKindLabel, type ProjectLogKind } from "../logUtils";
+import { emptyLogKindText, projectLogKindColor, projectLogKindLabel, type ProjectLogKind } from "../../logUtils";
 
 type ProjectLogsDrawerProps = {
   open: boolean;

@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
 import { Checkbox, DatePicker, InputNumber, Modal, Space } from "antd";
 import type { OpsProjectPoolRow, OpsProjectStageDeadline } from "@/api/modules/ops";
-import { stageDeadlineTemplates } from "../deadlineUtils";
+import { stageDeadlineTemplates } from "../../deadlineUtils";
 
 type StageDeadlineModalProps = {
   open: boolean;

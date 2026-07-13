@@ -5,7 +5,7 @@ import { ArrowRightOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
 import { fmtDateTime } from "@/utils/format";
 import { remainingView } from "@/view/Ops/ticketUtils";
-import "../../Ops/RichText.css";
+import "../../../Ops/RichText.css";
 
 type SegmentTicketDetailDrawerProps = {
 	open: boolean;

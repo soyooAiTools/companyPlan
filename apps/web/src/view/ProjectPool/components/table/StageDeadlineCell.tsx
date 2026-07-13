@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { Button, Space, Tag, Tooltip, Typography } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
-import { deadlineRemain, fmtStageDate, nextStageDeadline, stageDescriptionFallback } from "../deadlineUtils";
+import { deadlineRemain, fmtStageDate, nextStageDeadline, stageDescriptionFallback } from "../../deadlineUtils";
 
 type StageDeadlineCellProps = {
   row: OpsProjectPoolRow;
