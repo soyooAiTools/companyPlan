@@ -209,3 +209,16 @@ export async function loadVisibleSnapshotRows({ user, statusNames = [] }) {
   }
   return rows;
 }
+
+export async function loadMySnapshotRows({ user, statusNames = [] }) {
+  const dbRows = await readProjectPoolSnapshotDbRows(statusNames);
+  const uid = meId(user);
+  const rows = [];
+  for (const dbRow of dbRows) {
+    const row = snapshotDbRowToPoolRow(dbRow);
+    if (!row || isExcludedTenantName(row.tenantName)) continue;
+    if (!snapshotMemberIds(dbRow).map(String).includes(uid)) continue;
+    rows.push(row);
+  }
+  return rows;
+}

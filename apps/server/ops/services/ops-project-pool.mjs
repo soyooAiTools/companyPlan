@@ -8,7 +8,7 @@ import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-p
 import { sanitizeRichHtml, isBlankRich } from "../rich-html.mjs";
 import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
-import { loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
+import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
@@ -59,13 +59,13 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
   return nextRows;
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "" }) {
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", onlyMine = false }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
   const effectiveStatus = statusFilter.length ? statusFilter : [];
-  let rows = await loadVisibleSnapshotRows({ user, statusNames: effectiveStatus });
+  let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user, statusNames: effectiveStatus });
   if (effectiveStatus.length) {
     const statusSet = new Set(effectiveStatus);
     rows = rows.filter((row) => statusSet.has(row.status));
@@ -100,7 +100,7 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
 export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "" }) {
   const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, userId: meId(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment });
+    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, onlyMine: true });
     timer.mark("snapshot.query", { rows: result.rows.length, total: result.total });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
