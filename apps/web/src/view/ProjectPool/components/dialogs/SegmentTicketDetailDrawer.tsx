@@ -53,7 +53,7 @@ function InlineRichContent({ html }: { html?: string | null }) {
 export default function SegmentTicketDetailDrawer({ open, ticket, events, loading, onClose }: SegmentTicketDetailDrawerProps) {
 	const remain = ticket ? remainingView(ticket) : null;
 	return (
-		<Drawer title={ticket?.title || "工单详情"} open={open} onClose={onClose} width={560} destroyOnHidden>
+		<Drawer title={ticket?.title || "工单详情"} open={open} onClose={onClose} size={560} destroyOnHidden>
 			{loading ? (
 				<div style={{ textAlign: "center", padding: "80px 0" }}>
 					<Spin />

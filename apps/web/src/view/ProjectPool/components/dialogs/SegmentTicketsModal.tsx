@@ -16,6 +16,7 @@ type SegmentTicketsModalProps = {
 };
 
 type TicketWithSource = OpsSegmentTicket & {
+  projectId?: string;
   projectName?: string;
   projectStage?: string;
   segmentId?: number;
@@ -28,6 +29,8 @@ const ticketRemain = (ticket: OpsSegmentTicket) => {
   if (remaining < 0) return <span style={{ color: ticket.overdue ? "#cf1322" : "#fa8c16", fontSize: 12, fontWeight: 600 }}>超期 {fmtDuration(-remaining)}</span>;
   return <span style={{ color: "#64748b", fontSize: 12, fontWeight: 600 }}>剩 {fmtDuration(remaining)}</span>;
 };
+
+const filterSelectStyle = { width: 220, maxWidth: "100%" };
 
 function PersonFlowNode({ label, avatar, name, tone }: { label: string; avatar?: string; name?: string; tone: "requester" | "owner" }) {
   const color = tone === "requester" ? "#0369a1" : "#475569";
@@ -60,16 +63,34 @@ function FlowArrow({ remain }: { remain: ReturnType<typeof ticketRemain> }) {
 }
 
 export default function SegmentTicketsModal({ open, title, segments, activeSegmentId, tickets, loading, onCancel, onSegmentChange, onOpenTicket }: SegmentTicketsModalProps) {
+  const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const projectOptions = useMemo(() => {
+    const projects = new Map<string, { name: string; count: number }>();
+    for (const ticket of tickets) {
+      const source = ticket as TicketWithSource;
+      const key = source.projectId || source.projectName;
+      if (!key || !source.projectName) continue;
+      const item = projects.get(key) || { name: source.projectName, count: 0 };
+      item.count += 1;
+      projects.set(key, item);
+    }
+    if (projects.size <= 1) return [];
+    return [...projects.entries()]
+      .sort((a, b) => a[1].name.localeCompare(b[1].name, "zh-CN"))
+      .map(([value, item]) => ({ value, label: `${item.name}(${item.count})` }));
+  }, [tickets]);
   const segmentOptions = useMemo(() => {
     if (segments.length) return segments.map((segment) => ({ value: String(segment.id), label: `${segment.name}(${segment.count})` }));
-    const names = new Set<string>();
+    const names = new Map<string, number>();
     for (const ticket of tickets) {
       const segmentName = (ticket as TicketWithSource).segmentName;
-      if (segmentName) names.add(segmentName);
+      if (segmentName) names.set(segmentName, (names.get(segmentName) || 0) + 1);
     }
-    return [...names].map((name) => ({ value: name, label: name }));
+    return [...names.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0], "zh-CN"))
+      .map(([name, count]) => ({ value: name, label: `${name}(${count})` }));
   }, [segments, tickets]);
   const statusOptions = useMemo(() => {
     const statuses = new Set<string>();
@@ -81,21 +102,54 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
   const visibleTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const source = ticket as TicketWithSource;
-      const segmentKey = source.segmentId != null ? String(source.segmentId) : source.segmentName;
-      const segmentMatched = !segmentFilter.length || (segmentKey ? segmentFilter.includes(segmentKey) : false);
+      const projectKey = source.projectId || source.projectName;
+      const projectMatched = !projectFilter.length || (projectKey ? projectFilter.includes(projectKey) : false);
+      const segmentKeys = [source.segmentId != null ? String(source.segmentId) : "", source.segmentName || ""].filter(Boolean);
+      const segmentMatched = !segmentFilter.length || segmentKeys.some((key) => segmentFilter.includes(key));
       const statusMatched = !statusFilter.length || statusFilter.includes(ticket.status);
-      return segmentMatched && statusMatched;
+      return projectMatched && segmentMatched && statusMatched;
     });
-  }, [segmentFilter, statusFilter, tickets]);
+  }, [projectFilter, segmentFilter, statusFilter, tickets]);
   useEffect(() => {
+    setProjectFilter([]);
     setSegmentFilter([]);
     setStatusFilter([]);
   }, [open, tickets]);
 
   return (
-    <Modal title={title} open={open} onCancel={onCancel} footer={null} width={720}>
-      {segmentOptions.length || statusOptions.length ? (
+    <Modal title={title} open={open} onCancel={onCancel} footer={null} width={820} keyboard={false}>
+      <style>{`
+        .ops-segment-ticket-item {
+          border-radius: 6px;
+          padding: 7px 10px !important;
+          margin: 4px 0;
+          transition: transform 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+          transform-origin: center;
+        }
+        .ops-segment-ticket-item:hover {
+          background: #f8fafc;
+          box-shadow: 0 8px 22px rgba(15, 23, 42, 0.10);
+          transform: scale(1.012);
+          z-index: 1;
+        }
+      `}</style>
+      {projectOptions.length || segmentOptions.length || statusOptions.length ? (
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "-4px 0 10px" }}>
+          {projectOptions.length ? (
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              size="small"
+              placeholder="项目"
+              value={projectFilter}
+              onChange={setProjectFilter}
+              style={filterSelectStyle}
+              maxTagCount="responsive"
+              optionFilterProp="label"
+              options={projectOptions}
+            />
+          ) : null}
           {segmentOptions.length ? (
           <Select
             mode="multiple"
@@ -108,7 +162,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
               setSegmentFilter(value);
               if (segments.length) onSegmentChange(value.map(Number));
             }}
-            style={{ minWidth: 260, maxWidth: "100%" }}
+            style={filterSelectStyle}
             maxTagCount="responsive"
             options={segmentOptions}
           />
@@ -121,7 +175,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
               placeholder="工单状态"
               value={statusFilter}
               onChange={setStatusFilter}
-              style={{ minWidth: 160, maxWidth: "100%" }}
+              style={filterSelectStyle}
               maxTagCount="responsive"
               options={statusOptions}
             />
@@ -135,12 +189,12 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
       ) : visibleTickets.length ? (
         <List
           dataSource={visibleTickets}
-          pagination={visibleTickets.length > 10 ? { pageSize: 10, size: "small", showSizeChanger: false, showTotal: (total) => `共 ${total} 条工单` } : false}
+          pagination={{ pageSize: 10, size: "small", showSizeChanger: false, showTotal: (total) => `共 ${total} 条工单` }}
           renderItem={(t) => {
             const source = t as TicketWithSource;
             return (
             <List.Item
-              style={{ borderRadius: 6, padding: "7px 10px" }}
+              className="ops-segment-ticket-item"
               actions={[
                 <Button key="view" size="small" type="link" onClick={() => onOpenTicket(t)}>
                   查看
@@ -151,7 +205,9 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
                 <div style={{ marginBottom: 4, lineHeight: "18px", color: "#0f172a", fontSize: 13, fontWeight: 600 }}>
                   {source.projectName ? (
                     <>
-                      <span>项目：{source.projectName}</span>
+                      <span style={{ color: "#0f766e", fontWeight: 700 }}>
+                        项目：{source.projectName}
+                      </span>
                       <span style={{ marginLeft: 10 }}>需求：{t.title}</span>
                     </>
                   ) : (

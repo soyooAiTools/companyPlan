@@ -158,6 +158,10 @@ export interface OpsProjectPoolOwnerMember extends OpsProjectPoolMember {
 export interface OpsSegmentTicket {
 	id: string;
 	title: string;
+	projectId?: string;
+	projectName?: string;
+	segmentId?: number | null;
+	segmentName?: string;
 	status: string;
 	priority: string;
 	requesterName: string;
@@ -304,7 +308,7 @@ export const opsApi = {
 		}),
 
 	// ===== 项目池 =====
-	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[] } = {}) => {
+	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -312,10 +316,11 @@ export const opsApi = {
 		if (params.status?.length) qs.set("status", params.status.join(",")); // 多选 → 逗号分隔,后端 IN;不传则后端按「开启监控」状态查
 		if (params.stage?.length) qs.set("stage", params.stage.join(",")); // 制作阶段多选 → 逗号分隔
 		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
+		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
-	myProjects: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[] } = {}) => {
+	myProjects: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -323,6 +328,7 @@ export const opsApi = {
 		if (params.status?.length) qs.set("status", params.status.join(","));
 		if (params.stage?.length) qs.set("stage", params.stage.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
 	},
@@ -330,6 +336,8 @@ export const opsApi = {
 		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),
 	projectPoolOwnerMembers: (body: { projectIds: string[]; tagNames: string[] }) =>
 		requestJson<{ members: OpsProjectPoolOwnerMember[] }>("/api/ops/project-pool/owner-members", { method: "POST", body: JSON.stringify(body) }),
+	projectPoolGroupTickets: (body: { projectIds: string[]; mode: "overdue" | "unfinished"; segmentIds?: number[]; ownerName?: string }) =>
+		requestJson<{ tickets: OpsSegmentTicket[] }>("/api/ops/project-pool/group-tickets", { method: "POST", body: JSON.stringify(body) }),
 	projectSegmentTickets: (projectId: string, segmentId: number) =>
 		requestJson<{ tickets: OpsSegmentTicket[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets?segmentId=${segmentId}`),
 	projectSegmentTicketDetail: (projectId: string, segmentId: number, ticketId: string) =>

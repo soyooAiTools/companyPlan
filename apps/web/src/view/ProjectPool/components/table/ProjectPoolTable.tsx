@@ -31,7 +31,11 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
   return (
     <>
       <style>{`
-        .ops-pool-table .ant-table-tbody > tr > td { padding-top: 14px; padding-bottom: 14px; }
+        .ops-pool-table .ant-table-tbody > tr > td {
+          padding-top: 14px;
+          padding-bottom: 14px;
+          transition: background-color 160ms ease, transform 160ms ease;
+        }
         .ops-pool-table .ant-table,
         .ops-pool-table .ant-table-container,
         .ops-pool-table .ant-table-content,
@@ -49,9 +53,15 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
           border-top-right-radius: 0 !important;
         }
         .ops-pool-table .ant-table-thead > tr > th { padding-top: 11px; padding-bottom: 11px; background: #fff; font-weight: 600; }
-        .ops-pool-table .ant-table-tbody > tr:not(.ops-pool-stale):hover > td { background: transparent !important; }
+        .ops-pool-table .ant-table-tbody > tr:not(.ops-pool-stale):hover > td {
+          background: #f8fafc !important;
+          transform: translateY(-1px) scale(1.001);
+        }
         .ops-pool-table .ops-pool-stale > td { background: #fff7f6 !important; }
-        .ops-pool-table .ops-pool-stale:hover > td { background: #fff7f6 !important; }
+        .ops-pool-table .ops-pool-stale:hover > td {
+          background: #fff1f0 !important;
+          transform: translateY(-1px) scale(1.001);
+        }
         .ops-pool-table .ant-table-tbody > tr:hover > td:first-child { box-shadow: inset 3px 0 0 #0f766e; }
       `}</style>
       <Table

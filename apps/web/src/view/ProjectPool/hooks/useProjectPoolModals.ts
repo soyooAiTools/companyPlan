@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
@@ -10,9 +11,11 @@ type SegmentTicketWithSource = OpsSegmentTicket & {
   projectId?: string;
   projectName?: string;
   projectStage?: string;
-  segmentId?: number;
+  segmentId?: number | null;
   segmentName?: string;
 };
+
+const waitForPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
 export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>) {
   const [chOpen, setChOpen] = useState(false);
@@ -171,33 +174,34 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   };
 
   const openGroupTickets = async (title: string, rows: OpsProjectPoolRow[], mode: "overdue" | "unfinished", segmentIds?: number[], ownerName?: string) => {
-    setSegTitle(title);
-    setSegTabs([]);
-    setSegProjectId("");
-    setSegProjectName("");
-    setSegSegmentId([]);
-    setSegOpen(true);
-    setSegDetailOpen(false);
-    setSegDetail(null);
-    setSegDetailEvents([]);
-    setSegTickets([]);
-    setSegLoading(true);
+    flushSync(() => {
+      setSegTitle(title);
+      setSegTabs([]);
+      setSegProjectId("");
+      setSegProjectName("");
+      setSegSegmentId([]);
+      setSegOpen(true);
+      setSegDetailOpen(false);
+      setSegDetail(null);
+      setSegDetailEvents([]);
+      setSegTickets([]);
+      setSegLoading(true);
+    });
+    await waitForPaint();
     try {
-      const segmentFilter = new Set((segmentIds || []).filter(Boolean));
-      const pairs = rows.flatMap((row) => row.segments.filter((segment) => !segmentFilter.size || segmentFilter.has(segment.id)).map((segment) => ({ row, segment })));
-      const results = await Promise.all(
-        pairs.map(async ({ row, segment }) => {
-          const result = await opsApi.projectSegmentTickets(row.id, segment.id);
-          return result.tickets.map((ticket) => ({ ...ticket, projectId: row.id, projectName: row.name, projectStage: row.stage, segmentId: segment.id, segmentName: segment.name }) satisfies SegmentTicketWithSource);
+      const projectsById = new Map(rows.map((row) => [row.id, row]));
+      const result = await opsApi.projectPoolGroupTickets({
+        projectIds: rows.map((row) => row.id),
+        mode,
+        segmentIds,
+        ownerName,
+      });
+      setSegTickets(
+        result.tickets.map((ticket) => {
+          const row = ticket.projectId ? projectsById.get(ticket.projectId) : undefined;
+          return { ...ticket, projectName: ticket.projectName || row?.name || "", projectStage: row?.stage || "" } satisfies SegmentTicketWithSource;
         }),
       );
-      const unique = new Map<string, SegmentTicketWithSource>();
-      for (const ticket of results.flat()) {
-        if (mode === "overdue" && !ticket.overdue) continue;
-        if (ownerName && ticket.ownerName !== ownerName) continue;
-        unique.set(ticket.id, ticket);
-      }
-      setSegTickets([...unique.values()]);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载工单失败");
     } finally {
@@ -216,10 +220,13 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     const projectId = source.projectId || segProjectId;
     const segmentId = source.segmentId ?? segSegmentId[0];
     if (!projectId || segmentId == null) return;
-    setSegDetailOpen(true);
-    setSegDetail(null);
-    setSegDetailEvents([]);
-    setSegDetailLoading(true);
+    flushSync(() => {
+      setSegDetailOpen(true);
+      setSegDetail(null);
+      setSegDetailEvents([]);
+      setSegDetailLoading(true);
+    });
+    await waitForPaint();
     try {
       const result = await opsApi.projectSegmentTicketDetail(projectId, segmentId, ticket.id);
       setSegDetail(result.ticket);

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
-import { App, Radio, Tag, Typography } from "antd";
+import { App, Radio } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { opsApi, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
@@ -19,7 +19,7 @@ import GroupedProjectSheet from "./sheets/GroupedProjectSheet";
 import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
 import type { ProjectPoolSheetKey } from "./sheets/sheetTypes";
-import { groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember, type ProjectPoolOwnerRow } from "./utils/groupProjectRows";
+import { groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember } from "./utils/groupProjectRows";
 
 dayjs.locale("zh-cn");
 
@@ -79,6 +79,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setStatusFilter,
 		stageFilter,
 		setStageFilter,
+		plannerFilter,
+		setPlannerFilter,
 		segmentFilter,
 		setSegmentFilter,
 		segmentOptions,
@@ -129,13 +131,20 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	}, [isStaleSheet, tab, sheet, filterKey, mine]);
 
 	useEffect(() => {
-		if (sheet !== "owner" || tab !== "all" || allRowsLoading) {
-			if (sheet !== "owner") setOwnerGroups([]);
+		if (sheet !== "owner" || tab !== "all") {
+			setOwnerGroups([]);
+			setOwnerGroupsLoading(false);
+			return;
+		}
+		if (allRowsLoading) {
+			setOwnerGroups([]);
+			setOwnerGroupsLoading(true);
 			return;
 		}
 		let cancelled = false;
 		const loadOwnerGroups = async () => {
 			setOwnerGroupsLoading(true);
+			setOwnerGroups([]);
 			try {
 				const role = OWNER_ROLE_OPTIONS.find((option) => option.key === ownerRoleKey) || OWNER_ROLE_OPTIONS[0];
 				const activeRows = allRows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
@@ -180,6 +189,22 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [projectParam, rows]);
 
+	const plannerOptions = useMemo(() => {
+		const plannersByName = new Map<string, { name: string; avatar?: string }>();
+		for (const row of [...rows, ...allRows]) {
+			const planners: { name: string; avatar?: string }[] = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim() })) : [];
+			for (const planner of planners) {
+				const name = planner.name?.trim();
+				if (!name) continue;
+				const current = plannersByName.get(name);
+				if (!current || (!current.avatar && planner.avatar)) {
+					plannersByName.set(name, { name, avatar: planner.avatar || current?.avatar });
+				}
+			}
+		}
+		return [...plannersByName.values()].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
+	}, [allRows, rows]);
+
 	const columns = useProjectPoolColumns(
 		dialogs.actions,
 		groupMode ? 0 : (page - 1) * pageSize,
@@ -188,6 +213,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 					search,
 					statusFilter,
 					stageFilter,
+					plannerFilter,
+					plannerOptions,
 					segmentFilter,
 					segmentOptions,
 					onSearchChange: setSearch,
@@ -197,6 +224,10 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 					},
 					onStageFilterChange: (value) => {
 						setStageFilter(value);
+						setPage(1);
+					},
+					onPlannerFilterChange: (value) => {
+						setPlannerFilter(value);
 						setPage(1);
 					},
 					onSegmentFilterChange: (value) => {
@@ -209,27 +240,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	);
 	const displayColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
 		const baseColumns = mine ? columns.filter((column) => !["stage", "stageDeadlines", "remark", "tickets"].includes(String(column.key))) : columns;
-		if (sheet !== "owner") return baseColumns;
-		const ownerColumn: ColumnsType<OpsProjectPoolRow>[number] = {
-			title: "负责人标签",
-			key: "ownerTagsText",
-			width: 180,
-			render: (_: unknown, row) => {
-				const text = (row as ProjectPoolOwnerRow).ownerTagsText;
-				if (!text) return <Typography.Text type="secondary">—</Typography.Text>;
-				return (
-					<div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-						{text.split("、").map((segment) => (
-							<Tag key={segment} color="blue" style={{ margin: 0 }}>
-								{segment}
-							</Tag>
-						))}
-					</div>
-				);
-			},
-		};
-		return [...baseColumns.slice(0, 2), ownerColumn, ...baseColumns.slice(2)];
-	}, [columns, mine, sheet]);
+		return baseColumns;
+	}, [columns, mine]);
 
 	return (
 		<div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 32px)" }}>
@@ -267,6 +279,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 						columns={displayColumns}
 						loading={allRowsLoading || (sheet === "owner" && ownerGroupsLoading)}
 						scrollY={groupScrollY}
+						hideStats={sheet === "owner"}
 						onOpenLogs={dialogs.actions.openLogs}
 						onOpenGroupTickets={(group, mode) => {
 							void dialogs.actions.openGroupTickets(`工单 · ${group.title} · ${mode === "overdue" ? "工单逾期" : "未完成工单"}`, group.rows, mode, group.segmentIds, group.ownerName);

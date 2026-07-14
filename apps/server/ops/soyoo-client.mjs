@@ -88,6 +88,7 @@ export const soyooClient = {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
     if (opts.keyword) q.set("keyword", String(opts.keyword));
     if (opts.status) q.set("status", String(opts.status));
+    if (opts.planner) q.set("planner", String(opts.planner));
     if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的状态(逗号分隔),如 回收中,未启动
     if (Array.isArray(opts.excludeTenants) && opts.excludeTenants.length) q.set("exclude_tenants", opts.excludeTenants.join(",")); // 排除的客户名(逗号分隔)
     if (opts.memberUserId) q.set("member_user_id", String(opts.memberUserId));

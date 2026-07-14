@@ -24,6 +24,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""),
           stage: String(req.query.stage ?? ""),
+          planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
         }),
       );
@@ -43,6 +44,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""), // 不传则后端默认按「开启监控」的状态查
           stage: String(req.query.stage ?? ""), // 制作阶段多选(逗号分隔)
+          planner: String(req.query.planner ?? ""), // 策划多选(逗号分隔)
           segment: String(req.query.segment ?? ""), // 环节多选(逗号分隔):只看包含这些未完成环节工单的项目
         }),
       );
@@ -73,6 +75,22 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/owner-members", requireAuth, requirePlanner, async (req, res) => {
     try {
       res.json(await pool.listOwnerMembersByTags({ projectIds: req.body?.projectIds, tagNames: req.body?.tagNames }));
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 分组头部工单弹框:按项目批量查工单,避免前端逐环节请求导致漏数
+  app.post("/api/ops/project-pool/group-tickets", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json({
+        tickets: await pool.listProjectPoolTickets({
+          projectIds: req.body?.projectIds,
+          mode: req.body?.mode,
+          segmentIds: req.body?.segmentIds,
+          ownerName: req.body?.ownerName,
+        }),
+      });
     } catch (e) {
       soyooErrorResponse(res, e);
     }

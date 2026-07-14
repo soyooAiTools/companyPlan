@@ -12,13 +12,14 @@ type GroupedProjectPoolViewProps = {
 	columns: ColumnsType<OpsProjectPoolRow>;
 	loading: boolean;
 	scrollY: number;
+	hideStats?: boolean;
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 };
 
 type ProjectGroupTableRow =
 	| { kind: "group"; key: string; group: ProjectPoolGroup }
-	| { kind: "project"; key: string; project: OpsProjectPoolRow; groupIndex: number };
+	| { kind: "project"; key: string; groupKey: string; project: OpsProjectPoolRow; groupIndex: number };
 
 const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProjectPoolRow) => {
 	const dataIndex = column.dataIndex;
@@ -27,7 +28,7 @@ const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProject
 	return undefined;
 };
 
-const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, onOpenGroupTickets: GroupedProjectPoolViewProps["onOpenGroupTickets"]) => (
+const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, hideStats: boolean, onOpenGroupTickets: GroupedProjectPoolViewProps["onOpenGroupTickets"]) => (
 	<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, width: "100%" }}>
 		<div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, position: "sticky", left: 16, zIndex: 2, background: "#fff", paddingRight: 12 }}>
 			{collapsed ? <RightOutlined style={{ color: "#64748b", fontSize: 11 }} /> : <DownOutlined style={{ color: "#64748b", fontSize: 11 }} />}
@@ -37,7 +38,7 @@ const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, onOpenGroupTick
 				{group.stats.projectCount} 个项目
 			</Tag>
 		</div>
-		<div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", whiteSpace: "nowrap", position: "sticky", right: 12, background: "#fff" }}>
+		{hideStats ? null : <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", whiteSpace: "nowrap", position: "sticky", right: 12, background: "#fff" }}>
 			<Tag color={group.stats.deadlineOverdue ? "red" : "default"} style={{ margin: 0, width: 92, textAlign: "center" }}>
 				交付逾期 {group.stats.deadlineOverdue}
 			</Tag>
@@ -59,22 +60,31 @@ const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, onOpenGroupTick
 				}}>
 				未完成工单 {group.stats.ticketTotal}
 			</Tag>
-		</div>
+		</div>}
 	</div>
 );
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, onOpenLogs, onOpenGroupTickets }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
 	const rows = useMemo<ProjectGroupTableRow[]>(() => {
 		const nextRows: ProjectGroupTableRow[] = [];
 		for (const group of groups) {
 			nextRows.push({ kind: "group", key: `group-${group.key}`, group });
 			if (!collapsedKeys.has(group.key)) {
-				nextRows.push(...group.rows.map((project, groupIndex) => ({ kind: "project" as const, key: `project-${group.key}-${project.id}`, project, groupIndex })));
+				nextRows.push(...group.rows.map((project, groupIndex) => ({ kind: "project" as const, key: `project-${group.key}-${project.id}`, groupKey: group.key, project, groupIndex })));
 			}
 		}
 		return nextRows;
 	}, [collapsedKeys, groups]);
+
+	const toggleGroup = (groupKey: string) => {
+		setCollapsedKeys((prev) => {
+			const next = new Set(prev);
+			if (next.has(groupKey)) next.delete(groupKey);
+			else next.add(groupKey);
+			return next;
+		});
+	};
 
 	const groupedColumns = useMemo<ColumnsType<ProjectGroupTableRow>>(
 		() =>
@@ -94,7 +104,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 						return projectColumn.onCell?.(row.project, 0) || {};
 					},
 					render: (_value: unknown, row, index) => {
-						if (row.kind === "group") return columnIndex === 0 ? groupLabel(row.group, collapsedKeys.has(row.group.key), onOpenGroupTickets) : null;
+						if (row.kind === "group") return columnIndex === 0 ? groupLabel(row.group, collapsedKeys.has(row.group.key), hideStats, onOpenGroupTickets) : null;
 						const value = projectCellValue(projectColumn, row.project);
 						if (projectColumn.render) return projectColumn.render(value, row.project, row.groupIndex) as ReactNode;
 						return value as ReactNode;
@@ -102,7 +112,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				};
 				return nextColumn;
 			}),
-		[collapsedKeys, columns, onOpenGroupTickets],
+		[collapsedKeys, columns, hideStats, onOpenGroupTickets],
 	);
 
 	if (!loading && !groups.length) {
@@ -155,6 +165,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				.ops-pool-group-table .ant-table-tbody > tr > td {
 					padding-top: 14px;
 					padding-bottom: 14px;
+					transition: background-color 160ms ease, transform 160ms ease;
 				}
 				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-group-row > td {
 					background: #fff !important;
@@ -171,16 +182,18 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					background: #fff !important;
 				}
 				.ops-pool-group-table .ant-table-tbody > tr:not(.ops-pool-stale):not(.ops-pool-group-row):hover > td {
-					background: transparent !important;
+					background: #f8fafc !important;
+					transform: translateY(-1px) scale(1.001);
 				}
 				.ops-pool-group-table .ops-pool-stale > td {
 					background: #fff7f6 !important;
 				}
 				.ops-pool-group-table .ops-pool-stale:hover > td {
-					background: #fff7f6 !important;
+					background: #fff1f0 !important;
+					transform: translateY(-1px) scale(1.001);
 				}
 				.ops-pool-group-table .ant-table-tbody > tr:not(.ops-pool-group-row):hover > td:first-child {
-					box-shadow: inset 3px 0 0 #0f766e;
+					box-shadow: inset 3px 0 0 #0f766e, 6px 0 8px -8px rgba(15, 23, 42, 0.18);
 				}
 				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-project-row > td:first-child {
 					padding-left: 34px;
@@ -217,13 +230,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					if (row.kind === "group") {
 						return {
 							className: "ops-pool-group-row",
-							onClick: () =>
-								setCollapsedKeys((prev) => {
-									const next = new Set(prev);
-									if (next.has(row.group.key)) next.delete(row.group.key);
-									else next.add(row.group.key);
-									return next;
-								}),
+							onClick: () => toggleGroup(row.group.key),
 							style: { cursor: "pointer" },
 						};
 					}

@@ -87,8 +87,10 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
         title={full}
         placement="topLeft"
         color="#fff"
-        overlayStyle={{ maxWidth: "none" }}
-        overlayInnerStyle={{ width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" }}>
+        styles={{
+          root: { maxWidth: "none" },
+          container: { width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" },
+        }}>
         <div style={{ display: "inline-flex", flexDirection: "column", gap: 2, maxWidth: 190 }}>
           <span style={{ color: "#0f172a", fontWeight: 700, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             ({fmtStageDate(next.date)}){next.name || next.key}

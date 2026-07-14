@@ -17,6 +17,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [debounced, setDebounced] = useState("");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [plannerFilter, setPlannerFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
   const [allRows, setAllRows] = useState<OpsProjectPoolRow[]>([]);
@@ -24,13 +25,15 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
 
   const load = async () => {
     setLoading(true);
+    setRows([]);
+    setTotal(0);
     try {
       const result =
         tab === "stale"
           ? await opsApi.projectPoolStale({ page, pageSize })
           : mine
-            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter })
-            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter });
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter });
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
@@ -46,9 +49,10 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       return;
     }
     setAllRowsLoading(true);
+    setAllRows([]);
     try {
       const pageSizeForAll = 100;
-      const base = { q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, segment: segmentFilter };
+      const base = { q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter };
       const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...base });
       const nextRows = [...first.rows];
       const pageCount = Math.ceil(first.total / pageSizeForAll);
@@ -75,13 +79,14 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setDebounced("");
     setStatusFilter([]);
     setStageFilter([]);
+    setPlannerFilter([]);
     setSegmentFilter([]);
   }, [mine]);
 
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, tab, page, pageSize, statusFilter, stageFilter, segmentFilter, debounced]);
+  }, [mine, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, debounced]);
 
   useEffect(() => {
     opsApi
@@ -114,12 +119,14 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setStatusFilter,
     stageFilter,
     setStageFilter,
+    plannerFilter,
+    setPlannerFilter,
     segmentFilter,
     setSegmentFilter,
     segmentOptions,
     allRows,
     allRowsLoading,
-    filterKey: [debounced.trim(), statusFilter.join(","), stageFilter.join(","), segmentFilter.join(",")].join("|"),
+    filterKey: [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(",")].join("|"),
     load,
     loadAllRows,
   };

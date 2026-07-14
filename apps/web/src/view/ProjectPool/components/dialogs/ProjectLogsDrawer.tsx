@@ -19,7 +19,7 @@ export default function ProjectLogsDrawer({ open, project, logs, loading, logKin
   const shownLogs = logs.filter((lg) => logKind === "all" || lg.kind === logKind);
 
   return (
-    <Drawer title={`项目名称:${project?.name ?? ""}`} open={open} onClose={onClose} width={460}>
+    <Drawer title={`项目名称:${project?.name ?? ""}`} open={open} onClose={onClose} size={460}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, fontSize: 15, color: "#0f172a" }}>项目流转记录</span>
         <SegmentedTabs

@@ -20,7 +20,7 @@ type OpsTicketDetailDrawerProps = {
 
 export default function OpsTicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent }: OpsTicketDetailDrawerProps) {
 	return (
-		<Drawer title={detail?.title} open={!!detail} onClose={onClose} width={480} destroyOnHidden>
+		<Drawer title={detail?.title} open={!!detail} onClose={onClose} size={480} destroyOnHidden>
 			{detail &&
 				(loading ? (
 					<div style={{ textAlign: "center", padding: "80px 0" }}>

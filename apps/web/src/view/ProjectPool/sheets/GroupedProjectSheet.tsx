@@ -11,11 +11,12 @@ type GroupedProjectSheetProps = {
 	columns: ColumnsType<OpsProjectPoolRow>;
 	loading: boolean;
 	scrollY: number;
+	hideStats?: boolean;
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 };
 
-export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, onOpenLogs, onOpenGroupTickets }: GroupedProjectSheetProps) {
+export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, hideStats, onOpenLogs, onOpenGroupTickets }: GroupedProjectSheetProps) {
 	const groups = useMemo(() => groupProjects(rows, mode), [mode, rows]);
-	return <GroupedProjectPoolView groups={groupsOverride ?? groups} columns={columns} loading={loading} scrollY={scrollY} onOpenLogs={onOpenLogs} onOpenGroupTickets={onOpenGroupTickets} />;
+	return <GroupedProjectPoolView groups={groupsOverride ?? groups} columns={columns} loading={loading} scrollY={scrollY} hideStats={hideStats} onOpenLogs={onOpenLogs} onOpenGroupTickets={onOpenGroupTickets} />;
 }
