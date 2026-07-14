@@ -139,6 +139,7 @@ export function useProjectPoolColumns(
 			title: "项目名称",
 			key: "name",
 			width: 220,
+			fixed: "left",
 			filterDropdown: filters ? ({ close }) => <HeaderSearchDropdown value={filters.search} onApply={filters.onSearchChange} close={close} /> : undefined,
 			filterIcon: filters ? () => (filters.search ? <SearchOutlined style={{ color: "#1677ff" }} /> : <SearchOutlined style={{ color: "#94a3b8" }} />) : undefined,
 			render: (_: unknown, row, index) => (
@@ -213,23 +214,23 @@ export function useProjectPoolColumns(
 				: undefined,
 			filterIcon: filters ? () => filterIcon(filters.stageFilter.length > 0) : undefined,
 			render: (_: unknown, row) => (
-				<Space size={6}>
-					<Tag style={{ background: "#f0f5ff", color: "#1d39c4", padding: "2px 10px", fontSize: 13, borderRadius: 6, border: "none", margin: 0 }}>{row.stage || "—"}</Tag>
-					{options.readonly ? null : (
-						<Tooltip title="修改阶段">
-							<Button
-								type="text"
-								size="small"
-								icon={<EditOutlined style={{ fontSize: 15 }} />}
-								style={{ color: "#0f766e" }}
-								onClick={(e) => {
-									e.stopPropagation();
-									actions.openChange(row, "stage");
-								}}
-							/>
-						</Tooltip>
-					)}
-				</Space>
+				<Tag
+					style={{
+						background: "#f0f5ff",
+						color: "#1d39c4",
+						padding: "2px 10px",
+						fontSize: 13,
+						borderRadius: 6,
+						border: "none",
+						margin: 0,
+						cursor: options.readonly ? "default" : "pointer",
+					}}
+					onClick={(e) => {
+						e.stopPropagation();
+						if (!options.readonly) actions.openChange(row, "stage");
+					}}>
+					{row.stage || "—"}
+				</Tag>
 			),
 		},
 		{
@@ -303,9 +304,9 @@ export function useProjectPoolColumns(
 					.trim();
 				const preview = text || (row.remark ? "[图文备注]" : "");
 				return (
-					<Space size={4} align="start">
+					<div style={{ display: "flex", alignItems: "center", gap: 4, width: 160, minWidth: 0 }}>
 						{preview ? (
-							<span style={{ fontSize: 13, color: "#334155", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", maxWidth: 150 }}>
+							<span style={{ fontSize: 13, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
 								{preview}
 							</span>
 						) : (
@@ -325,7 +326,7 @@ export function useProjectPoolColumns(
 								/>
 							</Tooltip>
 						)}
-					</Space>
+					</div>
 				);
 			},
 		},

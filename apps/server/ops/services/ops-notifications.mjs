@@ -3,6 +3,7 @@
 import { prisma } from "../prisma.mjs";
 import { nowIso } from "../ops-helpers.mjs";
 import { pushToUser } from "../ops-notify-sse.mjs";
+import { logger } from "../../core/logger.mjs";
 
 // ===== 写 =====
 
@@ -70,7 +71,7 @@ export async function notifyTicketAssigned(ticket, actorId) {
     if (!(await isEventEnabled("ticket_assigned"))) return;
     await emit([buildTicketAssigned(ticket)]);
   } catch (e) {
-    console.error("[notif] ticket_assigned 失败:", e?.message || e);
+    logger.error(e, { scope: "notification", event: "ticket_assigned" });
   }
 }
 
@@ -81,7 +82,7 @@ export async function notifyPriorityChanged(ticket, fromPriority, toPriority, ac
     if (!(await isEventEnabled("ticket_priority_changed"))) return;
     await emit([buildPriorityChanged(ticket, fromPriority, toPriority)]);
   } catch (e) {
-    console.error("[notif] ticket_priority_changed 失败:", e?.message || e);
+    logger.error(e, { scope: "notification", event: "ticket_priority_changed" });
   }
 }
 
@@ -93,7 +94,7 @@ export async function notifyStatusChanged(ticket, fromStatus, toStatus, actorId)
     if (!(await isEventEnabled("ticket_status_changed"))) return;
     await emit([buildStatusChanged(ticket, fromStatus, toStatus)]);
   } catch (e) {
-    console.error("[notif] ticket_status_changed 失败:", e?.message || e);
+    logger.error(e, { scope: "notification", event: "ticket_status_changed" });
   }
 }
 

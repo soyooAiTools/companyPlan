@@ -9,6 +9,7 @@ import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
 import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
+import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
@@ -395,6 +396,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
     await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
+    void refreshProjectPoolSnapshot(created.project_id).catch(() => {});
     res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()) });
   });
 
@@ -445,6 +447,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: id, user, action: "指派", note: `指派给 ${member.name}` });
     await notif.notifyTicketAssigned(updated, meId(user)); // 改派后通知新负责人(指给自己不通知)
+    void refreshProjectPoolSnapshot(updated.project_id).catch(() => {});
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
@@ -464,6 +467,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const updated = await prisma.tickets.update({ where: { id }, data });
     await logTicketEvent({ ticketId: id, user, action: statusActionLabel(t.status, status), fromStatus: t.status, toStatus: status, note: reason });
     await notif.notifyStatusChanged(updated, t.status, status, meId(user)); // 通知负责人(自己改自己的单不通知)
+    void refreshProjectPoolSnapshot(updated.project_id).catch(() => {});
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 

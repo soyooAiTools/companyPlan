@@ -344,10 +344,15 @@ export const opsApi = {
 		requestJson<{ ticket: OpsTicket; events: OpsTicketEvent[] }>(
 			`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets/${encodeURIComponent(ticketId)}?segmentId=${segmentId}`,
 		),
-	projectPoolStale: (params: { page?: number; pageSize?: number } = {}) => {
+	projectPoolStale: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.stage?.length) qs.set("stage", params.stage.join(","));
+		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
 	},

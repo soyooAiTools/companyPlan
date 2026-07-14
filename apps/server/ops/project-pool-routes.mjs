@@ -2,6 +2,12 @@
 import * as pool from "./services/ops-project-pool.mjs";
 import { isAdmin, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
 
+const PROJECT_POOL_MAX_PAGE_SIZE = 500;
+
+function projectPoolPageSize(value, fallback = 20) {
+  return Math.min(PROJECT_POOL_MAX_PAGE_SIZE, Math.max(1, Math.floor(Number(value) || fallback)));
+}
+
 // 仅 管理员 或 策划(制片)可访问项目池
 async function requirePlanner(req, res, next) {
   try {
@@ -20,7 +26,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
         await pool.listMyProjectPool({
           user: req.user,
           page: Number(req.query.page) || 1,
-          pageSize: Math.min(100, Number(req.query.pageSize) || 20),
+          pageSize: projectPoolPageSize(req.query.pageSize),
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""),
           stage: String(req.query.stage ?? ""),
@@ -40,7 +46,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
         await pool.listProjectPool({
           user: req.user,
           page: Number(req.query.page) || 1,
-          pageSize: Math.min(100, Number(req.query.pageSize) || 20),
+          pageSize: projectPoolPageSize(req.query.pageSize),
           q: String(req.query.q ?? ""),
           status: String(req.query.status ?? ""), // 不传则后端默认按「开启监控」的状态查
           stage: String(req.query.stage ?? ""), // 制作阶段多选(逗号分隔)
@@ -56,7 +62,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   // 超时关注列表
   app.get("/api/ops/project-pool/stale", requireAuth, requirePlanner, async (req, res) => {
     try {
-      res.json(await pool.listStale({ user: req.user, page: Number(req.query.page) || 1, pageSize: Math.min(100, Number(req.query.pageSize) || 20) }));
+      res.json(
+        await pool.listStale({
+          user: req.user,
+          page: Number(req.query.page) || 1,
+          pageSize: projectPoolPageSize(req.query.pageSize),
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          stage: String(req.query.stage ?? ""),
+          planner: String(req.query.planner ?? ""),
+          segment: String(req.query.segment ?? ""),
+        }),
+      );
     } catch (e) {
       soyooErrorResponse(res, e);
     }
@@ -75,6 +92,23 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/owner-members", requireAuth, requirePlanner, async (req, res) => {
     try {
       res.json(await pool.listOwnerMembersByTags({ projectIds: req.body?.projectIds, tagNames: req.body?.tagNames }));
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 手动重建项目池快照(管理员):部署后可先跑一次预热,后续由 outbox/ops 修改增量刷新
+  app.post("/api/ops/project-pool/rebuild-snapshot", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      res.json({ ok: true, count: await pool.rebuildProjectPoolSnapshots() });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  app.get("/api/ops/project-pool/snapshot-stats", requireAuth, requireAdmin, async (_req, res) => {
+    try {
+      res.json(await pool.projectPoolSnapshotStats());
     } catch (e) {
       soyooErrorResponse(res, e);
     }

@@ -34,6 +34,16 @@ export const maxAttachmentBytes = Number(process.env.COMPANYPLAN_MAX_ATTACHMENT_
 export const port = Number(process.env.PORT ?? "4174");
 // 后台全量同步间隔（毫秒）。默认 30 分钟,作兜底——实时性靠 soyoo push 触发的去抖同步；设 0 关闭定时同步（仍会启动时同步一次）。
 export const opsSyncIntervalMs = Number(process.env.COMPANYPLAN_OPS_SYNC_INTERVAL_MS ?? `${30 * 60 * 1000}`);
+export const redisConfig = {
+  enabled: process.env.COMPANYPLAN_REDIS_ENABLED !== "0" && !!(process.env.COMPANYPLAN_REDIS_URL || process.env.COMPANYPLAN_REDIS_HOST),
+  url: process.env.COMPANYPLAN_REDIS_URL ?? "",
+  host: process.env.COMPANYPLAN_REDIS_HOST ?? "127.0.0.1",
+  port: Number(process.env.COMPANYPLAN_REDIS_PORT ?? "6379"),
+  password: process.env.COMPANYPLAN_REDIS_PASSWORD ?? "",
+  db: Number(process.env.COMPANYPLAN_REDIS_DB ?? "0"),
+  keyPrefix: process.env.COMPANYPLAN_REDIS_KEY_PREFIX ?? "companyplan:",
+  projectPoolTtlSeconds: Number(process.env.COMPANYPLAN_PROJECT_POOL_CACHE_TTL_SECONDS ?? "120"),
+};
 export const statusOptions = new Set(["排队中", "进行中", "阻塞", "已完成"]);
 export const priorityOptions = new Set(["紧急", "优先", "普通", "低优先"]);
 export const attachmentKinds = new Set(["图片", "附件", "文件"]);

@@ -16,12 +16,19 @@ export function soyooErrorResponse(res, e) {
 }
 
 // 是否「策划」= soyoo 用户带「制片」标签(项目池菜单可见/访问;实时查 soyoo,失败降级 false)
+const plannerCache = new Map();
 export async function isPlanner(user) {
   if (!user) return false;
+  const uid = meId(user);
+  const hit = plannerCache.get(uid);
+  if (hit && Date.now() - hit.t < 5 * 60 * 1000) return hit.v;
   try {
-    const su = await getUser(meId(user));
-    return !!su && (su.tags || []).includes("制片");
+    const su = await getUser(uid);
+    const v = !!su && (su.tags || []).includes("制片");
+    plannerCache.set(uid, { v, t: Date.now() });
+    return v;
   } catch {
+    plannerCache.set(uid, { v: false, t: Date.now() });
     return false;
   }
 }

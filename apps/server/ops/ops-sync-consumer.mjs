@@ -2,7 +2,8 @@
 // 不丢:ops 挂了 outbox 堆着,起来从 last_seq 续传;幂等:重复处理就是再 UPDATE 成同值。
 import { prisma } from "./prisma.mjs";
 import { soyooClient } from "./soyoo-client.mjs";
-import { getUser } from "./ops-realtime.mjs";
+import { getProjectWithMembers, getUser } from "./ops-realtime.mjs";
+import { autoCreateProgramFirstTicket, refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
 
 async function getLastSeq() {
   const row = await prisma.ops_sync_state.findUnique({ where: { k: "last_seq" } });
@@ -56,6 +57,26 @@ async function refreshProject(projectId) {
       source_project_name: p.tenant_name ?? "",
     },
   });
+  await refreshProjectPoolSnapshot(projectId);
+}
+
+async function handleProjectChange(ch, logger) {
+  const projectId = String(ch.entity_id);
+  if (ch.action === "create_project") {
+    const { project, members } = await getProjectWithMembers(projectId);
+    if (!project) return;
+    const result = await autoCreateProgramFirstTicket({
+      requesterUserId: String(ch.requester_user_id || ""),
+      project,
+      members,
+      projectId,
+      eventNote: "项目立项后自动生成",
+    });
+    logger?.info?.("[ops-outbox] auto create program ticket", { projectId, requesterUserId: ch.requester_user_id, ...result });
+    await refreshProjectPoolSnapshot(projectId);
+    return;
+  }
+  await refreshProject(projectId);
 }
 // 客户改名 → 刷该客户所有工单的 客户名 快照
 async function refreshTenant(tenantId) {
@@ -77,7 +98,7 @@ async function poll(logger) {
       for (const ch of changes) {
         try {
           if (ch.entity_type === "user") await refreshUser(String(ch.entity_id));
-          else if (ch.entity_type === "project") await refreshProject(String(ch.entity_id));
+          else if (ch.entity_type === "project") await handleProjectChange(ch, logger);
           else if (ch.entity_type === "tenant") await refreshTenant(String(ch.entity_id));
         } catch (e) {
           logger?.warn?.("[ops-outbox] apply change failed", { seq: ch.seq, type: ch.entity_type, error: e?.message ?? String(e) });

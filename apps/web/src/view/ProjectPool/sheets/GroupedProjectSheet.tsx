@@ -14,9 +14,21 @@ type GroupedProjectSheetProps = {
 	hideStats?: boolean;
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
+	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
 };
 
-export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, hideStats, onOpenLogs, onOpenGroupTickets }: GroupedProjectSheetProps) {
+export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, hideStats, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects }: GroupedProjectSheetProps) {
 	const groups = useMemo(() => groupProjects(rows, mode), [mode, rows]);
-	return <GroupedProjectPoolView groups={groupsOverride ?? groups} columns={columns} loading={loading} scrollY={scrollY} hideStats={hideStats} onOpenLogs={onOpenLogs} onOpenGroupTickets={onOpenGroupTickets} />;
+	return (
+		<GroupedProjectPoolView
+			groups={groupsOverride ?? groups}
+			columns={columns}
+			loading={loading}
+			scrollY={scrollY}
+			hideStats={hideStats}
+			onOpenLogs={onOpenLogs}
+			onOpenGroupTickets={onOpenGroupTickets}
+			onOpenGroupDeadlineProjects={onOpenGroupDeadlineProjects}
+		/>
+	);
 }

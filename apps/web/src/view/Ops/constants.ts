@@ -25,7 +25,7 @@ export const OPS_TICKETS_DEFAULT_VIEW: OpsTicketsView = "table";
 // ===== 项目池公用常量 =====
 
 /** 项目状态(与 soyoo 项目状态枚举一致) */
-export const PROJECT_STATUSES = ["未启动", "推进中", "已完成", "已反馈", "待反馈", "回收中", "客户暂停"];
+export const PROJECT_STATUSES = ["未启动", "推进中", "已完成", "已反馈", "待反馈", "打包中", "回收中", "客户暂停"];
 
 /** 制作阶段(ops 自有,固定顺序即流程)。新增阶段就往这里加(注意与后端 ops/project-pool-constants.mjs 同步) */
 export const PROJECT_STAGES = ["资产确认", "场景单帧版本", "可交互初版", "功能完整版", "最终交付版"];
@@ -37,6 +37,7 @@ export const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
 	已完成: { bg: "#caeffc", text: "#000000" },
 	已反馈: { bg: "#faedc2", text: "#000000" },
 	待反馈: { bg: "#c4f2ec", text: "#000000" },
+	打包中: { bg: "#dbeafe", text: "#000000" },
 	回收中: { bg: "#fee3e2", text: "#000000" },
 	客户暂停: { bg: "#efe6fe", text: "#000000" },
 };

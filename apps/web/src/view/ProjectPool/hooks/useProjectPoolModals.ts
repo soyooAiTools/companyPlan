@@ -54,6 +54,10 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const [segDetailEvents, setSegDetailEvents] = useState<OpsTicketEvent[]>([]);
   const [segDetailLoading, setSegDetailLoading] = useState(false);
 
+  const [deadlineProjectsOpen, setDeadlineProjectsOpen] = useState(false);
+  const [deadlineProjectsTitle, setDeadlineProjectsTitle] = useState("");
+  const [deadlineProjectsRows, setDeadlineProjectsRows] = useState<OpsProjectPoolRow[]>([]);
+
   const [deadlineOpen, setDeadlineOpen] = useState(false);
   const [deadlineTarget, setDeadlineTarget] = useState<OpsProjectPoolRow | null>(null);
   const [deadlineRows, setDeadlineRows] = useState<OpsProjectStageDeadline[]>(normalizeStageDeadlines());
@@ -209,6 +213,12 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     }
   };
 
+  const openDeadlineOverdueProjects = (title: string, rows: OpsProjectPoolRow[]) => {
+    setDeadlineProjectsTitle(title);
+    setDeadlineProjectsRows(rows);
+    setDeadlineProjectsOpen(true);
+  };
+
   const switchSegTab = (segmentId: number | number[]) => {
     const segmentIds = Array.isArray(segmentId) ? segmentId : [segmentId];
     if (!segProjectId || !segmentIds.length) return;
@@ -348,6 +358,12 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       loading: segDetailLoading,
       close: () => setSegDetailOpen(false),
     },
+    deadlineProjects: {
+      open: deadlineProjectsOpen,
+      title: deadlineProjectsTitle,
+      rows: deadlineProjectsRows,
+      close: () => setDeadlineProjectsOpen(false),
+    },
     deadline: {
       open: deadlineOpen,
       target: deadlineTarget,
@@ -370,6 +386,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       openMembers,
       openSegTickets,
       openGroupTickets,
+      openDeadlineOverdueProjects,
       openSegTicketDetail,
       openDeadlineEdit,
     },

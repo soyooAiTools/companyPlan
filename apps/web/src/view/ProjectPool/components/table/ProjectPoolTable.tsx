@@ -71,6 +71,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         dataSource={rows}
         columns={columns}
         size="small"
+        virtual
         scroll={scrollY ? { x: 1350, y: scrollY } : { x: 1350 }}
         pagination={tablePagination}
         onRow={(row) => ({

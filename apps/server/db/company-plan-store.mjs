@@ -227,7 +227,7 @@ async function initializeSchema() {
 }
 
 async function seedDatabase() {
-  const count = (await db.prepare("SELECT COUNT(*) AS count FROM people").get()).count;
+  const count = (await db.prepare("SELECT COUNT(*) AS count FROM people WHERE id <> 'system'").get()).count;
   if (count > 0) {
     await seedConfigIfMissing();
     await backfillStoredAttachments();
@@ -263,11 +263,16 @@ async function seedDatabase() {
       )`
     );
 
-    for (const person of seedPeople) {
-      await insertPerson.run({ ...person, passwordHash: hashPassword(seedPassword) });
-    }
+  for (const person of seedPeople) {
+    await insertPerson.run({ ...person, passwordHash: hashPassword(seedPassword) });
+  }
+  await db.prepare(
+    `INSERT INTO people (id, username, password_hash, name, role_key, title, discipline, capacity, completion, disabled_at)
+     VALUES ('system', 'system', '', '系统', 'system', '系统', '系统', 0, 0, NULL)
+     ON DUPLICATE KEY UPDATE name = VALUES(name), role_key = VALUES(role_key), disabled_at = NULL`
+  ).run();
 
-    for (const project of seedProjects) {
+  for (const project of seedProjects) {
       await insertProject.run({
         ...project,
         ownerId: project.ownerId,
@@ -340,6 +345,14 @@ async function dropForeignKeyIfExists(tableName, fkName) {
   }
 }
 
+async function ensureSystemPerson() {
+  await db.prepare(
+    `INSERT INTO people (id, username, password_hash, name, role_key, title, discipline, capacity, completion, disabled_at, wechat_name, wechat_avatar)
+     VALUES ('system', 'system', '', '系统', 'system', '系统', '系统', 0, 0, NULL, '系统', '')
+     ON DUPLICATE KEY UPDATE name = VALUES(name), role_key = VALUES(role_key), disabled_at = NULL, wechat_name = VALUES(wechat_name)`
+  ).run();
+}
+
 async function migrateSchema() {
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
   await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
@@ -386,6 +399,7 @@ async function migrateSchema() {
   // 微信名称/头像(同步自 soyoo /ops/users,供负责人下拉显示 头像｜网名｜姓名)
   await ensureColumn("people", "wechat_name", "VARCHAR(191)");
   await ensureColumn("people", "wechat_avatar", "VARCHAR(1024)");
+  await ensureSystemPerson();
   // 弃用字段加注释(保留不删):
   await ensureColumnComment("tickets", "discipline", "VARCHAR(80) NOT NULL", "弃用:改用 tag_id;新单仍写标签名兼容历史");
   await ensureColumnComment("people", "discipline", "VARCHAR(80) NOT NULL", "弃用:全局岗位;改用 project_member_tags 解析负责人");
@@ -520,6 +534,26 @@ async function migrateSchema() {
     .run();
   // 项目备注(ops 自有,富文本;并入流转记录 kind=remark,此列存当前值)
   await ensureColumn("ops_project_ext", "remark", "MEDIUMTEXT");
+
+  // 项目池列表快照:仅服务 table 快速展示;真实数据仍来自 soyoo 项目 + ops 工单/扩展字段,可重建。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_project_pool_snapshot (
+        project_id VARCHAR(64) PRIMARY KEY,
+        row_json MEDIUMTEXT NOT NULL,
+        status VARCHAR(80) NOT NULL DEFAULT '',
+        stage VARCHAR(40) NOT NULL DEFAULT '',
+        tenant_name VARCHAR(160) NOT NULL DEFAULT '',
+        planner_name VARCHAR(255) NOT NULL DEFAULT '',
+        member_ids_json TEXT,
+        updated_at VARCHAR(40) NOT NULL,
+        version BIGINT NOT NULL DEFAULT 0,
+        KEY idx_opps_status (status),
+        KEY idx_opps_stage (stage),
+        KEY idx_opps_updated (updated_at)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
 
   // 通知(铃铛数据源):一条 = 发给某人的一条消息;dedup_key 唯一防重,read_at 空=未读
   await db
@@ -668,6 +702,7 @@ async function seedConfigRows(now) {
     { status: "已完成", enabled: 0, hours: 0 },
     { status: "已反馈", enabled: 1, hours: 24 },
     { status: "待反馈", enabled: 1, hours: 48 },
+    { status: "打包中", enabled: 1, hours: 48 },
     { status: "回收中", enabled: 0, hours: 0 },
     { status: "客户暂停", enabled: 0, hours: 0 },
   ];

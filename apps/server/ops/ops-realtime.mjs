@@ -47,6 +47,7 @@ export async function getProjectWithMembers(projectId) {
     avatar: m.wechat_avatar_url ?? "",
     wechatName: m.wechat_name ?? "",
     status: m.user_status ?? "",
+    assignedAt: m.assigned_at ?? "",
     tags: (m.tags ?? []).map((t) => ({ id: String(t.id), name: t.name ?? "" })),
   }));
   return { project, members };

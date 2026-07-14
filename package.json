@@ -15,8 +15,7 @@
     "start:prod": "pnpm --filter @companyplan/server start:prod",
     "deploy": "bash deploy/deploy.sh",
     "deploy:web": "pnpm build && node scripts/deploy-oss.mjs",
-    "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql",
-    "test:scenarios": "pnpm --filter @companyplan/server test:scenarios"
+    "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql"
   },
   "devDependencies": {
     "ali-oss": "^6.23.0"

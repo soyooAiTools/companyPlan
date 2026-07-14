@@ -1,6 +1,7 @@
 // 调 soyoo /integration 分组:ops 提单实时查 项目/用户/客户/标签 + 拉变更(outbox)。
 // 同机内网调用,无鉴权(同 soyoo /ops)。提单"显示"不走这里(读工单快照),只在"选择/建单/刷快照"时用。
 import { opsIntegration } from "../config/runtime.mjs";
+import { logger } from "../core/logger.mjs";
 
 const BASE = String(process.env.COMPANYPLAN_SOYOO_BASE_URL || opsIntegration?.baseUrl || "").replace(/\/+$/, "");
 const TIMEOUT = Number(opsIntegration?.timeoutMs ?? 12000);
@@ -32,7 +33,7 @@ async function callRaw(path, opts = {}) {
     return await res.json().catch(() => ({}));
   } catch (e) {
     // 集中记录所有 soyoo 调用失败的真实原因(超时/网络/非2xx);下游 catch 会吞成"无法连接 soyoo",这里先打日志
-    console.error(`[soyoo] 调用失败 ${path}:`, e?.name === "AbortError" ? `超时 ${TIMEOUT}ms` : e?.message || e);
+    logger.error(e, { scope: "soyoo", path, timeoutMs: TIMEOUT, timeout: e?.name === "AbortError" });
     throw e;
   } finally {
     clearTimeout(timer);

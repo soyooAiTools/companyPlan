@@ -288,6 +288,23 @@ model ops_project_ext {
   updated_at       String? @db.VarChar(40)
 }
 
+// 项目池列表快照:只用于 table 快速展示,可从 soyoo 项目 + ops 工单重建。
+model ops_project_pool_snapshot {
+  project_id      String  @id @db.VarChar(64)
+  row_json        String  @db.MediumText
+  status          String  @default("") @db.VarChar(80)
+  stage           String  @default("") @db.VarChar(40)
+  tenant_name     String  @default("") @db.VarChar(160)
+  planner_name    String  @default("") @db.VarChar(255)
+  member_ids_json String? @db.Text
+  updated_at      String  @db.VarChar(40)
+  version         BigInt  @default(0)
+
+  @@index([status], map: "idx_opps_status")
+  @@index([stage], map: "idx_opps_stage")
+  @@index([updated_at], map: "idx_opps_updated")
+}
+
 // 通知(铃铛数据源):一条 = 发给某人的一条消息;dedup_key 唯一防重,read_at 空=未读
 model ops_notifications {
   id           Int     @id @default(autoincrement())

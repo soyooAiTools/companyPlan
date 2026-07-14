@@ -4,6 +4,7 @@ import { Avatar, Table, Tag, Typography } from "antd";
 import type { ColumnsType, ColumnType } from "antd/es/table";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
+import VirtualGroupStickyBar from "../components/table/VirtualGroupStickyBar";
 import { isNextDeadlineOverdue } from "../deadlineUtils";
 import type { ProjectPoolGroup } from "../utils/groupProjectRows";
 
@@ -15,11 +16,15 @@ type GroupedProjectPoolViewProps = {
 	hideStats?: boolean;
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
+	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
 };
 
 type ProjectGroupTableRow =
 	| { kind: "group"; key: string; group: ProjectPoolGroup }
 	| { kind: "project"; key: string; groupKey: string; project: OpsProjectPoolRow; groupIndex: number };
+
+const GROUP_ROW_HEIGHT = 40;
+const PROJECT_ROW_HEIGHT = 66;
 
 const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProjectPoolRow) => {
 	const dataIndex = column.dataIndex;
@@ -28,7 +33,13 @@ const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProject
 	return undefined;
 };
 
-const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, hideStats: boolean, onOpenGroupTickets: GroupedProjectPoolViewProps["onOpenGroupTickets"]) => (
+const groupLabel = (
+	group: ProjectPoolGroup,
+	collapsed: boolean,
+	hideStats: boolean,
+	onOpenGroupTickets: GroupedProjectPoolViewProps["onOpenGroupTickets"],
+	onOpenGroupDeadlineProjects: GroupedProjectPoolViewProps["onOpenGroupDeadlineProjects"],
+) => (
 	<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, width: "100%" }}>
 		<div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, position: "sticky", left: 16, zIndex: 2, background: "#fff", paddingRight: 12 }}>
 			{collapsed ? <RightOutlined style={{ color: "#64748b", fontSize: 11 }} /> : <DownOutlined style={{ color: "#64748b", fontSize: 11 }} />}
@@ -39,7 +50,21 @@ const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, hideStats: bool
 			</Tag>
 		</div>
 		{hideStats ? null : <div style={{ display: "flex", alignItems: "center", gap: 8, marginLeft: "auto", whiteSpace: "nowrap", position: "sticky", right: 12, background: "#fff" }}>
-			<Tag color={group.stats.deadlineOverdue ? "red" : "default"} style={{ margin: 0, width: 92, textAlign: "center" }}>
+			<Tag
+				color={group.stats.deadlineOverdue ? "gold" : "default"}
+				style={{
+					margin: 0,
+					width: 92,
+					textAlign: "center",
+					cursor: group.stats.deadlineOverdue ? "pointer" : "default",
+					color: group.stats.deadlineOverdue ? "#ad6800" : undefined,
+					background: group.stats.deadlineOverdue ? "#fff7e6" : undefined,
+					borderColor: group.stats.deadlineOverdue ? "#ffd591" : undefined,
+				}}
+				onClick={(event) => {
+					event.stopPropagation();
+					if (group.stats.deadlineOverdue) onOpenGroupDeadlineProjects(group);
+				}}>
 				交付逾期 {group.stats.deadlineOverdue}
 			</Tag>
 			<Tag
@@ -64,7 +89,7 @@ const groupLabel = (group: ProjectPoolGroup, collapsed: boolean, hideStats: bool
 	</div>
 );
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
 	const rows = useMemo<ProjectGroupTableRow[]>(() => {
 		const nextRows: ProjectGroupTableRow[] = [];
@@ -104,7 +129,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 						return projectColumn.onCell?.(row.project, 0) || {};
 					},
 					render: (_value: unknown, row, index) => {
-						if (row.kind === "group") return columnIndex === 0 ? groupLabel(row.group, collapsedKeys.has(row.group.key), hideStats, onOpenGroupTickets) : null;
+						if (row.kind === "group") return columnIndex === 0 ? groupLabel(row.group, collapsedKeys.has(row.group.key), hideStats, onOpenGroupTickets, onOpenGroupDeadlineProjects) : null;
 						const value = projectCellValue(projectColumn, row.project);
 						if (projectColumn.render) return projectColumn.render(value, row.project, row.groupIndex) as ReactNode;
 						return value as ReactNode;
@@ -112,7 +137,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				};
 				return nextColumn;
 			}),
-		[collapsedKeys, columns, hideStats, onOpenGroupTickets],
+		[collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
 	);
 
 	if (!loading && !groups.length) {
@@ -217,33 +242,49 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					background: #e2e8f0;
 				}
 			`}</style>
-			<Table<ProjectGroupTableRow>
-				className="ops-pool-table ops-pool-group-table"
-				rowKey="key"
-				loading={loading}
-				dataSource={rows}
-				columns={groupedColumns}
-				size="small"
-				scroll={{ x: 1900, y: scrollY }}
-				pagination={false}
-				onRow={(row) => {
-					if (row.kind === "group") {
+			<VirtualGroupStickyBar<ProjectPoolGroup, ProjectGroupTableRow>
+				rows={rows}
+				groupRowHeight={GROUP_ROW_HEIGHT}
+				itemRowHeight={PROJECT_ROW_HEIGHT}
+				isGroupRow={(row) => row.kind === "group"}
+				getGroup={(row) => (row.kind === "group" ? row.group : null)}
+				getRowKey={(row) => row.key}
+				getActiveGroup={(row) => {
+					if (row.kind === "group") return row.group;
+					return groups.find((group) => group.key === row.groupKey) || null;
+				}}
+				getGroupKey={(group) => group.key}
+				renderGroup={(group) => groupLabel(group, collapsedKeys.has(group.key), hideStats, onOpenGroupTickets, onOpenGroupDeadlineProjects)}
+				onToggleGroup={toggleGroup}>
+				<Table<ProjectGroupTableRow>
+					className="ops-pool-table ops-pool-group-table"
+					rowKey="key"
+					loading={loading}
+					dataSource={rows}
+					columns={groupedColumns}
+					size="small"
+					virtual
+					scroll={{ x: 1900, y: scrollY }}
+					pagination={false}
+					onRow={(row) => {
+						if (row.kind === "group") {
+							return {
+								className: "ops-pool-group-row",
+								onClick: () => toggleGroup(row.group.key),
+								style: { cursor: "pointer" },
+							};
+						}
 						return {
-							className: "ops-pool-group-row",
-							onClick: () => toggleGroup(row.group.key),
+							onClick: () => {
+								if (window.getSelection()?.toString()) return;
+								onOpenLogs(row.project);
+							},
+							className: `ops-pool-project-row${isNextDeadlineOverdue(row.project) ? " ops-pool-stale" : ""}`,
 							style: { cursor: "pointer" },
 						};
-					}
-					return {
-						onClick: () => {
-							if (window.getSelection()?.toString()) return;
-							onOpenLogs(row.project);
-						},
-						className: `ops-pool-project-row${isNextDeadlineOverdue(row.project) ? " ops-pool-stale" : ""}`,
-						style: { cursor: "pointer" },
-					};
-				}}
-			/>
+					}}
+				/>
+			</VirtualGroupStickyBar>
 		</>
 	);
 }

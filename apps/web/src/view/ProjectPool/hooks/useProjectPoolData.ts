@@ -5,8 +5,9 @@ import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
-export function useProjectPoolData(message: MessageApi, options: { mine?: boolean } = {}) {
+export function useProjectPoolData(message: MessageApi, options: { mine?: boolean; pagedEnabled?: boolean } = {}) {
   const mine = !!options.mine;
+  const pagedEnabled = options.pagedEnabled ?? true;
   const [tab, setTab] = useState<"all" | "stale">("all");
   const [rows, setRows] = useState<OpsProjectPoolRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -22,6 +23,9 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
   const [allRows, setAllRows] = useState<OpsProjectPoolRow[]>([]);
   const [allRowsLoading, setAllRowsLoading] = useState(false);
+  const [allRowsKey, setAllRowsKey] = useState("");
+  const [filterOptionRows, setFilterOptionRows] = useState<OpsProjectPoolRow[]>([]);
+  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(",")].join("|");
 
   const load = async () => {
     setLoading(true);
@@ -30,7 +34,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     try {
       const result =
         tab === "stale"
-          ? await opsApi.projectPoolStale({ page, pageSize })
+          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter })
           : mine
             ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter })
             : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter });
@@ -46,26 +50,55 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const loadAllRows = async () => {
     if (tab !== "all") {
       setAllRows([]);
+      setAllRowsKey("");
       return;
     }
+    if (allRowsKey === filterKey && allRows.length) return;
     setAllRowsLoading(true);
-    setAllRows([]);
     try {
-      const pageSizeForAll = 100;
+      const pageSizeForAll = 500;
       const base = { q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter };
       const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...base });
       const nextRows = [...first.rows];
       const pageCount = Math.ceil(first.total / pageSizeForAll);
-      for (let nextPage = 2; nextPage <= pageCount; nextPage += 1) {
-        const result = mine ? await opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...base });
-        nextRows.push(...result.rows);
+      if (pageCount > 1) {
+        const rest = await Promise.all(
+          Array.from({ length: pageCount - 1 }, (_, index) => {
+            const nextPage = index + 2;
+            return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...base }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...base });
+          }),
+        );
+        for (const result of rest) nextRows.push(...result.rows);
       }
       setAllRows(nextRows);
+      setAllRowsKey(filterKey);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载分组数据失败");
       setAllRows([]);
+      setAllRowsKey("");
     } finally {
       setAllRowsLoading(false);
+    }
+  };
+
+  const loadFilterOptionRows = async () => {
+    try {
+      const pageSizeForAll = 500;
+      const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll });
+      const nextRows = [...first.rows];
+      const pageCount = Math.ceil(first.total / pageSizeForAll);
+      if (pageCount > 1) {
+        const rest = await Promise.all(
+          Array.from({ length: pageCount - 1 }, (_, index) => {
+            const nextPage = index + 2;
+            return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll });
+          }),
+        );
+        for (const result of rest) nextRows.push(...result.rows);
+      }
+      setFilterOptionRows(nextRows);
+    } catch {
+      setFilterOptionRows([]);
     }
   };
 
@@ -73,6 +106,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setTab("all");
     setRows([]);
     setAllRows([]);
+    setAllRowsKey("");
+    setFilterOptionRows([]);
     setTotal(0);
     setPage(1);
     setSearch("");
@@ -84,9 +119,15 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   }, [mine]);
 
   useEffect(() => {
+    if (!pagedEnabled) {
+      setRows([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, debounced]);
+  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, debounced]);
 
   useEffect(() => {
     opsApi
@@ -94,6 +135,11 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       .then((result) => setSegmentOptions(result.segments))
       .catch(() => setSegmentOptions([]));
   }, []);
+
+  useEffect(() => {
+    void loadFilterOptionRows();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mine]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -126,7 +172,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     segmentOptions,
     allRows,
     allRowsLoading,
-    filterKey: [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(",")].join("|"),
+    filterOptionRows,
+    filterKey,
     load,
     loadAllRows,
   };

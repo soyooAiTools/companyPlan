@@ -34,51 +34,5 @@ export function createCompanyPlanController(service, { setSessionCookie, clearSe
     session(request, response) {
       return sendResult(response, service.getSession(request.user));
     },
-
-    async bootstrap(request, response) {
-      return sendResult(response, await service.bootstrap(request.user));
-    },
-
-    async saveAdminConfig(request, response) {
-      return sendResult(response, await service.saveAdminConfig(request.body, request.user, auditContext(request)));
-    },
-
-    async createTicket(request, response) {
-      return sendResult(response, await service.createTicket(request.body ?? {}, request.user, auditContext(request)));
-    },
-
-    async updateTicketStatus(request, response) {
-      return sendResult(
-        response,
-        await service.updateTicketStatus(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
-      );
-    },
-
-    async updateTicketTimeline(request, response) {
-      return sendResult(
-        response,
-        await service.updateTicketTimeline(request.params.ticketId, request.body ?? {}, request.user, auditContext(request))
-      );
-    },
-
-    async openAttachment(request, response) {
-      const result = await service.getAttachmentFile(request.params.attachmentId, request.user, "open");
-      if (!result.ok) return sendResult(response, result);
-      const { attachment } = result.body;
-      response.setHeader("Content-Type", attachment.mime_type || "application/octet-stream");
-      response.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.name)}"`);
-      return response.sendFile(attachment.storage_path);
-    },
-
-    async downloadAttachment(request, response) {
-      const result = await service.getAttachmentFile(request.params.attachmentId, request.user, "download");
-      if (!result.ok) return sendResult(response, result);
-      const { attachment } = result.body;
-      return response.download(attachment.storage_path, attachment.name);
-    },
-
-    async audit(request, response) {
-      return sendResult(response, await service.listAudit(request.query, request.user));
-    },
   };
 }
