@@ -63,6 +63,8 @@ export interface OpsTicket {
 	requesterAvatar?: string; // 提单人微信头像 URL
 	summary: string;
 	contentHtml: string; // 富文本正文(已服务端 sanitize)
+	adminNote?: string; // 管理员内部备注(仅管理员接口返回)
+	adminNoteUpdatedAt?: string | null;
 	hyperlink: string;
 	blockReason: string;
 	riskWarningHours: number;
@@ -71,6 +73,7 @@ export interface OpsTicket {
 	canEditContent: boolean; // 能否改需求说明(提单人/管理员)
 	canAssign?: boolean; // 能否指派(负责人/提单人/管理员)
 	canEditPriority?: boolean; // 能否改优先级(管理员)
+	canEditAdminNote?: boolean; // 能否改管理员内部备注
 	createdAt: string;
 	statusUpdatedAt: string;
 }
@@ -260,16 +263,30 @@ export const opsApi = {
 	responsibles: (projectId: string) =>
 		requestJson<{ segments: OpsResponsibleSegment[]; members: OpsResponsibleMember[] }>(`/api/ops/projects/${encodeURIComponent(projectId)}/responsibles`),
 	tickets: (
-		params: { scope?: "all" | "owner" | "requester" | "overdue"; page?: number; pageSize?: number; q?: string; status?: string; priority?: string; segment?: number } = {},
+		params: {
+			scope?: "all" | "owner" | "requester" | "overdue";
+			page?: number;
+			pageSize?: number;
+			q?: string;
+			status?: string[];
+			priority?: string[];
+			segment?: number[];
+			overdueOnly?: boolean;
+			sortBy?: "createdAt" | "remaining";
+			sortOrder?: "asc" | "desc";
+		} = {},
 	) => {
 		const qs = new URLSearchParams();
 		if (params.scope && params.scope !== "all") qs.set("scope", params.scope);
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
-		if (params.status) qs.set("status", params.status);
-		if (params.priority) qs.set("priority", params.priority);
-		if (params.segment != null) qs.set("segment", String(params.segment));
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.priority?.length) qs.set("priority", params.priority.join(","));
+		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		if (params.overdueOnly) qs.set("overdueOnly", "1");
+		if (params.sortBy) qs.set("sortBy", params.sortBy);
+		if (params.sortOrder) qs.set("sortOrder", params.sortOrder);
 		const s = qs.toString();
 		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
 	},
@@ -280,6 +297,8 @@ export const opsApi = {
 	ticketContent: (id: string) => requestJson<{ contentHtml: string }>(`/api/ops/tickets/${encodeURIComponent(id)}/content`),
 	updateTicketContent: (id: string, contentHtml: string) =>
 		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ contentHtml }) }),
+	updateTicketAdminNote: (id: string, adminNote: string) =>
+		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/admin-note`, { method: "PATCH", body: JSON.stringify({ adminNote }) }),
 	// 富文本资源上传(图片/视频/附件)→ OSS,返回公开 URL
 	uploadFile: (body: { projectId: string; filename: string; mime: string; dataBase64: string }) =>
 		requestJson<{ url: string }>("/api/ops/upload", { method: "POST", body: JSON.stringify(body) }),

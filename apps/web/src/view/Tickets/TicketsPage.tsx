@@ -1,44 +1,42 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { App, Button, Card, Form, Input, Modal, Segmented, Select, Space, Tag, Table, Tooltip, Typography } from "antd";
-import { BarsOutlined, EditOutlined, ProjectOutlined } from "@ant-design/icons";
+import { App, Button, Form, Modal, Select, Space, Tag } from "antd";
+import { EditOutlined } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant, OpsTicket, OpsTicketEvent } from "../../api/modules/ops";
-import SegmentedTabs from "../../components/SegmentedTabs";
-import { OPS_TICKETS_VIEW_KEY, OPS_TICKETS_DEFAULT_VIEW, OPS_TOOLBAR_CARD, type OpsTicketsView } from "./constants";
-import { shortNo, fmtDateTime } from "../../utils/format";
-import { remainingView } from "./ticketUtils";
-import { NEED_NOTE, PRIORITIES, PRIORITY_COLOR, SCOPE_OPTIONS, STATUSES, STATUS_COLOR, type OpsTicketGroupBy, type OpsTicketScope } from "./opsTickets.constants";
-import { stripHtmlText } from "./opsTickets.utils";
-import AssignOwnerModal, { type AssignOwnerCandidate } from "./components/ticket/AssignOwnerModal";
-import CreateTicketModal from "./components/ticket/CreateTicketModal";
-import EditTicketContentModal from "./components/ticket/EditTicketContentModal";
-import OpsTicketDetailDrawer from "./components/ticket/OpsTicketDetailDrawer";
-import PersonCell from "./components/ticket/PersonCell";
-import TicketStatusNoteModal from "./components/ticket/TicketStatusNoteModal";
+import { NEED_NOTE, PRIORITIES, PRIORITY_COLOR, STATUSES, STATUS_COLOR, type OpsTicketScope } from "./constants";
+import { stripHtmlText } from "./ticketsUtils";
+import AssignOwnerModal, { type AssignOwnerCandidate } from "./components/dialogs/AssignOwnerModal";
+import CreateTicketModal from "./components/dialogs/CreateTicketModal";
+import EditTicketContentModal from "./components/dialogs/EditTicketContentModal";
+import EditTicketAdminNoteModal from "./components/dialogs/EditTicketAdminNoteModal";
+import TicketDetailDrawer from "./components/dialogs/TicketDetailDrawer";
+import TicketTable from "./components/table/TicketTable";
+import PersonCell from "./components/table/PersonCell";
+import TicketStatusNoteModal from "./components/dialogs/TicketStatusNoteModal";
+import TicketsToolbar from "./components/toolbar/TicketsToolbar";
 
-export default function OpsTicketsPage() {
+type TicketsPageProps = {
+	isAdmin?: boolean;
+};
+
+export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const { message: messageApi } = App.useApp();
 	const [tickets, setTickets] = useState<OpsTicket[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scope, setScope] = useState<OpsTicketScope>("all");
-	const [view, setView] = useState<OpsTicketsView>(() => {
-		const saved = localStorage.getItem(OPS_TICKETS_VIEW_KEY);
-		return saved === "table" || saved === "kanban" ? saved : OPS_TICKETS_DEFAULT_VIEW;
-	});
-	const [groupBy, setGroupBy] = useState<OpsTicketGroupBy>("status");
-	const [bottomTab, setBottomTab] = useState("tickets");
 	const [search, setSearch] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
-	const [priorityFilter, setPriorityFilter] = useState<string>();
-	const [segmentFilter, setSegmentFilter] = useState<number>();
+	const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
+	const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
 	const [segmentOptions, setSegmentOptions] = useState<{ id: number; name: string }[]>([]); // 全部环节(筛选下拉用)
-	const [statusFilter, setStatusFilter] = useState<string>(); // 状态筛选 chip(undefined=全部)
+	const [statusFilter, setStatusFilter] = useState<string[]>(["进行中", "排队中"]);
+	const [overdueOnly, setOverdueOnly] = useState(false);
+	const [sortBy, setSortBy] = useState<"createdAt" | "remaining" | "">("");
+	const [sortOrder, setSortOrder] = useState<"asc" | "desc" | "">("");
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 	const [total, setTotal] = useState(0);
-	const [counts, setCounts] = useState<Record<string, number>>({}); // 各状态条数(状态 chip 用)
-	const [overdueCount, setOverdueCount] = useState(0); // 延期 tab 角标
 	const [detail, setDetail] = useState<OpsTicket | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false); // 详情打开/切换时的加载态(避免闪上一条数据)
 	const [events, setEvents] = useState<OpsTicketEvent[]>([]);
@@ -46,6 +44,10 @@ export default function OpsTicketsPage() {
 	const [editContentHtml, setEditContentHtml] = useState("");
 	const [savingContent, setSavingContent] = useState(false);
 	const [editingPriorityId, setEditingPriorityId] = useState<string | null>(null);
+	const [adminNoteTicket, setAdminNoteTicket] = useState<OpsTicket | null>(null);
+	const [adminNoteOpen, setAdminNoteOpen] = useState(false);
+	const [adminNoteText, setAdminNoteText] = useState("");
+	const [savingAdminNote, setSavingAdminNote] = useState(false);
 
 	// 改状态填备注
 	const [noteId, setNoteId] = useState<string | null>(null);
@@ -72,39 +74,31 @@ export default function OpsTicketsPage() {
 	const loadTickets = async () => {
 		setLoading(true);
 		try {
-			const overdue = bottomTab === "overdue";
 			const r = await opsApi.tickets({
-				scope: overdue ? "overdue" : scope,
+				scope,
 				page,
-				pageSize: view === "kanban" ? 200 : pageSize, // 看板=有界概览(封顶 200)
+				pageSize,
 				q: debouncedSearch.trim() || undefined,
 				priority: priorityFilter,
 				segment: segmentFilter,
-				status: overdue ? undefined : statusFilter,
+				overdueOnly: isAdmin ? overdueOnly : false,
+				sortBy: sortBy || undefined,
+				sortOrder: sortOrder || undefined,
+				status: statusFilter,
 			});
 			setTickets(r.tickets);
 			setTotal(r.total ?? r.tickets.length);
-			setCounts(r.counts || {});
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "加载提单失败");
 		} finally {
 			setLoading(false);
 		}
 	};
-	// 延期总数(底部 tab 角标用)
-	const loadOverdueCount = async () => {
-		try {
-			const r = await opsApi.tickets({ scope: "overdue", page: 1, pageSize: 1 });
-			setOverdueCount(r.total ?? 0);
-		} catch {
-			/* ignore */
-		}
-	};
 	// 筛选/分页/视图/tab 变化 → 服务端重新拉(单一来源,避免重复请求:筛选变更已在各 onChange 里 setPage(1))
 	useEffect(() => {
 		void loadTickets();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [scope, bottomTab, view, page, pageSize, statusFilter, priorityFilter, segmentFilter, debouncedSearch]);
+	}, [scope, page, pageSize, statusFilter, priorityFilter, segmentFilter, overdueOnly, sortBy, sortOrder, debouncedSearch]);
 	// 搜索去抖(并回到第 1 页)
 	useEffect(() => {
 		const t = setTimeout(() => {
@@ -114,16 +108,6 @@ export default function OpsTicketsPage() {
 		return () => clearTimeout(t);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [search]);
-	useEffect(() => {
-		void loadOverdueCount();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
-
-	// 记住用户选的视图(table/kanban)到本地
-	useEffect(() => {
-		localStorage.setItem(OPS_TICKETS_VIEW_KEY, view);
-	}, [view]);
-
 	// 环节筛选下拉:列出全部环节(不只当前数据里出现的)
 	useEffect(() => {
 		opsApi
@@ -204,7 +188,6 @@ export default function OpsTicketsPage() {
 					.then((e) => setEvents(e.events))
 					.catch(() => {});
 			await loadTickets();
-			void loadOverdueCount();
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "操作失败");
 		}
@@ -317,6 +300,27 @@ export default function OpsTicketsPage() {
 			messageApi.error(e instanceof Error ? e.message : "保存失败");
 		} finally {
 			setSavingContent(false);
+		}
+	};
+	const openAdminNote = (ticket: OpsTicket) => {
+		setAdminNoteTicket(ticket);
+		setAdminNoteText(ticket.adminNote || "");
+		setAdminNoteOpen(true);
+	};
+	const saveAdminNote = async () => {
+		if (!adminNoteTicket) return;
+		setSavingAdminNote(true);
+		try {
+			const r = await opsApi.updateTicketAdminNote(adminNoteTicket.id, adminNoteText);
+			setDetail((current) => (current?.id === r.ticket.id ? r.ticket : current));
+			setTickets((rows) => rows.map((ticket) => (ticket.id === r.ticket.id ? r.ticket : ticket)));
+			setAdminNoteOpen(false);
+			setAdminNoteTicket(null);
+			messageApi.success("内部备注已保存");
+		} catch (e) {
+			messageApi.error(e instanceof Error ? e.message : "保存内部备注失败");
+		} finally {
+			setSavingAdminNote(false);
 		}
 	};
 
@@ -446,280 +450,68 @@ export default function OpsTicketsPage() {
 		});
 	};
 
-	// 列表/看板数据都由服务端按 scope/状态/筛选/分页返回,前端不再客户端过滤
-	const segmentNames = useMemo(() => [...new Set(tickets.map((t) => t.tagName).filter(Boolean))], [tickets]);
-
-	// 看板:列按 groupBy(状态/优先级/环节)动态分组
-	const makeGroupColumns = (rows: OpsTicket[]) =>
-		groupBy === "priority"
-			? PRIORITIES.map((v) => ({ key: v, color: PRIORITY_COLOR[v], rows: rows.filter((t) => t.priority === v) }))
-			: groupBy === "segment"
-				? segmentNames.map((v) => ({ key: v, color: "cyan", rows: rows.filter((t) => t.tagName === v) }))
-				: STATUSES.map((v) => ({ key: v, color: STATUS_COLOR[v], rows: rows.filter((t) => t.status === v) }));
-	const renderKanban = (rows: OpsTicket[]) => (
-		<div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 8 }}>
-			{makeGroupColumns(rows).map((col) => (
-				<div key={col.key} style={{ flex: "0 0 290px", maxWidth: 290, background: "#edeef2", border: "1px solid #e2e5ea", borderRadius: 10, padding: 8 }}>
-					<div style={{ marginBottom: 8, padding: "2px 4px", fontWeight: 600 }}>
-						<Tag color={col.color}>{col.key}</Tag>
-						<span style={{ color: "#64748b" }}>{col.rows.length}</span>
-					</div>
-					<div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "60vh", overflowY: "auto" }}>
-						{col.rows.map((t) => {
-							const rem = remainingView(t);
-							return (
-								<Card
-									key={t.id}
-									size="small"
-									hoverable
-									onClick={() => openDetail(t)}
-									styles={{ body: { padding: 12 } }}
-									style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.06)", border: "1px solid #e8eaed" }}>
-									<div style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", marginBottom: 2 }}>#{shortNo(t.id)}</div>
-									<div style={{ fontWeight: 600, marginBottom: 6 }}>{t.title}</div>
-									<Space size={4} wrap style={{ marginBottom: 6 }}>
-										{groupBy !== "segment" ? <Tag color="cyan">{t.tagName}</Tag> : null}
-										{groupBy !== "priority" ? <Tag color={PRIORITY_COLOR[t.priority]}>{t.priority}</Tag> : null}
-										{groupBy !== "status" ? <Tag color={STATUS_COLOR[t.status]}>{t.status}</Tag> : null}
-										<span style={{ color: rem.color ?? "#64748b", fontSize: 12 }}>{rem.text}</span>
-									</Space>
-									<div style={{ fontSize: 12, color: "#64748b", marginBottom: t.canEdit ? 6 : 0 }}>
-										{t.client} · {t.projectName} · 负责人 {t.ownerName}
-									</div>
-									{t.canEdit ? statusControl(t, "100%") : null}
-								</Card>
-							);
-						})}
-						{col.rows.length === 0 ? (
-							<Typography.Text type="secondary" style={{ fontSize: 12 }}>
-								无
-							</Typography.Text>
-						) : null}
-					</div>
-				</div>
-			))}
-		</div>
-	);
-
-	// 表格
-	// 「提单人/负责人」列:微信头像 + 姓名(无头像回退首字母)
 	const personCell = (avatar?: string, name?: string) => <PersonCell avatar={avatar} name={name} />;
-	const baseColumns = [
-		{
-			title: "单号",
-			dataIndex: "id",
-			width: 116,
-			render: (id: string) => (
-				<Tooltip title={id}>
-					<span style={{ fontFamily: "monospace", fontSize: 12, color: "#475569" }}>#{shortNo(id)}</span>
-				</Tooltip>
-			),
-		},
-		{ title: "标题", dataIndex: "title", width: 180, ellipsis: true },
-		{ title: "客户", dataIndex: "client", width: 110, ellipsis: true },
-		{ title: "项目", dataIndex: "projectName", width: 130, ellipsis: true },
-		{ title: "提单人", dataIndex: "requesterName", width: 120, render: (v: string, r: OpsTicket) => personCell(r.requesterAvatar, v) },
-		{ title: "环节", dataIndex: "tagName", width: 100, render: (v: string) => <Tag color="cyan">{v}</Tag> },
-		{ title: "负责人", dataIndex: "ownerName", width: 120, render: (v: string, r: OpsTicket) => personCell(r.ownerAvatar, v) },
-		{ title: "优先级", dataIndex: "priority", width: 120, render: (_: string, r: OpsTicket) => priorityControl(r, 88) },
-		{ title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => fmtDateTime(v) },
-		{
-			title: "剩余",
-			key: "rem",
-			width: 100,
-			render: (_: unknown, r: OpsTicket) => {
-				const x = remainingView(r);
-				return <span style={{ color: x.color, fontWeight: x.color ? 600 : 400 }}>{x.text}</span>;
-			},
-		},
-		{ title: "状态", key: "status", width: 120, render: (_: unknown, r: OpsTicket) => statusControl(r, 108) },
-	];
-	const tableProps = {
-		rowKey: "id" as const,
-		dataSource: tickets,
-		columns: baseColumns,
-		size: "small" as const,
-		loading,
-		pagination: {
-			current: page,
-			pageSize,
-			total,
-			showSizeChanger: true,
-			showTotal: (t: number) => `共 ${t} 条`,
-			onChange: (p: number, ps: number) => {
-				setPage(p);
-				setPageSize(ps);
-			},
-		},
-		scroll: { x: 1340 },
-		onRow: (r: OpsTicket) => ({
-			onClick: () => {
-				if (window.getSelection()?.toString()) return;
-				openDetail(r);
-			},
-			style: { cursor: "pointer" },
-		}),
-	};
-
-	// 状态筛选 chip(替代旧的"按状态折叠";数量来自服务端 counts)
-	const totalAll = Object.values(counts).reduce((a, b) => a + b, 0);
-	const statusChips = (
-		<Space wrap style={{ marginBottom: 12 }}>
-			<Tag.CheckableTag
-				checked={!statusFilter}
-				onChange={() => {
-					setStatusFilter(undefined);
-					setPage(1);
-				}}>
-				全部 {totalAll}
-			</Tag.CheckableTag>
-			{STATUSES.map((st) => (
-				<Tag.CheckableTag
-					key={st}
-					checked={statusFilter === st}
-					onChange={() => {
-						setStatusFilter(statusFilter === st ? undefined : st);
-						setPage(1);
-					}}>
-					{st} {counts[st] || 0}
-				</Tag.CheckableTag>
-			))}
-		</Space>
-	);
-
-	const sheetTabs = [
-		{ key: "tickets", label: "需求提单" },
-		{ key: "overdue", label: `延期任务预警${overdueCount ? ` (${overdueCount})` : ""}` },
-	];
 
 	return (
 		<div style={{ paddingBottom: 52 }}>
-			<div style={{ ...OPS_TOOLBAR_CARD, justifyContent: "space-between" }}>
-				<Space wrap>
-					<SegmentedTabs
-						value={scope}
-						onChange={(v) => {
-							setScope(v);
-							setPage(1);
-						}}
-						options={SCOPE_OPTIONS}
-					/>
-					{view === "kanban" ? (
-						<Segmented
-							options={[
-								{ label: "按状态", value: "status" },
-								{ label: "按优先级", value: "priority" },
-								{ label: "按环节", value: "segment" },
-							]}
-							value={groupBy}
-							onChange={(v) => setGroupBy(v as OpsTicketGroupBy)}
-						/>
-					) : null}
-					<Input.Search placeholder="搜索 单号/标题/项目/客户/人" allowClear style={{ width: 240 }} onChange={(e) => setSearch(e.target.value)} />
-					<Select
-						allowClear
-						placeholder="环节"
-						style={{ width: 110 }}
-						value={segmentFilter}
-						onChange={(v) => {
-							setSegmentFilter(v);
-							setPage(1);
-						}}
-						showSearch
-						optionFilterProp="label"
-						options={segmentOptions.map((s) => ({ value: s.id, label: s.name }))}
-					/>
-					<Select
-						allowClear
-						placeholder="优先级"
-						style={{ width: 110 }}
-						value={priorityFilter}
-						onChange={(v) => {
-							setPriorityFilter(v);
-							setPage(1);
-						}}
-						options={PRIORITIES.map((p) => ({ value: p, label: p }))}
-					/>
-				</Space>
-				<Space>
-					<Button type="primary" onClick={openCreate}>
-						+ 新建工单
-					</Button>
-					<Segmented
-						options={[
-							{ value: "table", icon: <BarsOutlined /> },
-							{ value: "kanban", icon: <ProjectOutlined /> },
-						]}
-						value={view}
-						onChange={(v) => setView(v as "kanban" | "table")}
-					/>
-				</Space>
-			</div>
+			<TicketsToolbar
+				scope={scope}
+				isAdmin={isAdmin}
+				overdueOnly={overdueOnly}
+				onScopeChange={(value) => {
+					setScope(value);
+					setPage(1);
+				}}
+				onOverdueOnlyChange={(value) => {
+					setOverdueOnly(value);
+					setPage(1);
+				}}
+				onCreate={openCreate}
+			/>
 
-			{view === "kanban" ? (
-				<>
-					{total > tickets.length ? (
-						<Typography.Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-							看板仅展示前 {tickets.length} 条(共 {total} 条),查看全部请切换到列表视图
-						</Typography.Text>
-					) : null}
-					{renderKanban(tickets)}
-				</>
-			) : (
-				<>
-					{bottomTab === "tickets" ? statusChips : null}
-					<Table {...tableProps} />
-				</>
-			)}
+			<TicketTable
+				tickets={tickets}
+				loading={loading}
+				page={page}
+				pageSize={pageSize}
+				total={total}
+				search={search}
+				statusFilter={statusFilter}
+				priorityFilter={priorityFilter}
+				segmentFilter={segmentFilter}
+				sortBy={sortBy}
+				sortOrder={sortOrder}
+				showAdminNote={isAdmin}
+				segmentOptions={segmentOptions}
+				statusControl={statusControl}
+				priorityControl={priorityControl}
+				onSearchChange={setSearch}
+				onStatusFilterChange={(value) => {
+					setStatusFilter(value);
+					setPage(1);
+				}}
+				onPriorityFilterChange={(value) => {
+					setPriorityFilter(value);
+					setPage(1);
+				}}
+				onSegmentFilterChange={(value) => {
+					setSegmentFilter(value);
+					setPage(1);
+				}}
+				onSortChange={(nextSortBy, nextSortOrder) => {
+					setSortBy(nextSortBy);
+					setSortOrder(nextSortOrder);
+					setPage(1);
+				}}
+				onPageChange={(p, ps) => {
+					setPage(p);
+					setPageSize(ps);
+				}}
+				onOpen={openDetail}
+				onEditAdminNote={openAdminNote}
+			/>
 
-			{/* 固定在底部的工作表式标签栏(类似 Excel:圆角折页 Tab,选中白底连着内容,无顶部高亮线) */}
-			<div
-				style={{
-					position: "fixed",
-					left: 200,
-					right: 0,
-					bottom: 0,
-					height: 34,
-					background: "#eceef1",
-					borderTop: "1px solid #dfe3e8",
-					display: "flex",
-					alignItems: "flex-end",
-					gap: 4,
-					padding: "0 12px",
-					zIndex: 20,
-				}}>
-				{sheetTabs.map((t) => {
-					const active = bottomTab === t.key;
-					return (
-						<div
-							key={t.key}
-							onClick={() => {
-								setBottomTab(t.key);
-								setPage(1);
-							}}
-							style={{
-								display: "flex",
-								alignItems: "center",
-								height: active ? 34 : 27,
-								marginTop: active ? -1 : 0,
-								padding: "0 18px",
-								cursor: "pointer",
-								fontSize: 13,
-								fontWeight: active ? 600 : 400,
-								color: active ? "#0f766e" : "#5c6470",
-								background: active ? "#fff" : "#e2e5ea",
-								border: "1px solid #dfe3e8",
-								borderBottom: "none",
-								borderRadius: "8px 8px 0 0",
-								boxShadow: active ? "0 -1px 3px rgba(15,118,110,0.08)" : "none",
-							}}>
-							{t.label}
-						</div>
-					);
-				})}
-			</div>
-
-			<OpsTicketDetailDrawer
+			<TicketDetailDrawer
 				detail={detail}
 				loading={detailLoading}
 				events={events}
@@ -735,9 +527,23 @@ export default function OpsTicketsPage() {
 				}}
 				onAssign={openAssign}
 				onEditContent={openEditContent}
+				onEditAdminNote={() => {
+					if (detail) openAdminNote(detail);
+				}}
 			/>
 
 			<EditTicketContentModal open={editContentOpen} value={editContentHtml} saving={savingContent} projectId={detail?.projectId} onChange={setEditContentHtml} onSave={saveContent} onCancel={() => setEditContentOpen(false)} />
+			<EditTicketAdminNoteModal
+				open={adminNoteOpen}
+				value={adminNoteText}
+				saving={savingAdminNote}
+				onChange={setAdminNoteText}
+				onSave={saveAdminNote}
+				onCancel={() => {
+					setAdminNoteOpen(false);
+					setAdminNoteTicket(null);
+				}}
+			/>
 
 			<TicketStatusNoteModal open={!!noteId} status={noteStatus} value={noteText} onChange={setNoteText} onConfirm={confirmNote} onCancel={() => setNoteId(null)} />
 

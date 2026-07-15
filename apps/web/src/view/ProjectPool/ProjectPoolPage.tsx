@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
-import { App, Radio, Spin } from "antd";
+import { App, Button, Input, Radio, Spin } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { SearchOutlined } from "@ant-design/icons";
 import { opsApi, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
@@ -101,6 +102,9 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	const [ownerRoleKey, setOwnerRoleKey] = useState<(typeof OWNER_ROLE_OPTIONS)[number]["key"]>("program");
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
+	const [ownerSearch, setOwnerSearch] = useState("");
+	const [ownerCollapseAction, setOwnerCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
+	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
 
 	// 表格内部滚动高度:实测「表格区域」高度 − 表头/分页固定占位,做到分页精准贴底(自适应工具栏换行/各种屏高)
 	const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -134,6 +138,9 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setStageFilter([]);
 		setPlannerFilter([]);
 		setSegmentFilter([]);
+		setOwnerSearch("");
+		setOwnerCollapsed(false);
+		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
 		setPage(1);
 	};
 
@@ -169,6 +176,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		if (sheet !== "owner" || tab !== "all") {
 			setOwnerGroups([]);
 			setOwnerGroupsLoading(false);
+			setOwnerSearch("");
+			setOwnerCollapsed(false);
 			return;
 		}
 		if (allRowsLoading) {
@@ -209,6 +218,18 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 			cancelled = true;
 		};
 	}, [allRows, allRowsLoading, message, ownerRoleKey, sheet, tab]);
+
+	const visibleOwnerGroups = useMemo(() => {
+		const keyword = ownerSearch.trim().toLowerCase();
+		if (!keyword) return ownerGroups;
+		return ownerGroups.filter((group) => group.title.toLowerCase().includes(keyword));
+	}, [ownerGroups, ownerSearch]);
+
+	const toggleOwnerCollapse = () => {
+		const nextCollapsed = !ownerCollapsed;
+		setOwnerCollapsed(nextCollapsed);
+		setOwnerCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
+	};
 
 	// 通知深链:URL 带 ?project=<id> 时,在已加载的项目里找到它并打开流转抽屉(找到即打开并清掉参数)
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -301,6 +322,18 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 							</Radio>
 						))}
 					</Radio.Group>
+					<Input
+						allowClear
+						size="small"
+						prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+						placeholder="搜索负责人"
+						value={ownerSearch}
+						onChange={(event) => setOwnerSearch(event.target.value)}
+						style={{ width: 180, marginLeft: 8 }}
+					/>
+					<Button size="small" onClick={toggleOwnerCollapse} style={{ marginLeft: "auto" }}>
+						{ownerCollapsed ? "展开全部" : "折叠全部"}
+					</Button>
 				</div>
 			) : null}
 
@@ -313,11 +346,12 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 					<GroupedProjectSheet
 						mode={groupMode}
 						rows={allRows}
-						groupsOverride={sheet === "owner" ? ownerGroups : undefined}
+						groupsOverride={sheet === "owner" ? visibleOwnerGroups : undefined}
 						columns={displayColumns}
 						loading={allRowsLoading || (sheet === "owner" && ownerGroupsLoading)}
 						scrollY={groupScrollY}
 						hideStats={sheet === "owner"}
+						collapseAction={sheet === "owner" ? ownerCollapseAction : undefined}
 						onOpenLogs={dialogs.actions.openLogs}
 						onOpenGroupTickets={(group, mode) => {
 							void dialogs.actions.openGroupTickets(`工单 · ${group.title} · ${mode === "overdue" ? "工单逾期" : "未完成工单"}`, group.rows, mode, group.segmentIds, group.ownerName);

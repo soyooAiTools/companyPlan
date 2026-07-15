@@ -36,6 +36,8 @@ function mapTicket(t, segNameById) {
     requesterAvatar: t.requester_avatar ?? "",
     summary: t.summary ?? "",
     contentHtml: t.content_html ?? "",
+    adminNote: t.admin_note ?? "",
+    adminNoteUpdatedAt: t.admin_note_updated_at ?? null,
     hyperlink: t.hyperlink ?? "",
     blockReason: t.block_reason ?? "",
     riskWarningHours: t.risk_warning_hours ?? 8,
@@ -45,31 +47,64 @@ function mapTicket(t, segNameById) {
   };
 }
 
+function splitQueryList(value) {
+  return String(value ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitNumberQueryList(value) {
+  return splitQueryList(value)
+    .map((item) => Number(item))
+    .filter((value) => Number.isFinite(value));
+}
+
 // 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派=负责人/提单人/管理员;优先级=管理员/策划
 function withCanEdit(t, user, segNameById, planner = false) {
   const admin = isAdmin(user);
   const userId = meId(user);
+  const ticket = mapTicket(t, segNameById);
+  if (!admin) {
+    delete ticket.adminNote;
+    delete ticket.adminNoteUpdatedAt;
+  }
   return {
-    ...mapTicket(t, segNameById),
+    ...ticket,
     canEdit: admin || t.owner_id === userId,
     canEditContent: admin || t.requester_id === userId,
     canAssign: admin || t.owner_id === userId || t.requester_id === userId,
     canEditPriority: admin || planner,
+    canEditAdminNote: admin,
   };
 }
 
 // 给工单(单条或数组)打权限标记;planner(=改优先级权限)按用户算一次,避免逐条查 soyoo;admin 直接放行不查。
 async function decorateTickets(rowsOrRow, user, segNameById) {
   const planner = isAdmin(user) ? false : await isPlanner(user);
-  return Array.isArray(rowsOrRow)
-    ? rowsOrRow.map((t) => withCanEdit(t, user, segNameById, planner))
-    : withCanEdit(rowsOrRow, user, segNameById, planner);
+  const asArray = Array.isArray(rowsOrRow);
+  let rows = asArray ? rowsOrRow : [rowsOrRow];
+  if (isAdmin(user)) {
+    const noteMap = await loadTicketAdminNoteMap(rows.map((t) => t.id));
+    rows = rows.map((t) => ({ ...t, ...(noteMap.get(String(t.id)) || {}) }));
+  }
+  return asArray ? rows.map((t) => withCanEdit(t, user, segNameById, planner)) : withCanEdit(rows[0], user, segNameById, planner);
 }
 
 // 环节 id→当前名 映射:工单显示「环节」时按 segment_id 取当前名(改名即时反映,不依赖名字快照)
 async function loadSegNameMap() {
   const rows = await prisma.ops_segments.findMany({ select: { id: true, name: true } });
   return new Map(rows.map((r) => [r.id, r.name]));
+}
+
+async function loadTicketAdminNoteMap(ticketIds) {
+  const ids = [...new Set((ticketIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT id, admin_note, admin_note_updated_at FROM tickets WHERE id IN (${ids.map(() => "?").join(",")})`,
+    ...ids,
+  );
+  return new Map(rows.map((row) => [String(row.id), row]));
 }
 
 function statusActionLabel(from, to) {
@@ -271,6 +306,9 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const user = req.user;
     const qy = req.query;
     const scope = String(qy.scope ?? "all"); // all | owner | requester | overdue
+    const overdueOnly = qy.overdueOnly === "1" || qy.overdueOnly === "true";
+    const sortBy = String(qy.sortBy ?? "");
+    const sortOrder = String(qy.sortOrder ?? "") === "asc" ? "asc" : String(qy.sortOrder ?? "") === "desc" ? "desc" : "";
     const me = meId(user);
     const page = Math.max(1, Number(qy.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(qy.pageSize) || 20));
@@ -284,8 +322,11 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
 
     // 除"状态"外的筛选(状态单独加,以便给状态 chip 计数)
     const filters = [];
-    if (qy.priority) filters.push({ priority: String(qy.priority) });
-    if (qy.segment) filters.push({ segment_id: Number(qy.segment) || -1 });
+    const priorityNames = splitQueryList(qy.priority).filter((name) => PRIORITIES.has(name));
+    const segmentIds = splitNumberQueryList(qy.segment);
+    const statusNames = splitQueryList(qy.status).filter((name) => STATUSES.includes(name));
+    if (priorityNames.length) filters.push({ priority: { in: priorityNames } });
+    if (segmentIds.length) filters.push({ segment_id: { in: segmentIds } });
     const kw = String(qy.q ?? "").trim();
     if (kw)
       filters.push({
@@ -301,13 +342,18 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
 
     let orderBy = [{ created_at: "desc" }, { id: "desc" }];
     // 延期预警:未完成 且 warn_at < 现在,按截止时间升序(最急在前)
-    if (scope === "overdue") {
+    if (scope === "overdue" || (overdueOnly && isAdmin(user))) {
       filters.push({ status: { not: "已完成" } }, { warn_at: { not: null } }, { warn_at: { lt: nowIso() } });
       orderBy = [{ due_at: "asc" }];
     }
+    if (sortBy === "createdAt" && sortOrder) {
+      orderBy = [{ created_at: sortOrder }, { id: "desc" }];
+    } else if (sortBy === "remaining" && sortOrder) {
+      orderBy = [{ due_at: sortOrder }, { id: "desc" }];
+    }
 
     const whereNoStatus = { AND: [base, ...filters] };
-    const where = qy.status ? { AND: [base, ...filters, { status: String(qy.status) }] } : whereNoStatus;
+    const where = statusNames.length ? { AND: [base, ...filters, { status: { in: statusNames } }] } : whereNoStatus;
 
     const [total, rows, grouped] = await Promise.all([
       prisma.tickets.count({ where }),
@@ -508,6 +554,20 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       data: { content_html: contentHtml || null, summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""), updated_at: now },
     });
     await logTicketEvent({ ticketId: id, user, action: "修改需求说明" });
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
+  });
+
+  // 改管理员内部备注:只给管理员看/改,不写普通流转记录。
+  app.patch("/api/ops/tickets/:id/admin-note", requireAuth, async (req, res) => {
+    const user = req.user;
+    if (!isAdmin(user)) return res.status(403).json({ error: "仅管理员可修改内部备注" });
+    const id = String(req.params.id);
+    const t = await prisma.tickets.findUnique({ where: { id } });
+    if (!t) return res.status(404).json({ error: "提单不存在" });
+    const adminNote = clip(req.body?.adminNote, 100);
+    const now = nowIso();
+    await prisma.$executeRaw`UPDATE tickets SET admin_note = ${adminNote || null}, admin_note_updated_at = ${now}, updated_at = ${now} WHERE id = ${id}`;
+    const updated = await prisma.tickets.findUnique({ where: { id } });
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 

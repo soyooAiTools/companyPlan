@@ -53,6 +53,10 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
           border-top-right-radius: 0 !important;
         }
         .ops-pool-table .ant-table-thead > tr > th { padding-top: 11px; padding-bottom: 11px; background: #fff; font-weight: 600; }
+        .ops-pool-table .ant-table-column-sorter-up.active,
+        .ops-pool-table .ant-table-column-sorter-down.active {
+          color: #dc2626;
+        }
         .ops-pool-table .ant-table-tbody > tr:not(.ops-pool-stale):hover > td {
           background: #f8fafc !important;
           transform: translateY(-1px) scale(1.001);

@@ -4,7 +4,7 @@ import { Avatar, Descriptions, Divider, Drawer, Image, Space, Spin, Tag, Timelin
 import { ArrowRightOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
 import { fmtDateTime } from "@/utils/format";
-import { remainingView } from "@/view/Ops/ticketUtils";
+import { remainingView } from "@/view/Tickets/ticketUtils";
 import "../../../Ops/RichText.css";
 
 type SegmentTicketDetailDrawerProps = {

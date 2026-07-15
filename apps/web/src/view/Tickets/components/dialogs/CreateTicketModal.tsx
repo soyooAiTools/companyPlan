@@ -1,8 +1,8 @@
 import { Avatar, Col, Form, Input, Modal, Row, Select, Space } from "antd";
 import type { FormInstance } from "antd";
 import type { OpsProject, OpsResponsibleSegment, OpsTenant } from "../../../../api/modules/ops";
-import RichTextEditor from "../../RichTextEditor";
-import { PRIORITIES } from "../../opsTickets.constants";
+import RichTextEditor from "../../../Ops/RichTextEditor";
+import { PRIORITIES } from "../../constants";
 
 type OwnerOption = {
 	value: string;
@@ -59,7 +59,7 @@ export default function CreateTicketModal({
 			width={860}
 			destroyOnHidden
 			keyboard={false}
-			maskClosable={false}>
+			mask={{ closable: false }}>
 			<Form form={form} layout="vertical" preserve={false}>
 				<Row gutter={16}>
 					<Col span={16}>

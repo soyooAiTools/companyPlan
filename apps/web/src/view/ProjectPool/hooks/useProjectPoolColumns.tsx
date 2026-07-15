@@ -6,7 +6,7 @@ import { EditOutlined, FilterFilled, QuestionCircleOutlined, SearchOutlined } fr
 import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
-import { fmtProjectDate, projectDurationText, projectStartDate } from "../deadlineUtils";
+import { fmtProjectDate, nextDeadlineDiffDays, projectDurationText, projectStartDate } from "../deadlineUtils";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
@@ -237,6 +237,7 @@ export function useProjectPoolColumns(
 			title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。"),
 			key: "stageDeadlines",
 			width: 210,
+			sorter: (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
 			render: (_: unknown, row) => <StageDeadlineCell row={row} onEdit={actions.openDeadlineEdit} />,
 		},
 		{

@@ -418,6 +418,8 @@ async function migrateSchema() {
   await ensureColumn("tickets", "tag_name", "VARCHAR(120)");
   await ensureColumn("tickets", "due_at", "VARCHAR(40)"); // 截止时刻(=创建+交付时长):延期 tab 服务端筛/排序用
   await ensureColumn("tickets", "warn_at", "VARCHAR(40)"); // 预警时刻(=截止−预警窗口)
+  await ensureColumn("tickets", "admin_note", "TEXT"); // 管理员内部备注:仅管理员接口返回/修改
+  await ensureColumn("tickets", "admin_note_updated_at", "VARCHAR(40)");
   await ensureIndex("idx_tickets_warn", "tickets", "warn_at");
 
   // 一次性 backfill 旧工单快照(此时 people/projects/tenants 仍在;删表前补齐;表已删则忽略)

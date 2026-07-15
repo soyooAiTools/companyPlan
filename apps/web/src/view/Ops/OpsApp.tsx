@@ -8,7 +8,7 @@ import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-
 import { logoutApi } from "../../api/modules/companyPlan";
 import { opsApi, type OpsMe } from "../../api/modules/ops";
 import LoginView from "./LoginView";
-import OpsTicketsPage from "./OpsTicketsPage";
+import TicketsPage from "../Tickets/TicketsPage";
 import OpsSettingsPage from "./OpsSettingsPage";
 import OverviewPage from "./OverviewPage";
 import ProjectPoolPage from "./ProjectPoolPage";
@@ -150,7 +150,7 @@ export default function OpsApp() {
             <Layout style={{ marginLeft: siderWidth, transition: "margin-left 0.18s ease" }}>
               <Content style={{ padding: 16, background: "#f0f2f5" }}>
                 <Routes>
-                  <Route path="tickets" element={<OpsTicketsPage />} />
+                  <Route path="tickets" element={<TicketsPage isAdmin={isAdmin} />} />
                   <Route path="overview" element={<OverviewPage />} />
                   <Route path="my-projects" element={<ProjectPoolPage key="my-projects" mine />} />
                   <Route path="projects" element={canPool ? <ProjectPoolPage key="projects" /> : <Navigate to="/tickets" replace />} />

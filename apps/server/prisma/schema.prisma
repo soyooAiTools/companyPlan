@@ -200,6 +200,8 @@ model tickets {
   tag_name                            String?       @db.VarChar(120)
   due_at                              String?       @db.VarChar(40)
   warn_at                             String?       @db.VarChar(40)
+  admin_note                          String?       @db.Text
+  admin_note_updated_at               String?       @db.VarChar(40)
   attachments                         attachments[]
   people_tickets_owner_idTopeople     people        @relation("tickets_owner_idTopeople", fields: [owner_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_owner")
   projects                            projects      @relation(fields: [project_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_tickets_project")

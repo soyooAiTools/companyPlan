@@ -79,6 +79,15 @@ export const isNextDeadlineOverdue = (row: OpsProjectPoolRow) => {
 	return !!next?.date && dayjs(next.date, "YYYY-MM-DD").isBefore(dayjs(), "day");
 };
 
+export const nextDeadlineDiffDays = (row: OpsProjectPoolRow) => {
+	const items = Array.isArray(row.stageDeadlines) ? row.stageDeadlines : [];
+	const next = nextStageDeadline(row.stage, items);
+	if (!next?.date) return Number.POSITIVE_INFINITY;
+	const date = dayjs(next.date, "YYYY-MM-DD");
+	if (!date.isValid()) return Number.POSITIVE_INFINITY;
+	return date.startOf("day").diff(dayjs().startOf("day"), "day");
+};
+
 export const finalStageDeadline = (items?: { key: string; name: string; date: string }[]) => {
 	if (!Array.isArray(items) || !items.length) return null;
 	return items.find((item) => item.key === "final_delivery") || items[items.length - 1] || null;

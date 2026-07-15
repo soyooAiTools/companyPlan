@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { Avatar, Table, Tag, Typography } from "antd";
 import type { ColumnsType, ColumnType } from "antd/es/table";
+import type { SortOrder } from "antd/es/table/interface";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import VirtualGroupStickyBar from "../components/table/VirtualGroupStickyBar";
@@ -17,6 +18,7 @@ type GroupedProjectPoolViewProps = {
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
+	collapseAction?: { type: "collapse" | "expand"; version: number };
 };
 
 type ProjectGroupTableRow =
@@ -89,18 +91,35 @@ const groupLabel = (
 	</div>
 );
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, collapseAction }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
+	const [activeSort, setActiveSort] = useState<{ key: string; order: SortOrder } | null>(null);
+	const sortedGroups = useMemo(() => {
+		if (!activeSort?.order) return groups;
+		const column = columns.find((item) => String(item.key) === activeSort.key) as ColumnType<OpsProjectPoolRow> | undefined;
+		const sorter = column?.sorter;
+		if (typeof sorter !== "function") return groups;
+		const direction = activeSort.order === "descend" ? -1 : 1;
+		return groups.map((group) => ({
+			...group,
+			rows: [...group.rows].sort((a, b) => sorter(a, b, activeSort.order) * direction),
+		}));
+	}, [activeSort, columns, groups]);
 	const rows = useMemo<ProjectGroupTableRow[]>(() => {
 		const nextRows: ProjectGroupTableRow[] = [];
-		for (const group of groups) {
+		for (const group of sortedGroups) {
 			nextRows.push({ kind: "group", key: `group-${group.key}`, group });
 			if (!collapsedKeys.has(group.key)) {
 				nextRows.push(...group.rows.map((project, groupIndex) => ({ kind: "project" as const, key: `project-${group.key}-${project.id}`, groupKey: group.key, project, groupIndex })));
 			}
 		}
 		return nextRows;
-	}, [collapsedKeys, groups]);
+	}, [collapsedKeys, sortedGroups]);
+
+	useEffect(() => {
+		if (!collapseAction) return;
+		setCollapsedKeys(collapseAction.type === "collapse" ? new Set(groups.map((group) => group.key)) : new Set());
+	}, [collapseAction, groups]);
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedKeys((prev) => {
@@ -124,6 +143,8 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					className: projectColumn.className,
 					filterDropdown: projectColumn.filterDropdown as ColumnType<ProjectGroupTableRow>["filterDropdown"],
 					filterIcon: projectColumn.filterIcon as ColumnType<ProjectGroupTableRow>["filterIcon"],
+					sorter: projectColumn.sorter ? true : undefined,
+					sortOrder: activeSort?.key === String(projectColumn.key) ? activeSort.order : null,
 					onCell: (row) => {
 						if (row.kind === "group") return { colSpan: columnIndex === 0 ? columns.length : 0 };
 						return projectColumn.onCell?.(row.project, 0) || {};
@@ -137,7 +158,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				};
 				return nextColumn;
 			}),
-		[collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
+		[activeSort, collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
 	);
 
 	if (!loading && !groups.length) {
@@ -156,6 +177,10 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					font-weight: 600;
 					padding-top: 11px;
 					padding-bottom: 11px;
+				}
+				.ops-pool-group-table .ant-table-column-sorter-up.active,
+				.ops-pool-group-table .ant-table-column-sorter-down.active {
+					color: #dc2626;
 				}
 				.ops-pool-group-table .ant-table-thead > tr > th:first-child {
 					position: sticky;
@@ -251,7 +276,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				getRowKey={(row) => row.key}
 				getActiveGroup={(row) => {
 					if (row.kind === "group") return row.group;
-					return groups.find((group) => group.key === row.groupKey) || null;
+					return sortedGroups.find((group) => group.key === row.groupKey) || null;
 				}}
 				getGroupKey={(group) => group.key}
 				renderGroup={(group) => groupLabel(group, collapsedKeys.has(group.key), hideStats, onOpenGroupTickets, onOpenGroupDeadlineProjects)}
@@ -266,6 +291,11 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					virtual
 					scroll={{ x: 1900, y: scrollY }}
 					pagination={false}
+					onChange={(_pagination, _filters, sorter) => {
+						const active = Array.isArray(sorter) ? sorter[0] : sorter;
+						const key = active?.columnKey != null ? String(active.columnKey) : "";
+						setActiveSort(active?.order && key ? { key, order: active.order } : null);
+					}}
 					onRow={(row) => {
 						if (row.kind === "group") {
 							return {

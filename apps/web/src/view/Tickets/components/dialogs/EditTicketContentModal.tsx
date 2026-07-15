@@ -1,5 +1,5 @@
 import { Modal } from "antd";
-import RichTextEditor from "../../RichTextEditor";
+import RichTextEditor from "../../../Ops/RichTextEditor";
 
 type EditTicketContentModalProps = {
 	open: boolean;

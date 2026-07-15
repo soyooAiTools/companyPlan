@@ -1,5 +1,18 @@
+import type { CSSProperties } from "react";
+
 export type OpsTicketScope = "all" | "owner" | "requester";
-export type OpsTicketGroupBy = "status" | "priority" | "segment";
+
+export const TICKETS_TOOLBAR_CARD: CSSProperties = {
+	display: "flex",
+	alignItems: "center",
+	flexWrap: "wrap",
+	gap: 12,
+	marginBottom: 12,
+	background: "#fff",
+	padding: "10px 12px",
+	borderRadius: 8,
+	border: "1px solid #edf0f3",
+};
 
 // 「阻塞」暂时前端隐藏:不可选 / 不分组 / 不展示(后端仍支持,恢复时把 "阻塞" 加回本数组即可)
 export const STATUSES = ["排队中", "进行中", "已完成"];
