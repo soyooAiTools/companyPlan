@@ -50,7 +50,17 @@ async function refreshUser(userId) {
 }
 // 项目改名/改状态 → 刷该项目所有工单的 项目/客户 快照
 async function refreshProject(projectId) {
-  const p = await soyooClient.project(projectId);
+  let p;
+  try {
+    p = await soyooClient.project(projectId);
+  } catch (error) {
+    // Soyoo 删除项目后详情接口返回 404；仍须刷新项目池快照，清除遗留行。
+    if (Number(error?.status) === 404) {
+      await refreshProjectPoolSnapshot(projectId);
+      return;
+    }
+    throw error;
+  }
   if (!p) return;
   await prisma.tickets.updateMany({
     where: { project_id: String(p.id) },
