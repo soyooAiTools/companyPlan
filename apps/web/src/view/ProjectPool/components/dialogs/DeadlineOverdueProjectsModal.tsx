@@ -1,6 +1,6 @@
 import { Empty, List, Modal, Space, Tag } from "antd";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
-import { deadlineRemain, fmtStageDate, isNextDeadlineOverdue, nextStageDeadline, stageDeadlineName } from "../../deadlineUtils";
+import { deadlineRemain, fmtStageDate, isNextDeadlineOverdue, nextStageDeadline, stageDeadlineName, stageRangeLabel } from "../../deadlineUtils";
 
 type DeadlineOverdueProjectsModalProps = {
 	open: boolean;
@@ -45,7 +45,7 @@ export default function DeadlineOverdueProjectsModal({ open, title, rows, onCanc
 										{row.tenantName ? <span style={{ color: "#64748b", flexShrink: 0 }}>- {row.tenantName}</span> : null}
 									</div>
 									<Space size={8} wrap style={{ marginTop: 6, fontSize: 12 }}>
-										<Tag color="blue" style={{ marginInlineEnd: 0 }}>当前:{row.stage || "未设置"}</Tag>
+										<Tag color="blue" style={{ marginInlineEnd: 0 }}>当前:{row.stage ? stageRangeLabel(row.stage) : "未设置"}</Tag>
 										<Tag style={{ marginInlineEnd: 0, color: "#c2410c", background: "#ffedd5", borderColor: "#fed7aa" }}>
 											下版:{deadline ? `${fmtStageDate(deadline.date)} ${stageDeadlineName(deadline)}` : "未设置"}
 										</Tag>

@@ -1,6 +1,6 @@
 import type { OpsProjectPoolMember, OpsProjectPoolRow } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES } from "@/view/Ops/constants";
-import { isNextDeadlineOverdue } from "../deadlineUtils";
+import { isNextDeadlineOverdue, stageRangeLabel } from "../deadlineUtils";
 
 export type ProjectPoolOwnerRow = OpsProjectPoolRow & {
   ownerTagsText?: string;
@@ -99,20 +99,20 @@ export const groupProjectsBySegment = (rows: OpsProjectPoolRow[]): ProjectPoolGr
 
 // 按阶段分组
 export const groupProjectsByStage = (rows: OpsProjectPoolRow[]): ProjectPoolGroup[] => {
-  const groups = new Map<string, { title: string; rows: OpsProjectPoolRow[] }>();
+  const groups = new Map<string, { title: string; rawStage: string; rows: OpsProjectPoolRow[] }>();
   for (const row of rows) {
-    const title = row.stage?.trim() || "未设置阶段";
-    const key = title || "__no_stage";
-    const group = groups.get(key) || { title, rows: [] };
+    const rawStage = row.stage?.trim() || "未设置阶段";
+    const key = rawStage || "__no_stage";
+    const group = groups.get(key) || { title: rawStage === "未设置阶段" ? rawStage : stageRangeLabel(rawStage), rawStage, rows: [] };
     group.rows.push(row);
     groups.set(key, group);
   }
 
   return [...groups.entries()]
-    .map(([key, group]) => ({ key: `stage-${key}`, title: group.title, rows: group.rows, stats: groupStats(group.rows) }))
+    .map(([key, group]) => ({ key: `stage-${key}`, title: group.title, rows: group.rows, stats: groupStats(group.rows), rawStage: group.rawStage }))
     .sort((a, b) => {
-      const aOrder = stageOrder.get(a.title) ?? 999;
-      const bOrder = stageOrder.get(b.title) ?? 999;
+      const aOrder = stageOrder.get(a.rawStage) ?? 999;
+      const bOrder = stageOrder.get(b.rawStage) ?? 999;
       return aOrder - bOrder || bySizeDesc(a, b);
     });
 };

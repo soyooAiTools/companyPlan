@@ -1,6 +1,7 @@
 // ops 提单"实时查 soyoo"封装:选项目/选负责人/算环节负责人/建单快照。
 // 全部走 soyoo-client(/integration);不读本地 people/projects 表。
 import { soyooClient } from "./soyoo-client.mjs";
+import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
 
 // 我参与的项目(提单选项目下拉)
 export async function listMyProjects(user) {
@@ -85,7 +86,7 @@ export async function getResponsibles(projectId, segments) {
   const active = members.filter((m) => m.status !== "disabled");
   const segList = [];
   for (const seg of segments) {
-    const tagIds = (seg.tags ?? []).map((t) => String(t.id));
+    const tagIds = effectiveSegmentTagIds(seg.tags);
     if (!tagIds.length) continue;
     const segMembers = active
       .filter((m) => m.tags.some((t) => tagIds.includes(t.id)))
@@ -95,7 +96,10 @@ export async function getResponsibles(projectId, segments) {
   const allMembers = [];
   for (const m of active) {
     const segmentIds = segments
-      .filter((seg) => (seg.tags ?? []).length && m.tags.some((t) => seg.tags.some((st) => String(st.id) === t.id)))
+      .filter((seg) => {
+        const tagIds = effectiveSegmentTagIds(seg.tags);
+        return tagIds.length && m.tags.some((t) => tagIds.includes(String(t.id)));
+      })
       .map((seg) => seg.id);
     if (segmentIds.length) allMembers.push({ id: m.id, username: m.username, name: m.name, wechatName: m.wechatName, wechatAvatar: m.avatar, segmentIds });
   }
@@ -105,7 +109,7 @@ export async function getResponsibles(projectId, segments) {
 // 建单快照:实时查 soyoo,验证 owner 属于该项目该环节,返回要写进工单的快照字段(或 {error})。
 // segTags:[{id,name}] 该环节绑定的标签(来自本地 ops_segment_tags + 名字)。
 export async function buildTicketSnapshot({ projectId, ownerId, requesterUserId, segTags }) {
-  const segTagIds = (segTags ?? []).map((t) => String(t.id));
+  const segTagIds = effectiveSegmentTagIds(segTags);
   if (!segTagIds.length) return { error: "该环节未绑定任何标签" };
   const { project, members } = await getProjectWithMembers(projectId);
   if (!project) return { error: "项目不存在" };

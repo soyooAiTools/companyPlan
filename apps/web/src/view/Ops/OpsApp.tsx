@@ -14,6 +14,7 @@ import OverviewPage from "./OverviewPage";
 import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
 import NotificationCenter from "./components/NotificationCenter";
+import UpdateLogFloat from "../../components/UpdateLogFloat";
 
 const { Sider, Content } = Layout;
 const OPS_SIDER_COLLAPSED_KEY = "ops.sider.collapsed";
@@ -160,6 +161,7 @@ export default function OpsApp() {
                 </Routes>
               </Content>
             </Layout>
+            <UpdateLogFloat />
           </Layout>
         )}
       </AntApp>

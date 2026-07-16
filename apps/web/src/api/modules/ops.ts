@@ -98,6 +98,11 @@ export interface CreateTicketBody {
 	hyperlink?: string;
 	text?: string;
 }
+export interface CreateTicketBatchBody {
+	projectId: string;
+	priority?: string;
+	tickets: Array<Omit<CreateTicketBody, "projectId"> & { projectId?: string }>;
+}
 
 export interface OpsMe {
 	id: string;
@@ -268,6 +273,10 @@ export const opsApi = {
 			page?: number;
 			pageSize?: number;
 			q?: string;
+			title?: string;
+			project?: string;
+			requester?: string;
+			owner?: string;
 			status?: string[];
 			priority?: string[];
 			segment?: number[];
@@ -281,6 +290,10 @@ export const opsApi = {
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
+		if (params.title) qs.set("title", params.title);
+		if (params.project) qs.set("project", params.project);
+		if (params.requester) qs.set("requester", params.requester);
+		if (params.owner) qs.set("owner", params.owner);
 		if (params.status?.length) qs.set("status", params.status.join(","));
 		if (params.priority?.length) qs.set("priority", params.priority.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
@@ -291,6 +304,7 @@ export const opsApi = {
 		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
 	},
 	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	createTickets: (body: CreateTicketBatchBody) => requestJson<{ tickets: OpsTicket[] }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
 	ticket: (id: string) => requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`),
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)

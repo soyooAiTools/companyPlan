@@ -15,7 +15,10 @@ type TicketTableProps = {
 	page: number;
 	pageSize: number;
 	total: number;
-	search: string;
+	titleSearch: string;
+	projectSearch: string;
+	requesterSearch: string;
+	ownerSearch: string;
 	statusFilter: string[];
 	priorityFilter: string[];
 	segmentFilter: number[];
@@ -25,7 +28,10 @@ type TicketTableProps = {
 	segmentOptions: { id: number; name: string }[];
 	statusControl: (ticket: OpsTicket, width?: number | string) => ReactNode;
 	priorityControl: (ticket: OpsTicket, width?: number | string) => ReactNode;
-	onSearchChange: (value: string) => void;
+	onTitleSearchChange: (value: string) => void;
+	onProjectSearchChange: (value: string) => void;
+	onRequesterSearchChange: (value: string) => void;
+	onOwnerSearchChange: (value: string) => void;
 	onStatusFilterChange: (value: string[]) => void;
 	onPriorityFilterChange: (value: string[]) => void;
 	onSegmentFilterChange: (value: number[]) => void;
@@ -52,7 +58,7 @@ function dropdownActions(onClear: () => void, onConfirm: () => void) {
 	);
 }
 
-function HeaderSearchDropdown({ value, onApply, confirm }: { value: string; onApply: (value: string) => void; confirm: () => void }) {
+function HeaderSearchDropdown({ value, placeholder, onApply, confirm }: { value: string; placeholder: string; onApply: (value: string) => void; confirm: () => void }) {
 	const [draft, setDraft] = useState(value);
 	const [composing, setComposing] = useState(false);
 	useEffect(() => {
@@ -67,7 +73,7 @@ function HeaderSearchDropdown({ value, onApply, confirm }: { value: string; onAp
 			<Input
 				autoFocus
 				allowClear
-				placeholder="搜索 单号/标题/项目/客户/提单人/负责人"
+				placeholder={placeholder}
 				value={draft}
 				onChange={(e) => setDraft(e.target.value)}
 				onCompositionStart={() => setComposing(true)}
@@ -90,7 +96,10 @@ export default function TicketTable({
 	page,
 	pageSize,
 	total,
-	search,
+	titleSearch,
+	projectSearch,
+	requesterSearch,
+	ownerSearch,
 	statusFilter,
 	priorityFilter,
 	segmentFilter,
@@ -100,7 +109,10 @@ export default function TicketTable({
 	segmentOptions,
 	statusControl,
 	priorityControl,
-	onSearchChange,
+	onTitleSearchChange,
+	onProjectSearchChange,
+	onRequesterSearchChange,
+	onOwnerSearchChange,
 	onStatusFilterChange,
 	onPriorityFilterChange,
 	onSegmentFilterChange,
@@ -111,6 +123,12 @@ export default function TicketTable({
 }: TicketTableProps) {
 	const personCell = (avatar?: string, name?: string) => <PersonCell avatar={avatar} name={name} />;
 	const antdSortOrder = (key: "createdAt" | "remaining") => (sortBy === key ? (sortOrder === "asc" ? "ascend" : "descend") : null);
+	const searchIcon = (filtered: boolean) => <SearchOutlined style={{ color: filtered ? "#1677ff" : "#94a3b8", fontSize: 15, strokeWidth: 2 }} />;
+	const searchDropdown = (value: string, placeholder: string, onApply: (value: string) => void, confirm: () => void) =>
+		dropdownShell(
+			<HeaderSearchDropdown value={value} placeholder={placeholder} onApply={onApply} confirm={confirm} />,
+			300,
+		);
 	const handleTableChange = (_pagination: unknown, _filters: unknown, sorter: SorterResult<OpsTicket> | SorterResult<OpsTicket>[], extra: { action: string }) => {
 		if (extra.action !== "sort") return;
 		const current = Array.isArray(sorter) ? sorter[0] : sorter;
@@ -156,19 +174,18 @@ export default function TicketTable({
 			dataIndex: "title",
 			width: 190,
 			ellipsis: true,
-			filteredValue: search ? [search] : null,
-			filterIcon: (filtered) => <SearchOutlined style={{ color: filtered ? "#1677ff" : "#94a3b8", fontSize: 15, strokeWidth: 2 }} />,
-			filterDropdown: ({ confirm }) =>
-				dropdownShell(
-					<HeaderSearchDropdown value={search} onApply={onSearchChange} confirm={confirm} />,
-					300,
-				),
+			filteredValue: titleSearch ? [titleSearch] : null,
+			filterIcon: (filtered) => searchIcon(filtered),
+			filterDropdown: ({ confirm }) => searchDropdown(titleSearch, "搜索 单号/标题", onTitleSearchChange, confirm),
 		},
 		{
 			title: "项目",
 			dataIndex: "projectName",
 			width: 210,
 			ellipsis: true,
+			filteredValue: projectSearch ? [projectSearch] : null,
+			filterIcon: (filtered) => searchIcon(filtered),
+			filterDropdown: ({ confirm }) => searchDropdown(projectSearch, "搜索 项目/客户", onProjectSearchChange, confirm),
 			render: (_: string, ticket) => (
 				<span>
 					{ticket.projectName}
@@ -176,7 +193,15 @@ export default function TicketTable({
 				</span>
 			),
 		},
-		{ title: "提单人", dataIndex: "requesterName", width: 120, render: (v: string, r) => personCell(r.requesterAvatar, v) },
+		{
+			title: "提单人",
+			dataIndex: "requesterName",
+			width: 120,
+			filteredValue: requesterSearch ? [requesterSearch] : null,
+			filterIcon: (filtered) => searchIcon(filtered),
+			filterDropdown: ({ confirm }) => searchDropdown(requesterSearch, "搜索 提单人", onRequesterSearchChange, confirm),
+			render: (v: string, r) => personCell(r.requesterAvatar, v),
+		},
 		{
 			title: "环节",
 			dataIndex: "tagName",
@@ -208,7 +233,15 @@ export default function TicketTable({
 				),
 			render: (v: string) => <Tag color="cyan">{v}</Tag>,
 		},
-		{ title: "负责人", dataIndex: "ownerName", width: 120, render: (v: string, r) => personCell(r.ownerAvatar, v) },
+		{
+			title: "负责人",
+			dataIndex: "ownerName",
+			width: 120,
+			filteredValue: ownerSearch ? [ownerSearch] : null,
+			filterIcon: (filtered) => searchIcon(filtered),
+			filterDropdown: ({ confirm }) => searchDropdown(ownerSearch, "搜索 负责人", onOwnerSearchChange, confirm),
+			render: (v: string, r) => personCell(r.ownerAvatar, v),
+		},
 		{
 			title: "优先级",
 			dataIndex: "priority",

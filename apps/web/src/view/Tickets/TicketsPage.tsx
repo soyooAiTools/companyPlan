@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { App, Button, Form, Modal, Select, Space, Tag } from "antd";
 import { EditOutlined } from "@ant-design/icons";
@@ -25,8 +25,14 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [tickets, setTickets] = useState<OpsTicket[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scope, setScope] = useState<OpsTicketScope>("all");
-	const [search, setSearch] = useState("");
-	const [debouncedSearch, setDebouncedSearch] = useState("");
+	const [titleSearch, setTitleSearch] = useState("");
+	const [projectSearch, setProjectSearch] = useState("");
+	const [requesterSearch, setRequesterSearch] = useState("");
+	const [ownerSearch, setOwnerSearch] = useState("");
+	const [debouncedTitleSearch, setDebouncedTitleSearch] = useState("");
+	const [debouncedProjectSearch, setDebouncedProjectSearch] = useState("");
+	const [debouncedRequesterSearch, setDebouncedRequesterSearch] = useState("");
+	const [debouncedOwnerSearch, setDebouncedOwnerSearch] = useState("");
 	const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
 	const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
 	const [segmentOptions, setSegmentOptions] = useState<{ id: number; name: string }[]>([]); // 全部环节(筛选下拉用)
@@ -65,11 +71,13 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [submitting, setSubmitting] = useState(false);
 	const [tenants, setTenants] = useState<OpsTenant[]>([]);
 	const [projects, setProjects] = useState<OpsProject[]>([]);
+	const [projectsLoading, setProjectsLoading] = useState(false);
 	const [segments, setSegments] = useState<OpsResponsibleSegment[]>([]);
 	const [members, setMembers] = useState<OpsResponsibleMember[]>([]);
+	const [invalidTaskIndex, setInvalidTaskIndex] = useState<number | null>(null);
 	const [form] = Form.useForm();
-	const selectedSegmentId = Form.useWatch("segmentId", form) as number | undefined;
 	const selectedProjectId = Form.useWatch("projectId", form) as string | undefined;
+	const projectsRequestSeq = useRef(0);
 
 	const loadTickets = async () => {
 		setLoading(true);
@@ -78,7 +86,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				scope,
 				page,
 				pageSize,
-				q: debouncedSearch.trim() || undefined,
+				title: debouncedTitleSearch.trim() || undefined,
+				project: debouncedProjectSearch.trim() || undefined,
+				requester: debouncedRequesterSearch.trim() || undefined,
+				owner: debouncedOwnerSearch.trim() || undefined,
 				priority: priorityFilter,
 				segment: segmentFilter,
 				overdueOnly: isAdmin ? overdueOnly : false,
@@ -98,16 +109,19 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	useEffect(() => {
 		void loadTickets();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [scope, page, pageSize, statusFilter, priorityFilter, segmentFilter, overdueOnly, sortBy, sortOrder, debouncedSearch]);
+	}, [scope, page, pageSize, statusFilter, priorityFilter, segmentFilter, overdueOnly, sortBy, sortOrder, debouncedTitleSearch, debouncedProjectSearch, debouncedRequesterSearch, debouncedOwnerSearch]);
 	// 搜索去抖(并回到第 1 页)
 	useEffect(() => {
 		const t = setTimeout(() => {
-			setDebouncedSearch(search);
+			setDebouncedTitleSearch(titleSearch);
+			setDebouncedProjectSearch(projectSearch);
+			setDebouncedRequesterSearch(requesterSearch);
+			setDebouncedOwnerSearch(ownerSearch);
 			setPage(1);
 		}, 400);
 		return () => clearTimeout(t);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [search]);
+	}, [titleSearch, projectSearch, requesterSearch, ownerSearch]);
 	// 环节筛选下拉:列出全部环节(不只当前数据里出现的)
 	useEffect(() => {
 		opsApi
@@ -359,61 +373,86 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	// 建单级联
 	const openCreate = async () => {
 		form.resetFields();
+		form.setFieldsValue({ priority: "普通", tickets: [{}] });
+		setInvalidTaskIndex(null);
 		setProjects([]);
+		setProjectsLoading(false);
 		setSegments([]);
 		setMembers([]);
 		setOpen(true);
 		const tn = await opsApi.tenants().catch(() => null);
 		if (tn) setTenants(tn.tenants);
 	};
-	const onTenantChange = async (tenantId: string) => {
-		form.setFieldsValue({ projectId: undefined, segmentId: undefined, ownerId: undefined });
+	const onTenantChange = async (tenantId?: string) => {
+		const seq = ++projectsRequestSeq.current;
+		form.setFieldsValue({ projectId: undefined, tickets: [{}] });
 		setProjects([]);
 		setSegments([]);
 		setMembers([]);
+		if (!tenantId) {
+			setProjectsLoading(false);
+			return;
+		}
+		setProjectsLoading(true);
 		const r = await opsApi.projects(tenantId).catch(() => null);
+		if (seq !== projectsRequestSeq.current) return;
 		if (r) setProjects(r.projects);
+		setProjectsLoading(false);
 	};
-	const onProjectChange = async (projectId: string) => {
-		form.setFieldsValue({ segmentId: undefined, ownerId: undefined });
+	const onProjectChange = async (projectId?: string) => {
+		form.setFieldsValue({ tickets: [{}] });
 		setSegments([]);
 		setMembers([]);
+		if (!projectId) return;
 		const r = await opsApi.responsibles(projectId).catch(() => null);
 		if (r) {
 			setSegments(r.segments ?? []);
 			setMembers(r.members ?? []);
 		}
 	};
-	// 负责人选项:选了环节→该环节成员;没选环节→项目全部成员。带微信头像/网名供下拉「头像｜网名｜姓名」展示
-	const ownerOptions = useMemo(() => {
-		const segNameById = new Map(segments.map((s) => [s.id, s.name]));
-		const toOpt = (m: OpsResponsibleMember) => ({
-			value: m.id,
-			label: m.wechatName ? `${m.wechatName}｜${m.name || m.username}` : m.name || m.username,
-			avatar: m.wechatAvatar || "",
-			wechatName: m.wechatName || "",
-			name: m.name || m.username,
-			username: m.username,
-			segmentNames: (m.segmentIds || []).map((id) => segNameById.get(id)).filter(Boolean) as string[], // 该成员所属环节名(下拉显示)
-		});
-		if (selectedSegmentId) {
-			const seg = segments.find((s) => s.id === selectedSegmentId);
-			return (seg?.members ?? []).map(toOpt);
-		}
-		return (members ?? []).map(toOpt);
-	}, [segments, members, selectedSegmentId]);
-	// 先选负责人(未选环节)时,自动回填其所属环节(取第一个)
-	const onOwnerChange = (ownerId?: string) => {
-		if (!ownerId || selectedSegmentId) return;
-		const segId = members.find((x) => x.id === ownerId)?.segmentIds?.[0];
-		if (segId != null) form.setFieldsValue({ segmentId: segId });
-	};
 	const submit = async () => {
-		const v = await form.validateFields();
+		await form.validateFields([["tenantId"], ["projectId"]]);
+		const v = form.getFieldsValue();
+		const rawTickets = (v.tickets || []) as Record<string, unknown>[];
+		const hasAnyValue = (ticket: Record<string, unknown>) =>
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? "")));
+		const isComplete = (ticket: Record<string, unknown>) => Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim());
+		const incompleteIndex = rawTickets.findIndex((ticket) => hasAnyValue(ticket) && !isComplete(ticket));
+		if (incompleteIndex >= 0) {
+			const ticket = rawTickets[incompleteIndex];
+			const ownerName = String(ticket.ownerId ?? "").trim() ? members.find((member) => member.id === String(ticket.ownerId))?.name || String(ticket.ownerId) : "未选负责人";
+			const title = String(ticket.title ?? "").trim();
+			const ticketLabel = `工单 ${incompleteIndex + 1}${ownerName ? `（${ownerName}${title ? ` · ${title}` : ""}）` : ""}`;
+			setInvalidTaskIndex(incompleteIndex);
+			form.setFields(
+				[
+					!String(ticket.title ?? "").trim() ? { name: ["tickets", incompleteIndex, "title"], errors: ["请输入标题"] } : null,
+					ticket.segmentId == null ? { name: ["tickets", incompleteIndex, "segmentId"], errors: ["请选择环节"] } : null,
+					!String(ticket.ownerId ?? "").trim() ? { name: ["tickets", incompleteIndex, "ownerId"], errors: ["请选择负责人"] } : null,
+				].filter(Boolean) as Parameters<typeof form.setFields>[0],
+			);
+			messageApi.error(`${ticketLabel}：请补全标题、环节和负责人`);
+			return;
+		}
+		setInvalidTaskIndex(null);
+		const ticketsToCreate = rawTickets
+			.filter(isComplete)
+			.map((ticket: Record<string, unknown>) => ({
+				projectId: v.projectId,
+				segmentId: Number(ticket.segmentId),
+				ownerId: String(ticket.ownerId),
+				title: String(ticket.title || "").trim(),
+				priority: v.priority,
+				contentHtml: String(ticket.contentHtml ?? ""),
+			}));
+		if (!ticketsToCreate.length) {
+			messageApi.error("请至少填写一条完整工单");
+			return;
+		}
 		setSubmitting(true);
 		try {
-			await opsApi.createTicket(v as Parameters<typeof opsApi.createTicket>[0]);
-			messageApi.success("提单已创建");
+			await opsApi.createTickets({ projectId: v.projectId, priority: v.priority, tickets: ticketsToCreate });
+			messageApi.success(ticketsToCreate.length > 1 ? `已创建 ${ticketsToCreate.length} 条工单` : "提单已创建");
 			setOpen(false);
 			await loadTickets();
 		} catch (e) {
@@ -424,14 +463,11 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	};
 	const hasCreateDraft = () => {
 		const v = form.getFieldsValue();
+		const hasTicketDraft = (v.tickets || []).some((ticket: Record<string, unknown>) =>
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? ""))),
+		);
 		return Boolean(
-			String(v.title ?? "").trim() ||
-				String(v.tenantId ?? "").trim() ||
-				String(v.projectId ?? "").trim() ||
-				v.segmentId != null ||
-				String(v.ownerId ?? "").trim() ||
-				(v.priority && v.priority !== "普通") ||
-				stripHtmlText(v.contentHtml),
+			String(v.tenantId ?? "").trim() || String(v.projectId ?? "").trim() || (v.priority && v.priority !== "普通") || hasTicketDraft,
 		);
 	};
 	const closeCreate = () => {
@@ -458,6 +494,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				scope={scope}
 				isAdmin={isAdmin}
 				overdueOnly={overdueOnly}
+				refreshing={loading}
 				onScopeChange={(value) => {
 					setScope(value);
 					setPage(1);
@@ -466,6 +503,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 					setOverdueOnly(value);
 					setPage(1);
 				}}
+				onRefresh={() => void loadTickets()}
 				onCreate={openCreate}
 			/>
 
@@ -475,7 +513,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				page={page}
 				pageSize={pageSize}
 				total={total}
-				search={search}
+				titleSearch={titleSearch}
+				projectSearch={projectSearch}
+				requesterSearch={requesterSearch}
+				ownerSearch={ownerSearch}
 				statusFilter={statusFilter}
 				priorityFilter={priorityFilter}
 				segmentFilter={segmentFilter}
@@ -485,7 +526,22 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				segmentOptions={segmentOptions}
 				statusControl={statusControl}
 				priorityControl={priorityControl}
-				onSearchChange={setSearch}
+				onTitleSearchChange={(value) => {
+					setTitleSearch(value);
+					setPage(1);
+				}}
+				onProjectSearchChange={(value) => {
+					setProjectSearch(value);
+					setPage(1);
+				}}
+				onRequesterSearchChange={(value) => {
+					setRequesterSearch(value);
+					setPage(1);
+				}}
+				onOwnerSearchChange={(value) => {
+					setOwnerSearch(value);
+					setPage(1);
+				}}
 				onStatusFilterChange={(value) => {
 					setStatusFilter(value);
 					setPage(1);
@@ -527,9 +583,6 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				}}
 				onAssign={openAssign}
 				onEditContent={openEditContent}
-				onEditAdminNote={() => {
-					if (detail) openAdminNote(detail);
-				}}
 			/>
 
 			<EditTicketContentModal open={editContentOpen} value={editContentHtml} saving={savingContent} projectId={detail?.projectId} onChange={setEditContentHtml} onSave={saveContent} onCancel={() => setEditContentOpen(false)} />
@@ -555,13 +608,13 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				form={form}
 				tenants={tenants}
 				projects={projects}
+				projectsLoading={projectsLoading}
 				segments={segments}
-				ownerOptions={ownerOptions}
+				members={members}
 				selectedProjectId={selectedProjectId}
+				invalidTaskIndex={invalidTaskIndex}
 				onTenantChange={onTenantChange}
 				onProjectChange={onProjectChange}
-				onSegmentChange={() => form.setFieldsValue({ ownerId: undefined })}
-				onOwnerChange={onOwnerChange}
 				onSubmit={submit}
 				onCancel={closeCreate}
 			/>

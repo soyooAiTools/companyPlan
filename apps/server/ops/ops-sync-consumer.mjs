@@ -22,6 +22,11 @@ function userIdCandidates(userId) {
   return id.startsWith("ops-user-") ? [id, id.replace(/^ops-user-/, "")] : [id, `ops-user-${id}`];
 }
 
+function programFirstTicketOwnerId(action) {
+  const match = String(action || "").match(/^program_first_ticket:(\d+)$/);
+  return match ? match[1] : "";
+}
+
 // 用户改名/换头像/管理员/禁用状态 → 同步本地身份 + 刷该用户在所有工单里的 owner/requester 快照
 async function refreshUser(userId) {
   const u = await getUser(userId);
@@ -62,7 +67,8 @@ async function refreshProject(projectId) {
 
 async function handleProjectChange(ch, logger) {
   const projectId = String(ch.entity_id);
-  if (ch.action === "create_project") {
+  const programOwnerId = programFirstTicketOwnerId(ch.action);
+  if (ch.action === "create_project" || programOwnerId) {
     const { project, members } = await getProjectWithMembers(projectId);
     if (!project) return;
     const result = await autoCreateProgramFirstTicket({
@@ -70,7 +76,8 @@ async function handleProjectChange(ch, logger) {
       project,
       members,
       projectId,
-      eventNote: "项目立项后自动生成",
+      ownerUserId: programOwnerId,
+      eventNote: ch.action === "create_project" ? "项目立项后自动生成" : "项目分配程序后自动生成",
     });
     logger?.info?.("[ops-outbox] auto create program ticket", { projectId, requesterUserId: ch.requester_user_id, ...result });
     await refreshProjectPoolSnapshot(projectId);

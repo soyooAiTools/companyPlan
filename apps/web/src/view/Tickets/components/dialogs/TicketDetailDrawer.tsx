@@ -16,10 +16,9 @@ type TicketDetailDrawerProps = {
 	onClose: () => void;
 	onAssign: () => void;
 	onEditContent: () => void;
-	onEditAdminNote: () => void;
 };
 
-export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent, onEditAdminNote }: TicketDetailDrawerProps) {
+export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent }: TicketDetailDrawerProps) {
 	return (
 		<Drawer title={detail?.title} open={!!detail} onClose={onClose} size={480} destroyOnHidden>
 			{detail &&
@@ -65,21 +64,6 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 							</Descriptions.Item>
 							{detail.status === "阻塞" && detail.blockReason ? <Descriptions.Item label="阻塞原因">{detail.blockReason}</Descriptions.Item> : null}
 						</Descriptions>
-
-						{detail.canEditAdminNote ? (
-							<div style={{ marginTop: 16, padding: "12px 14px", border: "1px solid #e2e8f0", borderRadius: 8, background: "#f8fafc" }}>
-								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-									<Typography.Title level={5} style={{ margin: 0 }}>
-										内部备注
-									</Typography.Title>
-									<Button size="small" icon={<EditOutlined />} onClick={onEditAdminNote}>
-										编辑
-									</Button>
-								</div>
-								<div style={{ marginTop: 8, whiteSpace: "pre-wrap", color: detail.adminNote ? "#0f172a" : "#94a3b8", lineHeight: 1.6 }}>{detail.adminNote || "暂无内部备注"}</div>
-								{detail.adminNoteUpdatedAt ? <div style={{ marginTop: 6, color: "#94a3b8", fontSize: 12 }}>更新时间: {fmtDateTime(detail.adminNoteUpdatedAt)}</div> : null}
-							</div>
-						) : null}
 
 						<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 16 }}>
 							<Typography.Title level={5} style={{ margin: 0 }}>

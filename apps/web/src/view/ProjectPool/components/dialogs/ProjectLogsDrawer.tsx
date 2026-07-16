@@ -15,6 +15,8 @@ type ProjectLogsDrawerProps = {
   onClose: () => void;
 };
 
+const cleanStatusText = (value?: string | null) => String(value || "").replace(/^\$+/, "");
+
 export default function ProjectLogsDrawer({ open, project, logs, loading, logKind, onLogKindChange, onClose }: ProjectLogsDrawerProps) {
   const shownLogs = logs.filter((lg) => logKind === "all" || lg.kind === logKind);
 
@@ -54,7 +56,7 @@ export default function ProjectLogsDrawer({ open, project, logs, loading, logKin
                   </Tag>
                   {(lg.kind === "status" || lg.kind === "stage") && (
                     <span style={{ color: "#64748b" }}>
-                      {lg.fromStatus ? `「${lg.fromStatus}」→ ` : ""}「${lg.toStatus}」
+                      {`${lg.fromStatus ? `「${cleanStatusText(lg.fromStatus)}」→ ` : ""}「${cleanStatusText(lg.toStatus)}」`}
                     </span>
                   )}
                 </div>

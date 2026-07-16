@@ -2,13 +2,14 @@
 import crypto from "node:crypto";
 import { prisma } from "../prisma.mjs";
 import { soyooClient, soyooId } from "../soyoo-client.mjs";
-import { getProjectWithMembers, getUser } from "../ops-realtime.mjs";
+import { getProjectWithMembers, getUser, listTags } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
 import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
 import { sanitizeRichHtml, isBlankRich } from "../rich-html.mjs";
 import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
+import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
@@ -125,7 +126,7 @@ export async function getProjectMembers(projectId) {
 }
 
 const AUTO_PROGRAM_SEGMENT = "程序第一版";
-const AUTO_PROGRAM_TITLE = "程序第一版";
+const AUTO_PROGRAM_TITLE = "立项：程序第一版(系统生成)";
 const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
 const SYSTEM_REQUESTER_ID = "system";
 const SYSTEM_REQUESTER_NAME = "系统";
@@ -207,7 +208,7 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
       due_at: dueAt,
       warn_at: warnAt,
       need_type: PLANNER_TAG,
-      summary: "系统自动生成",
+      summary: "此工单为系统自动生成",
       content_html: AUTO_PROGRAM_HTML,
       hyperlink: null,
       text: null,
@@ -231,13 +232,17 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
   return { created: true, ticketId: created.id };
 }
 
-export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, eventNote = "系统自动生成" }) {
+export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, ownerUserId = "", eventNote = "系统自动生成" }) {
   const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
   if (!segment) return { created: false, reason: "segment_not_found" };
   const segTags = await prisma.ops_segment_tags.findMany({ where: { segment_id: segment.id }, select: { tag_id: true } });
-  const tagIds = segTags.map((row) => String(row.tag_id));
+  const liveTags = await listTags().catch(() => []);
+  const tagNameById = new Map(liveTags.map((tag) => [String(tag.id), tag.name]));
+  const tagIds = effectiveSegmentTagIds(segTags.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) })));
   if (!tagIds.length) return { created: false, reason: "segment_tags_empty" };
-  const owner = members.find((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))));
+  const owner = ownerUserId
+    ? members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))))
+    : members.find((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))));
   if (!owner) return { created: false, reason: "owner_not_found" };
   const exists = await prisma.tickets.findFirst({
     where: { project_id: String(projectId), segment_id: segment.id, title: AUTO_PROGRAM_TITLE, status: { not: "已完成" } },

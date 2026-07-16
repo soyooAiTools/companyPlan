@@ -17,6 +17,16 @@ export const stageDeadlineTemplates: OpsProjectStageDeadline[] = [
 
 export const defaultStageIntervals = [2, 3, 7, 3];
 
+export const stageRangeLabel = (stage?: string | null) => {
+	const name = String(stage || "").trim();
+	if (!name) return "—";
+	const index = stageDeadlineTemplates.findIndex((item) => item.name === name || item.key === name);
+	if (index < 0) return name;
+	const current = stageDeadlineTemplates[index].name;
+	const next = stageDeadlineTemplates[index + 1]?.name;
+	return next ? `${current} -> ${next}` : current;
+};
+
 export const fmtStageDate = (date?: string) => {
 	if (!date) return "—";
 	const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);

@@ -6,7 +6,7 @@ import { EditOutlined, FilterFilled, QuestionCircleOutlined, SearchOutlined } fr
 import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
-import { fmtProjectDate, nextDeadlineDiffDays, projectDurationText, projectStartDate } from "../deadlineUtils";
+import { fmtProjectDate, nextDeadlineDiffDays, projectDurationText, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
@@ -206,7 +206,7 @@ export function useProjectPoolColumns(
 				? ({ close }) => (
 						<HeaderMultiDropdown
 							value={filters.stageFilter}
-							options={PROJECT_STAGES.map((stage) => ({ label: stage, value: stage }))}
+							options={PROJECT_STAGES.map((stage) => ({ label: stageRangeLabel(stage), value: stage }))}
 							onApply={filters.onStageFilterChange}
 							close={close}
 						/>
@@ -229,7 +229,7 @@ export function useProjectPoolColumns(
 						e.stopPropagation();
 						if (!options.readonly) actions.openChange(row, "stage");
 					}}>
-					{row.stage || "—"}
+					{stageRangeLabel(row.stage)}
 				</Tag>
 			),
 		},

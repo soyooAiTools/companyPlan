@@ -10,6 +10,7 @@ import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./op
 import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
 import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
+import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
@@ -137,11 +138,11 @@ async function loadSegments() {
   const links = await prisma.ops_segment_tags.findMany();
   // 标签名实时查 soyoo(本地不再存 tags);失败则回退 tag_id
   const liveTags = await listTags().catch(() => []);
-  const tagNameById = new Map(liveTags.map((t) => [t.id, t.name]));
+  const tagNameById = new Map(liveTags.map((t) => [String(t.id), t.name]));
   const bySeg = new Map();
   for (const l of links) {
     if (!bySeg.has(l.segment_id)) bySeg.set(l.segment_id, []);
-    bySeg.get(l.segment_id).push({ id: l.tag_id, name: tagNameById.get(l.tag_id) ?? l.tag_id });
+    bySeg.get(l.segment_id).push({ id: String(l.tag_id), name: tagNameById.get(String(l.tag_id)) ?? String(l.tag_id) });
   }
   return segments.map((s) => ({
     id: s.id,
@@ -151,6 +152,93 @@ async function loadSegments() {
     sortOrder: s.sort_order,
     tags: bySeg.get(s.id) ?? [],
   }));
+}
+
+async function loadSegmentTags(segmentId) {
+  const links = await prisma.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } });
+  if (!links.length) return [];
+  const liveTags = await listTags().catch(() => []);
+  const tagNameById = new Map(liveTags.map((t) => [String(t.id), t.name]));
+  return links.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) }));
+}
+
+async function prepareTicketCreate({ user, body }) {
+  const projectId = body.projectId ? String(body.projectId) : "";
+  const segmentId = Number(body.segmentId);
+  const ownerId = body.ownerId ? String(body.ownerId) : "";
+  if (!projectId || !Number.isInteger(segmentId) || !ownerId) return { error: "项目、环节、负责人均必填" };
+
+  const rawHtml = body.contentHtml != null ? String(body.contentHtml) : "";
+  if (rawHtml.length > MAX_CONTENT_HTML) return { status: 413, error: "内容过大,请压缩图片后重试" };
+  const contentHtml = isBlankRich(rawHtml) ? "" : sanitizeRichHtml(rawHtml);
+  const summaryText = htmlToPlain(contentHtml) || clip(body.summary, 2000);
+
+  const segment = await prisma.ops_segments.findUnique({ where: { id: segmentId } });
+  if (!segment) return { error: "环节不存在" };
+  const segTags = await loadSegmentTags(segmentId);
+  if (!segTags.length) return { error: "该环节未绑定任何标签" };
+
+  let built;
+  try {
+    built = await buildTicketSnapshot({ projectId, ownerId, requesterUserId: meId(user), segTags });
+  } catch (e) {
+    return { soyooError: e };
+  }
+  if (built.error) return { error: built.error };
+  const s = built.snapshot;
+  const now = nowIso();
+  const dueAt = addBusinessHours(now, segment.default_delivery_hours);
+  const warnAt = addBusinessHours(now, segment.risk_warning_hours);
+  const id = crypto.randomUUID();
+
+  return {
+    id,
+    projectId: s.project_id,
+    data: {
+      id,
+      title: clip(body.title, 160) || "未命名需求",
+      source_project_name: clip(s.client_name, 160),
+      client_id: s.client_id,
+      client_name: clip(s.client_name, 160),
+      project_name: clip(s.project_name, 160),
+      project_id: s.project_id,
+      project_status: clip(s.project_status, 80),
+      tag_id: s.tag_id,
+      tag_name: clip(s.tag_name, 120),
+      segment_id: segmentId,
+      discipline: clip(segment.name, 80),
+      requester_id: s.requester_id,
+      requester_name: clip(s.requester_name, 120),
+      requester_avatar: clip(s.requester_avatar, 1024),
+      requester_username: clip(s.requester_username, 120),
+      owner_id: s.owner_id,
+      owner_name: clip(s.owner_name, 120),
+      owner_avatar: clip(s.owner_avatar, 1024),
+      owner_username: clip(s.owner_username, 120),
+      status: "排队中",
+      priority: PRIORITIES.has(body.priority) ? body.priority : "普通",
+      start_at: now,
+      due_in_hours: segment.default_delivery_hours,
+      risk_warning_hours: segment.risk_warning_hours,
+      due_at: dueAt,
+      warn_at: warnAt,
+      need_type: clip(body.needType, 120) || segment.name,
+      summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""),
+      content_html: contentHtml || null,
+      hyperlink: body.hyperlink ? clip(body.hyperlink, 500) : null,
+      text: body.text ? clip(body.text, 500) : null,
+      created_at: now,
+      updated_at: now,
+      status_updated_at: now,
+    },
+  };
+}
+
+function ticketBatchErrorLabel(item, index) {
+  const title = String(item?.title || "").trim();
+  const owner = String(item?.ownerName || item?.ownerId || "").trim();
+  const suffix = [owner, title].filter(Boolean).join(" · ");
+  return `工单 ${index + 1}${suffix ? `（${suffix}）` : ""}`;
 }
 
 export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
@@ -339,6 +427,20 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
           { id: { contains: kw } },
         ],
       });
+    const titleKw = String(qy.title ?? "").trim();
+    if (titleKw)
+      filters.push({
+        OR: [{ title: { contains: titleKw } }, { id: { contains: titleKw } }],
+      });
+    const projectKw = String(qy.project ?? "").trim();
+    if (projectKw)
+      filters.push({
+        OR: [{ project_name: { contains: projectKw } }, { client_name: { contains: projectKw } }],
+      });
+    const requesterKw = String(qy.requester ?? "").trim();
+    if (requesterKw) filters.push({ requester_name: { contains: requesterKw } });
+    const ownerKw = String(qy.owner ?? "").trim();
+    if (ownerKw) filters.push({ owner_name: { contains: ownerKw } });
 
     let orderBy = [{ created_at: "desc" }, { id: "desc" }];
     // 延期预警:未完成 且 warn_at < 现在,按截止时间升序(最急在前)
@@ -371,74 +473,52 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/tickets", requireAuth, async (req, res) => {
     const user = req.user;
     const b = req.body ?? {};
-    const projectId = b.projectId ? String(b.projectId) : "";
-    const segmentId = Number(b.segmentId);
-    const ownerId = b.ownerId ? String(b.ownerId) : "";
-    if (!projectId || !Number.isInteger(segmentId) || !ownerId) return res.status(400).json({ error: "项目、环节、负责人均必填" });
 
-    // 富文本正文:限大小 → sanitize → 派生纯文本摘要(供列表/搜索)
-    const rawHtml = b.contentHtml != null ? String(b.contentHtml) : "";
-    if (rawHtml.length > MAX_CONTENT_HTML) return res.status(413).json({ error: "内容过大,请压缩图片后重试" });
-    const contentHtml = isBlankRich(rawHtml) ? "" : sanitizeRichHtml(rawHtml);
-    const summaryText = htmlToPlain(contentHtml) || clip(b.summary, 2000);
-
-    const segment = await prisma.ops_segments.findUnique({ where: { id: segmentId } });
-    if (!segment) return res.status(400).json({ error: "环节不存在" });
-    const segTags = (await prisma.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } })).map((r) => ({ id: r.tag_id }));
-    if (!segTags.length) return res.status(400).json({ error: "该环节未绑定任何标签" });
-
-    // 实时查 soyoo:校验项目/负责人,组装全量快照(不依赖本地 people/projects)
-    let built;
-    try {
-      built = await buildTicketSnapshot({ projectId, ownerId, requesterUserId: meId(user), segTags });
-    } catch (e) {
-      return soyooErrorResponse(res, e);
+    const batchItems = Array.isArray(b.tickets) ? b.tickets : null;
+    if (batchItems) {
+      const items = batchItems.slice(0, 20).map((item) => ({ ...item, projectId: item?.projectId ?? b.projectId, priority: item?.priority ?? b.priority }));
+      if (!items.length) return res.status(400).json({ error: "请至少填写一条工单" });
+      const prepared = [];
+      for (let i = 0; i < items.length; i += 1) {
+        const result = await prepareTicketCreate({ user, body: items[i] });
+        if (result.soyooError) return soyooErrorResponse(res, result.soyooError);
+        if (result.error) return res.status(result.status || 400).json({ error: `${ticketBatchErrorLabel(items[i], i)}：${result.error}` });
+        prepared.push(result);
+      }
+      const createdRows = await prisma.$transaction(async (tx) => {
+        const rows = [];
+        for (const item of prepared) {
+          const created = await tx.tickets.create({ data: item.data });
+          await tx.ticket_events.create({
+            data: {
+              ticket_id: created.id,
+              actor_id: meId(user),
+              actor_name: user?.name ?? user?.username ?? "",
+              action: "建单",
+              from_status: null,
+              to_status: "排队中",
+              note: null,
+              created_at: nowIso(),
+            },
+          });
+          rows.push(created);
+        }
+        return rows;
+      });
+      for (const created of createdRows) {
+        await notif.notifyTicketAssigned(created, meId(user));
+      }
+      for (const projectId of new Set(createdRows.map((ticket) => ticket.project_id))) {
+        void refreshProjectPoolSnapshot(projectId).catch(() => {});
+      }
+      return res.status(201).json({ tickets: await decorateTickets(createdRows, user, await loadSegNameMap()) });
     }
-    if (built.error) return res.status(400).json({ error: built.error });
-    const s = built.snapshot;
 
-    const now = nowIso();
-    // 两个绝对时刻固化进工单:交付时刻(目标)<  预警时刻(最后死线)。超过交付=橙、超过预警=红;延期预警 tab 筛「超过预警」。
-    const dueAt = addBusinessHours(now, segment.default_delivery_hours); // 交付时刻 = 建单 + 交付工时(只算 10:00-19:00)
-    const warnAt = addBusinessHours(now, segment.risk_warning_hours); // 预警时刻 = 建单 + 预警工时(应 > 交付)
+    const prepared = await prepareTicketCreate({ user, body: b });
+    if (prepared.soyooError) return soyooErrorResponse(res, prepared.soyooError);
+    if (prepared.error) return res.status(prepared.status || 400).json({ error: prepared.error });
     const created = await prisma.tickets.create({
-      data: {
-        id: crypto.randomUUID(),
-        title: clip(b.title, 160) || "未命名需求",
-        source_project_name: clip(s.client_name, 160),
-        client_id: s.client_id,
-        client_name: clip(s.client_name, 160),
-        project_name: clip(s.project_name, 160),
-        project_id: s.project_id,
-        project_status: clip(s.project_status, 80),
-        tag_id: s.tag_id,
-        tag_name: clip(s.tag_name, 120),
-        segment_id: segmentId, // 关联环节(显示按 id 取当前名)
-        discipline: clip(segment.name, 80), // 兼容历史:仍存环节名快照
-        requester_id: s.requester_id,
-        requester_name: clip(s.requester_name, 120),
-        requester_avatar: clip(s.requester_avatar, 1024),
-        requester_username: clip(s.requester_username, 120),
-        owner_id: s.owner_id,
-        owner_name: clip(s.owner_name, 120),
-        owner_avatar: clip(s.owner_avatar, 1024),
-        owner_username: clip(s.owner_username, 120),
-        status: "排队中",
-        priority: PRIORITIES.has(b.priority) ? b.priority : "普通",
-        start_at: now,
-        due_in_hours: segment.default_delivery_hours,
-        risk_warning_hours: segment.risk_warning_hours,
-        due_at: dueAt,
-        warn_at: warnAt,
-        need_type: clip(b.needType, 120) || segment.name,
-        summary: clip(summaryText, 2000) || (contentHtml ? "[图片/附件]" : ""),
-        content_html: contentHtml || null,
-        hyperlink: b.hyperlink ? clip(b.hyperlink, 500) : null,
-        text: b.text ? clip(b.text, 500) : null,
-        created_at: now,
-        updated_at: now,
-        status_updated_at: now,
-      },
+      data: prepared.data,
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
     await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
@@ -454,7 +534,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       const enriched = members.map((m) => {
         const tagIds = new Set((m.tags || []).map((t) => String(t.id)));
         const segmentNames = segments
-          .filter((seg) => (seg.tags || []).some((t) => tagIds.has(String(t.id))))
+          .filter((seg) => effectiveSegmentTagIds(seg.tags).some((tagId) => tagIds.has(tagId)))
           .map((seg) => seg.name);
         return { ...m, segmentNames };
       });
