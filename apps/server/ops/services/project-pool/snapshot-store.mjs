@@ -41,6 +41,13 @@ export function snapshotMemberIds(row) {
   return parseJson(row.member_ids_json, []);
 }
 
+async function deleteProjectPoolSnapshot(projectId, reason) {
+  const pid = String(projectId || "");
+  if (!pid) return;
+  await prisma.$executeRaw`DELETE FROM ops_project_pool_snapshot WHERE project_id = ${pid}`;
+  await invalidateProjectPoolSnapshotRowsCache(reason);
+}
+
 async function existingSnapshotMemberIds(projectId) {
   await ensureProjectPoolSnapshotTable();
   const rows = await prisma.$queryRaw`SELECT member_ids_json FROM ops_project_pool_snapshot WHERE project_id = ${String(projectId)} LIMIT 1`;
@@ -88,8 +95,11 @@ export async function refreshProjectPoolSnapshot(projectId) {
     project = null;
   }
   if (!project?.id) {
-    await prisma.$executeRaw`DELETE FROM ops_project_pool_snapshot WHERE project_id = ${pid}`;
-    await invalidateProjectPoolSnapshotRowsCache("project_snapshot_deleted");
+    await deleteProjectPoolSnapshot(pid, "project_snapshot_deleted");
+    return null;
+  }
+  if (String(project.status || "").trim() === "回收中") {
+    await deleteProjectPoolSnapshot(pid, "project_snapshot_recycled");
     return null;
   }
   const [row] = await buildProjectPoolRows([normalizeProjectForPoolRow(project, members)], new Map([[pid, members]]));
@@ -101,7 +111,7 @@ export async function refreshProjectPoolSnapshot(projectId) {
 async function fetchAllSoyooProjectsForSnapshot() {
   const out = [];
   for (let page = 1; page <= 100; page += 1) {
-    const r = await soyooClient.projectsList({ page, limit: 100 });
+    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "回收中" });
     const projects = Array.isArray(r?.data) ? r.data : [];
     out.push(...projects);
     const total = Number(r?.total ?? out.length);
