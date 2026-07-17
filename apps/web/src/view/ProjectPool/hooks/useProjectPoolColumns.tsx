@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Button, Avatar, Checkbox, Input, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { SortOrder } from "antd/es/table/interface";
 import { EditOutlined, FilterFilled, QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
-import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
+import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
-import { fmtProjectDate, nextDeadlineDiffDays, projectDurationText, projectStartDate, stageRangeLabel } from "../deadlineUtils";
+import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
@@ -59,6 +60,12 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
 };
 
 const filterIcon = (active: boolean) => <FilterFilled style={{ color: active ? "#1677ff" : "#94a3b8" }} />;
+
+const dateSortValue = (date?: string | null) => {
+	if (!date) return Number.POSITIVE_INFINITY;
+	const time = new Date(date).getTime();
+	return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+};
 
 function HeaderSearchDropdown({ value, onApply, close }: { value: string; onApply: (value: string) => void; close: () => void }) {
 	const [draft, setDraft] = useState(value);
@@ -132,7 +139,7 @@ export function useProjectPoolColumns(
 	actions: ProjectPoolColumnActions,
 	rowNumberOffset = 0,
 	filters?: ProjectPoolColumnFilters,
-	options: { readonly?: boolean } = {},
+	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder } = {},
 ): ColumnsType<OpsProjectPoolRow> {
 	return [
 		{
@@ -237,13 +244,16 @@ export function useProjectPoolColumns(
 			title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。"),
 			key: "stageDeadlines",
 			width: 210,
-			sorter: (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
+			sorter: options.serverSort ? true : (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
+			sortOrder: options.sortBy === "nextDeadline" ? options.sortOrder : null,
 			render: (_: unknown, row) => <StageDeadlineCell row={row} onEdit={actions.openDeadlineEdit} />,
 		},
 		{
 			title: "项目启动时间",
 			key: "startedAt",
 			width: 120,
+			sorter: options.serverSort ? true : (a, b) => dateSortValue(projectStartDate(a.startedAt, a.stageDeadlines)) - dateSortValue(projectStartDate(b.startedAt, b.stageDeadlines)),
+			sortOrder: options.sortBy === "projectStart" ? options.sortOrder : null,
 			render: (_: unknown, row) => {
 				const startDate = projectStartDate(row.startedAt, row.stageDeadlines);
 				const fromAssetConfirm = !!row.stageDeadlines?.some((item) => (item.key === "asset_confirm" || item.name === "资产确认") && item.date === startDate);
@@ -251,17 +261,14 @@ export function useProjectPoolColumns(
 			},
 		},
 		{
-			title: headerTip("项目持续时间", "已开发=当前时间 - 项目启动时间\n剩余=最终交付版日期 - 今天"),
+			title: "项目结束时间",
 			key: "duration",
-			width: 190,
+			width: 130,
+			sorter: options.serverSort ? true : (a, b) => dateSortValue(finalStageDeadline(a.stageDeadlines)?.date) - dateSortValue(finalStageDeadline(b.stageDeadlines)?.date),
+			sortOrder: options.sortBy === "projectEnd" ? options.sortOrder : null,
 			render: (_: unknown, row) => {
-				const duration = projectDurationText(row.startedAt, row.stageDeadlines);
-				if (!duration) return <Typography.Text type="secondary">—</Typography.Text>;
-				return (
-					<span style={{ color: duration.overdue ? "#cf1322" : "#334155", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
-						{duration.developedText}，{duration.remainText}
-					</span>
-				);
+				const final = finalStageDeadline(row.stageDeadlines);
+				return <span style={{ color: final?.date ? "#334155" : "#94a3b8", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{fmtProjectDate(final?.date)}</span>;
 			},
 		},
 		{

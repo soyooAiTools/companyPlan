@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Avatar, Table, Tag, Typography } from "antd";
+import { Avatar, Table, Tag } from "antd";
 import type { ColumnsType, ColumnType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
@@ -48,8 +48,23 @@ const groupLabel = (
 			{group.avatar ? <Avatar size={22} src={group.avatar} /> : null}
 			<span style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{group.title}</span>
 			{group.isNewHire ? (
-				<Tag color="red" style={{ margin: 0, lineHeight: "18px", fontSize: 11 }}>
-					NEW
+				<Tag
+					style={{
+						margin: 0,
+						width: 20,
+						height: 20,
+						padding: 0,
+						borderRadius: 999,
+						borderColor: "#ef4444",
+						background: "#fff1f2",
+						color: "#dc2626",
+						fontWeight: 800,
+						lineHeight: "18px",
+						textAlign: "center",
+						fontSize: 12,
+					}}
+				>
+					新
 				</Tag>
 			) : null}
 			{group.disabled ? (
@@ -170,14 +185,6 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 			}),
 		[activeSort, collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
 	);
-
-	if (!loading && !groups.length) {
-		return (
-			<div style={{ textAlign: "center", padding: "48px 0" }}>
-				<Typography.Text type="secondary">暂无项目</Typography.Text>
-			</div>
-		);
-	}
 
 	return (
 		<>

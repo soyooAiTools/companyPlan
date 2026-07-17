@@ -1,5 +1,7 @@
 import { Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import type { SorterResult } from "antd/es/table/interface";
+import type { OpsProjectPoolSortBy, OpsProjectPoolSortOrder } from "@/api/modules/ops";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import { isNextDeadlineOverdue } from "../../deadlineUtils";
 
@@ -13,10 +15,11 @@ type ProjectPoolTableProps = {
   scrollY?: number;
   pagination?: false;
   onPageChange?: (page: number, pageSize: number) => void;
+  onSortChange?: (sortBy?: OpsProjectPoolSortBy, sortOrder?: OpsProjectPoolSortOrder) => void;
   onOpenLogs?: (row: OpsProjectPoolRow) => void;
 };
 
-export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onOpenLogs }: ProjectPoolTableProps) {
+export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs }: ProjectPoolTableProps) {
   const tablePagination =
     pagination === false || !onPageChange || page == null || pageSize == null || total == null
       ? false
@@ -78,6 +81,25 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         virtual
         scroll={scrollY ? { x: 1350, y: scrollY } : { x: 1350 }}
         pagination={tablePagination}
+        onChange={(_pagination, _filters, sorter, extra) => {
+          if (extra.action !== "sort") return;
+          if (!onSortChange) return;
+          const current = Array.isArray(sorter) ? sorter[0] : (sorter as SorterResult<OpsProjectPoolRow>);
+          const key = String(current?.columnKey || "");
+          if (key === "stageDeadlines" && current?.order) {
+            onSortChange("nextDeadline", current.order === "ascend" ? "asc" : "desc");
+            return;
+          }
+          if (key === "startedAt" && current?.order) {
+            onSortChange("projectStart", current.order === "ascend" ? "asc" : "desc");
+            return;
+          }
+          if (key === "duration" && current?.order) {
+            onSortChange("projectEnd", current.order === "ascend" ? "asc" : "desc");
+            return;
+          }
+          onSortChange(undefined, undefined);
+        }}
         onRow={(row) => ({
           onClick: () => {
             if (!onOpenLogs) return;

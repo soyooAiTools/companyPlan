@@ -6,7 +6,7 @@ export const MAX_CONTENT_HTML = 8_000_000; // ~8MB,给 base64 内联图片留空
 
 const SANITIZE_OPTS = {
   allowedTags: ["p", "br", "span", "strong", "b", "em", "i", "u", "s", "strike", "del", "mark", "ul", "ol", "li", "blockquote", "code", "pre", "h1", "h2", "h3", "h4", "a", "img", "video", "hr"],
-  allowedAttributes: { a: ["href", "target", "rel"], img: ["src", "alt", "title"], video: ["src", "controls", "width", "height", "poster"] },
+  allowedAttributes: { a: ["href", "target", "rel", "data-preview-type", "data-filename"], img: ["src", "alt", "title"], video: ["src", "controls", "width", "height", "poster"] },
   allowedSchemes: ["http", "https", "mailto"],
   allowedSchemesByTag: { img: ["http", "https", "data"] }, // 允许图片用 data: base64
   nonTextTags: ["script", "style", "noscript", "textarea"], // 连同标签内文本一并丢弃

@@ -146,6 +146,19 @@ export interface OpsProjectPoolRow {
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
 }
+export type OpsProjectPoolSortBy = "nextDeadline" | "projectStart" | "projectEnd";
+export type OpsProjectPoolSortOrder = "asc" | "desc";
+type OpsProjectPoolListParams = {
+	page?: number;
+	pageSize?: number;
+	q?: string;
+	status?: string[];
+	stage?: string[];
+	segment?: number[];
+	planner?: string[];
+	sortBy?: OpsProjectPoolSortBy;
+	sortOrder?: OpsProjectPoolSortOrder;
+};
 export interface OpsProjectStageDeadline {
 	key: string;
 	name: string;
@@ -318,6 +331,11 @@ export const opsApi = {
 	// 富文本资源上传(图片/视频/附件)→ OSS,返回公开 URL
 	uploadFile: (body: { projectId: string; filename: string; mime: string; dataBase64: string }) =>
 		requestJson<{ url: string }>("/api/ops/upload", { method: "POST", body: JSON.stringify(body) }),
+	createUploadUrl: (body: { projectId: string; filename: string; mime: string; size: number }) =>
+		requestJson<{ key: string; url: string; publicUrl: string; headers?: Record<string, string> }>("/api/ops/upload-url", {
+			method: "POST",
+			body: JSON.stringify(body),
+		}),
 	// 当前用户(角色,用于按管理员显示设置菜单)
 	me: () => requestJson<{ user: OpsMe }>("/api/ops/me"),
 	updateTicketStatus: (id: string, status: string, reason?: string) =>
@@ -343,7 +361,7 @@ export const opsApi = {
 		}),
 
 	// ===== 项目池 =====
-	projectPool: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
+	projectPool: (params: OpsProjectPoolListParams = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -352,10 +370,14 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(",")); // 制作阶段多选 → 逗号分隔
 		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
 		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
+		if (params.sortBy && params.sortOrder) {
+			qs.set("sortBy", params.sortBy);
+			qs.set("sortOrder", params.sortOrder);
+		}
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
-	myProjects: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
+	myProjects: (params: OpsProjectPoolListParams = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -364,6 +386,10 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.sortBy && params.sortOrder) {
+			qs.set("sortBy", params.sortBy);
+			qs.set("sortOrder", params.sortOrder);
+		}
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
 	},
@@ -379,7 +405,7 @@ export const opsApi = {
 		requestJson<{ ticket: OpsTicket; events: OpsTicketEvent[] }>(
 			`/api/ops/project-pool/${encodeURIComponent(projectId)}/segment-tickets/${encodeURIComponent(ticketId)}?segmentId=${segmentId}`,
 		),
-	projectPoolStale: (params: { page?: number; pageSize?: number; q?: string; status?: string[]; stage?: string[]; segment?: number[]; planner?: string[] } = {}) => {
+	projectPoolStale: (params: OpsProjectPoolListParams = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
@@ -388,6 +414,10 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.sortBy && params.sortOrder) {
+			qs.set("sortBy", params.sortBy);
+			qs.set("sortOrder", params.sortOrder);
+		}
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
 	},

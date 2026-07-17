@@ -1,9 +1,9 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
 import { addBusinessHours, remainingBusinessHours } from "./business-hours.mjs";
-import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "./rich-html.mjs";
+import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "../utils/rich-html.mjs";
 import { prisma } from "./prisma.mjs";
-import { isOssConfigured, uploadObject } from "./oss.mjs";
+import { createDirectUploadUrl, isOssConfigured, uploadObject } from "./oss.mjs";
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
@@ -15,7 +15,7 @@ import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
 
-// 富文本 sanitize / 纯文本派生 / 空判断 / 大小上限 → 公用模块 ./rich-html.mjs(提单正文与项目备注共用)
+// 富文本 sanitize / 纯文本派生 / 空判断 / 大小上限 → 公用模块 ../utils/rich-html.mjs(提单正文与项目备注共用)
 
 function mapTicket(t, segNameById) {
   return {
@@ -258,6 +258,26 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({ tags });
   });
 
+  // 富文本编辑器资源直传 URL。浏览器拿到签名后直接 PUT 到 OSS,避免大文件经过 ops 后端。
+  app.post("/api/ops/upload-url", requireAuth, async (req, res) => {
+    if (!isOssConfigured()) return res.status(503).json({ error: "OSS 未配置(请在根 .env 填 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET)" });
+    const b = req.body ?? {};
+    const mime = String(b.mime || "application/octet-stream").toLowerCase();
+    const filename = String(b.filename || "").trim();
+    const size = Number(b.size || 0);
+    if (!filename) return res.status(400).json({ error: "缺少文件名" });
+    if (!size || size < 0) return res.status(400).json({ error: "缺少文件大小" });
+    const isImage = mime.startsWith("image/");
+    const max = isImage ? ossConfig.maxImageBytes : ossConfig.maxFileBytes;
+    if (size > max) return res.status(413).json({ error: isImage ? "图片过大(超过 2MB)" : "文件过大(超过 55MB)" });
+    try {
+      const signed = await createDirectUploadUrl({ projectId: b.projectId, filename, mime });
+      res.json(signed);
+    } catch (e) {
+      res.status(502).json({ error: e?.message || "生成上传地址失败" });
+    }
+  });
+
   // 富文本编辑器图片上传 → 阿里云 OSS,返回公开 URL。Body: { projectName, mime, dataBase64 }
   app.post("/api/ops/upload", requireAuth, async (req, res) => {
     if (!isOssConfigured()) return res.status(503).json({ error: "OSS 未配置(请在根 .env 填 OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET)" });
@@ -273,10 +293,10 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       return res.status(400).json({ error: "文件数据不合法" });
     }
     if (!buffer.length) return res.status(400).json({ error: "文件为空" });
-    // 图片 ≤2MB;视频/压缩包等其它文件 ≤10MB
+    // 图片 ≤2MB;视频/压缩包等其它文件 ≤55MB
     const isImage = mime.startsWith("image/");
     const max = isImage ? ossConfig.maxImageBytes : ossConfig.maxFileBytes;
-    if (buffer.length > max) return res.status(413).json({ error: isImage ? "图片过大(超过 2MB)" : "文件过大(超过 10MB)" });
+    if (buffer.length > max) return res.status(413).json({ error: isImage ? "图片过大(超过 2MB)" : "文件过大(超过 55MB)" });
     try {
       const url = await uploadObject({ projectId: b.projectId, filename: b.filename, buffer, mime });
       res.json({ url });

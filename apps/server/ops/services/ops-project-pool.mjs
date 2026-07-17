@@ -5,7 +5,7 @@ import { soyooClient, soyooId } from "../soyoo-client.mjs";
 import { getProjectWithMembers, getUser, listTags } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
 import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
-import { sanitizeRichHtml, isBlankRich } from "../rich-html.mjs";
+import { sanitizeRichHtml, isBlankRich } from "../../utils/rich-html.mjs";
 import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
@@ -61,7 +61,53 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
   return nextRows;
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", onlyMine = false }) {
+function nextDeadlineSortValue(row) {
+  const next = nextStageDeadline(row?.stage || "", row?.stageDeadlines || []);
+  if (!next?.date || !/^\d{4}-\d{2}-\d{2}$/.test(next.date)) return null;
+  return next.date;
+}
+
+function stageDeadlineByKey(row, key, name) {
+  if (!Array.isArray(row?.stageDeadlines)) return null;
+  return row.stageDeadlines.find((item) => item.key === key || item.name === name) || null;
+}
+
+function projectStartSortValue(row) {
+  const assetConfirm = stageDeadlineByKey(row, "asset_confirm", "资产确认");
+  const date = assetConfirm?.date || row?.startedAt || "";
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : null;
+}
+
+function projectEndSortValue(row) {
+  const final = stageDeadlineByKey(row, "final_delivery", "最终交付版");
+  const fallback = Array.isArray(row?.stageDeadlines) ? row.stageDeadlines[row.stageDeadlines.length - 1] : null;
+  const date = final?.date || fallback?.date || "";
+  return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : null;
+}
+
+function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
+  const order = sortOrder === "asc" ? "asc" : sortOrder === "desc" ? "desc" : "";
+  const valueBySort = {
+    nextDeadline: nextDeadlineSortValue,
+    projectStart: projectStartSortValue,
+    projectEnd: projectEndSortValue,
+  }[sortBy];
+  if (!valueBySort || !order) {
+    return rows.sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
+  }
+  const direction = order === "asc" ? 1 : -1;
+  return rows.sort((a, b) => {
+    const av = valueBySort(a);
+    const bv = valueBySort(b);
+    if (!av && !bv) return Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id));
+    if (!av) return 1;
+    if (!bv) return -1;
+    const cmp = av.localeCompare(bv);
+    return cmp === 0 ? Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)) : cmp * direction;
+  });
+}
+
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "", onlyMine = false }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
@@ -76,7 +122,7 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
   }
   rows = filterProjectPoolRows(rows, { q, stage, planner, segment });
 
-  rows = rows.sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
+  rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
   const total = rows.length;
   const start = (page - 1) * pageSize;
   return { rows: rows.slice(start, start + pageSize), total, page, pageSize };
@@ -84,10 +130,10 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "" }) {
-  const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, admin: isAdmin(user) });
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, admin: isAdmin(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment });
+    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, sortBy, sortOrder });
     timer.mark("snapshot.query", { rows: result.rows.length, total: result.total });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
@@ -99,10 +145,10 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
 }
 
 // ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
-export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "" }) {
-  const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, userId: meId(user) });
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, userId: meId(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, onlyMine: true });
+    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, sortBy, sortOrder, onlyMine: true });
     timer.mark("snapshot.query", { rows: result.rows.length, total: result.total });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
@@ -629,8 +675,8 @@ async function stageOverdueProjectsForNotify() {
   return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: "stage" }));
 }
 
-export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "" }) {
-  const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, admin: isAdmin(user) });
+export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, admin: isAdmin(user) });
   try {
     // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
     // const cutoffs = await staleCutoffs();
@@ -644,7 +690,8 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
     const allRows = filterProjectPoolRows(
       (await loadVisibleSnapshotRows({ user })).filter((row) => idSet.has(String(row.id))),
       { q, status, stage, planner, segment },
-    ).sort((a, b) => String(a.stageDeadlines?.find((item) => item.date)?.date || "").localeCompare(String(b.stageDeadlines?.find((item) => item.date)?.date || "")));
+    );
+    sortProjectPoolRows(allRows, { sortBy: sortBy || "nextDeadline", sortOrder: sortOrder || "asc" });
     const total = allRows.length;
     const rows = allRows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
     timer.mark("snapshot.staleRows", { rows: rows.length, total });

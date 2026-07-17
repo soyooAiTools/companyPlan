@@ -12,7 +12,11 @@ type MonthGroup = {
 	dates: string[];
 };
 
-export default function UpdateLogFloat() {
+type UpdateLogFloatProps = {
+	collapsed?: boolean;
+};
+
+export default function UpdateLogFloat({ collapsed = false }: UpdateLogFloatProps) {
 	const [open, setOpen] = useState(false);
 	const [fullScreen, setFullScreen] = useState(false);
 	const [loading, setLoading] = useState(false);
@@ -70,20 +74,17 @@ export default function UpdateLogFloat() {
 				icon={<HistoryOutlined />}
 				onClick={openLogs}
 				style={{
-					position: "fixed",
-					right: 24,
-					bottom: 24,
-					zIndex: 40,
-					height: 36,
-					borderRadius: 999,
+					width: collapsed ? 40 : "100%",
+					height: collapsed ? 36 : 34,
+					borderRadius: collapsed ? 8 : 6,
 					background: "#fff",
-					boxShadow: "0 8px 24px rgba(15, 23, 42, 0.14)",
 					borderColor: "#dbe3ec",
 					color: "#334155",
 					fontWeight: 600,
+					paddingInline: collapsed ? 0 : undefined,
 				}}
 			>
-				更新日志
+				{collapsed ? null : "更新日志"}
 			</Button>
 
 			<Modal

@@ -67,7 +67,7 @@ export const ossConfig = {
   region: process.env.OSS_REGION ?? "oss-cn-beijing",
   baseDir: (process.env.OSS_BASE_DIR ?? "soyoo-ops").replace(/^\/+|\/+$/g, ""),
   maxImageBytes: Number(process.env.OSS_MAX_IMAGE_BYTES ?? `${2 * 1024 * 1024}`),
-  maxFileBytes: Number(process.env.OSS_MAX_FILE_BYTES ?? `${10 * 1024 * 1024}`),
+  maxFileBytes: Number(process.env.OSS_MAX_FILE_BYTES ?? `${55 * 1024 * 1024}`),
 };
 export const crc32Table = Array.from({ length: 256 }, (_, value) => {
   let crc = value;

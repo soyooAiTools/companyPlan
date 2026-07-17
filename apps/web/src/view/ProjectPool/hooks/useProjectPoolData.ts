@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
-import type { OpsProjectPoolRow, OpsSegment } from "@/api/modules/ops";
+import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsProjectPoolSortOrder, OpsSegment } from "@/api/modules/ops";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
@@ -20,6 +20,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [plannerFilter, setPlannerFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
+  const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>(undefined);
+  const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>(undefined);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
   const [allRows, setAllRows] = useState<OpsProjectPoolRow[]>([]);
   const [allRowsLoading, setAllRowsLoading] = useState(false);
@@ -34,10 +36,10 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     try {
       const result =
         tab === "stale"
-          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter })
+          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder })
           : mine
-            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter })
-            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter });
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder });
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
@@ -116,6 +118,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setStageFilter([]);
     setPlannerFilter([]);
     setSegmentFilter([]);
+    setSortBy(undefined);
+    setSortOrder(undefined);
   }, [mine]);
 
   useEffect(() => {
@@ -127,7 +131,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, debounced]);
+  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, sortBy, sortOrder, debounced]);
 
   useEffect(() => {
     opsApi
@@ -169,6 +173,10 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setPlannerFilter,
     segmentFilter,
     setSegmentFilter,
+    sortBy,
+    setSortBy,
+    sortOrder,
+    setSortOrder,
     segmentOptions,
     allRows,
     allRowsLoading,

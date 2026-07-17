@@ -122,6 +122,11 @@ export default function OpsApp() {
                         </Avatar>
                       </Tooltip>
                       <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
+                      <Tooltip title="更新日志" placement="right">
+                        <span>
+                          <UpdateLogFloat collapsed />
+                        </span>
+                      </Tooltip>
                       <Tooltip title="退出登录" placement="right">
                         <Button icon={<LogoutOutlined />} onClick={logout} />
                       </Tooltip>
@@ -139,6 +144,9 @@ export default function OpsApp() {
                         ) : null}
                       </div>
                         <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
+                      </div>
+                      <div style={{ marginBottom: 8 }}>
+                        <UpdateLogFloat />
                       </div>
                       <Button block icon={<LogoutOutlined />} onClick={logout}>
                         退出登录
@@ -161,7 +169,6 @@ export default function OpsApp() {
                 </Routes>
               </Content>
             </Layout>
-            <UpdateLogFloat />
           </Layout>
         )}
       </AntApp>

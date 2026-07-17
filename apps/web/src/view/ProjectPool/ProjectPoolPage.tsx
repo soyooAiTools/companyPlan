@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
-import { App, Button, Input, Radio, Spin } from "antd";
+import { App, Button, Input, Radio, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
 import { opsApi, type OpsProjectPoolRow } from "@/api/modules/ops";
@@ -109,6 +109,10 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setPlannerFilter,
 		segmentFilter,
 		setSegmentFilter,
+		sortBy,
+		setSortBy,
+		sortOrder,
+		setSortOrder,
 		segmentOptions,
 		allRows,
 		allRowsLoading,
@@ -122,6 +126,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
 	const [ownerSearch, setOwnerSearch] = useState("");
+	const [ownerOnlyNew, setOwnerOnlyNew] = useState(false);
 	const [ownerCollapseAction, setOwnerCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
 	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
 
@@ -158,6 +163,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setPlannerFilter([]);
 		setSegmentFilter([]);
 		setOwnerSearch("");
+		setOwnerOnlyNew(false);
 		setOwnerCollapsed(false);
 		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
 		setPage(1);
@@ -196,6 +202,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 			setOwnerGroups([]);
 			setOwnerGroupsLoading(false);
 			setOwnerSearch("");
+			setOwnerOnlyNew(false);
 			setOwnerCollapsed(false);
 			return;
 		}
@@ -243,9 +250,12 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 
 	const visibleOwnerGroups = useMemo(() => {
 		const keyword = ownerSearch.trim().toLowerCase();
-		if (!keyword) return ownerGroups;
-		return ownerGroups.filter((group) => group.title.toLowerCase().includes(keyword));
-	}, [ownerGroups, ownerSearch]);
+		return ownerGroups.filter((group) => {
+			if (ownerOnlyNew && !group.isNewHire) return false;
+			if (keyword && !group.title.toLowerCase().includes(keyword)) return false;
+			return true;
+		});
+	}, [ownerGroups, ownerOnlyNew, ownerSearch]);
 
 	const toggleOwnerCollapse = () => {
 		const nextCollapsed = !ownerCollapsed;
@@ -313,7 +323,12 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 				setPage(1);
 			},
 		},
-		{ readonly: mine },
+		{
+			readonly: mine,
+			serverSort: !groupMode,
+			sortBy,
+			sortOrder: sortOrder === "asc" ? "ascend" : sortOrder === "desc" ? "descend" : null,
+		},
 	);
 	const displayColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
 		const baseColumns = mine ? columns.filter((column) => !["stage", "stageDeadlines", "remark", "tickets"].includes(String(column.key))) : columns;
@@ -352,6 +367,13 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 						value={ownerSearch}
 						onChange={(event) => setOwnerSearch(event.target.value)}
 						style={{ width: 180, marginLeft: 8 }}
+					/>
+					<Switch
+						size="small"
+						checked={ownerOnlyNew}
+						onChange={setOwnerOnlyNew}
+						checkedChildren="新人"
+						unCheckedChildren="新人"
 					/>
 					<Button size="small" onClick={toggleOwnerCollapse} style={{ marginLeft: "auto" }}>
 						{ownerCollapsed ? "展开全部" : "折叠全部"}
@@ -392,6 +414,11 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 						onPageChange={(nextPage, nextPageSize) => {
 							setPage(nextPage);
 							setPageSize(nextPageSize);
+						}}
+						onSortChange={(nextSortBy, nextSortOrder) => {
+							setSortBy(nextSortBy);
+							setSortOrder(nextSortOrder);
+							setPage(1);
 						}}
 						onOpenLogs={mine ? undefined : dialogs.actions.openLogs}
 					/>

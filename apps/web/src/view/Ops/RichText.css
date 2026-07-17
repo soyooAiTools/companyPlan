@@ -28,6 +28,44 @@
   margin: 4px 4px;
   background: #e8e8e8;
 }
+.ops-editor__uploads {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fbfdff;
+}
+.ops-editor__upload {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  font-size: 12px;
+  color: #43546a;
+}
+.ops-editor__upload-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ops-editor__upload-percent {
+  color: #0f766e;
+  font-weight: 600;
+}
+.ops-editor__upload-track {
+  grid-column: 1 / -1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e6edf5;
+}
+.ops-editor__upload-bar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+  transition: width 0.16s ease;
+}
 
 /* 内容区(ProseMirror) */
 .ops-editor .ProseMirror {

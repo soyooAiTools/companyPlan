@@ -26,6 +26,11 @@ function getClient() {
 	return client;
 }
 
+function objectUrl(key) {
+	const encoded = key.split("/").map(encodeURIComponent).join("/");
+	return `https://${ossConfig.bucket}.${ossConfig.region}.aliyuncs.com/${encoded}`;
+}
+
 // 目录名清洗(项目 id):仅去掉路径分隔符,保留中划线/字母数字;空则用"未分配"
 function sanitizeFolder(id) {
 	const s = String(id ?? "")
@@ -57,14 +62,31 @@ function extOf(filename, mime) {
 	return EXT_BY_MIME[String(mime || "").toLowerCase()] || "bin";
 }
 
+function buildObjectKey({ projectId, filename, mime }) {
+	const ext = extOf(filename, mime);
+	return `${ossConfig.baseDir}/${sanitizeFolder(projectId)}/${crypto.randomUUID()}.${ext}`;
+}
+
 // 上传 Buffer → 返回公开 URL。projectId 作为路径中的一级目录。
 export async function uploadObject({ projectId, filename, buffer, mime }) {
 	const oss = getClient();
 	if (!oss) throw new Error("OSS 未配置(缺少 AccessKey)");
-	const ext = extOf(filename, mime);
-	const key = `${ossConfig.baseDir}/${sanitizeFolder(projectId)}/${crypto.randomUUID()}.${ext}`;
+	const key = buildObjectKey({ projectId, filename, mime });
 	await oss.put(key, buffer);
-	// 路径段按 UTF-8 转义,保证中文等也能直接用作 <img src>
-	const encoded = key.split("/").map(encodeURIComponent).join("/");
-	return `https://${ossConfig.bucket}.${ossConfig.region}.aliyuncs.com/${encoded}`;
+	return objectUrl(key);
+}
+
+// 生成浏览器直传 OSS 的 PUT 签名 URL。后端只签名,文件内容不再经过 ops 服务。
+export async function createDirectUploadUrl({ projectId, filename, mime, expires = 600 }) {
+	const oss = getClient();
+	if (!oss) throw new Error("OSS 未配置(缺少 AccessKey)");
+	const contentType = mime || "application/octet-stream";
+	const key = buildObjectKey({ projectId, filename, mime: contentType });
+	const headers = { "Content-Type": contentType };
+	const url = oss.signatureUrl(key, {
+		method: "PUT",
+		expires,
+		"Content-Type": contentType,
+	});
+	return { key, url, publicUrl: objectUrl(key), headers };
 }
