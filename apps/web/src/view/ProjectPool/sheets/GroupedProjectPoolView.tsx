@@ -47,6 +47,16 @@ const groupLabel = (
 			{collapsed ? <RightOutlined style={{ color: "#64748b", fontSize: 11 }} /> : <DownOutlined style={{ color: "#64748b", fontSize: 11 }} />}
 			{group.avatar ? <Avatar size={22} src={group.avatar} /> : null}
 			<span style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{group.title}</span>
+			{group.isNewHire ? (
+				<Tag color="red" style={{ margin: 0, lineHeight: "18px", fontSize: 11 }}>
+					NEW
+				</Tag>
+			) : null}
+			{group.disabled ? (
+				<Tag color="default" style={{ margin: 0, lineHeight: "18px", fontSize: 11 }}>
+					已禁用
+				</Tag>
+			) : null}
 			<Tag color="blue" style={{ margin: 0 }}>
 				{group.stats.projectCount} 个项目
 			</Tag>

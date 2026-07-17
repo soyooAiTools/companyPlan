@@ -1,6 +1,9 @@
+import dayjs from "dayjs";
 import type { OpsProjectPoolMember, OpsProjectPoolRow } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES } from "@/view/Ops/constants";
 import { isNextDeadlineOverdue, stageRangeLabel } from "../deadlineUtils";
+
+const NEW_HIRE_DAYS = 45;
 
 export type ProjectPoolOwnerRow = OpsProjectPoolRow & {
   ownerTagsText?: string;
@@ -10,6 +13,9 @@ export type ProjectPoolGroup = {
   key: string;
   title: string;
   avatar?: string;
+  hireDate?: string;
+  isNewHire?: boolean;
+  disabled?: boolean;
   segmentIds?: number[];
   ownerName?: string;
   rows: ProjectPoolOwnerRow[];
@@ -26,6 +32,14 @@ export type ProjectPoolGroupMode = "planner" | "segment" | "stage" | "status" | 
 export type ProjectPoolOwnerMember = OpsProjectPoolMember & {
   project: OpsProjectPoolRow;
   matchedTags: string[];
+};
+
+const isNewHireDate = (hireDate?: string) => {
+  if (!hireDate) return false;
+  const date = dayjs(hireDate);
+  if (!date.isValid()) return false;
+  const days = dayjs().startOf("day").diff(date.startOf("day"), "day");
+  return days >= 0 && days < NEW_HIRE_DAYS;
 };
 
 const groupStats = (rows: ProjectPoolOwnerRow[]): ProjectPoolGroup["stats"] => ({
@@ -144,6 +158,8 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
     {
       title: string;
       avatar?: string;
+      hireDate?: string;
+      disabled?: boolean;
       rows: Map<string, ProjectPoolOwnerRow & { ownerTagNames: Set<string> }>;
     }
   >();
@@ -151,8 +167,10 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
   for (const member of members) {
     const title = member.name?.trim() || "未指定负责人";
     const key = title || "__no_owner";
-    const group = groups.get(key) || { title, avatar: member.avatar || undefined, rows: new Map() };
+    const group = groups.get(key) || { title, avatar: member.avatar || undefined, hireDate: member.hireDate || undefined, disabled: member.status === "disabled", rows: new Map() };
     if (!group.avatar && member.avatar) group.avatar = member.avatar;
+    if (!group.hireDate && member.hireDate) group.hireDate = member.hireDate;
+    if (member.status === "disabled") group.disabled = true;
     const row = group.rows.get(member.project.id) || ({ ...member.project, ownerTagNames: new Set<string>() } as ProjectPoolOwnerRow & { ownerTagNames: Set<string> });
     for (const tag of member.matchedTags) row.ownerTagNames.add(tag);
     row.ownerTagsText = [...row.ownerTagNames].join("、");
@@ -170,6 +188,9 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
         key: `owner-${key}`,
         title: group.title,
         avatar: group.avatar,
+        hireDate: group.hireDate,
+        isNewHire: isNewHireDate(group.hireDate),
+        disabled: group.disabled,
         ownerName: group.title,
         rows,
         stats: groupStats(rows),

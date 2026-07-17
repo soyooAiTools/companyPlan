@@ -40,7 +40,7 @@ const OWNER_ROLE_OPTIONS = [
 function buildOwnerMembersFromProjectPlanners(rows: OpsProjectPoolRow[]): ProjectPoolOwnerMember[] {
 	const members: ProjectPoolOwnerMember[] = [];
 	for (const row of rows) {
-		const planners = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim(), avatar: "" })) : [];
+		const planners: { name: string; avatar: string; hireDate?: string; hire_date?: string }[] = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim(), avatar: "" })) : [];
 		for (const planner of planners) {
 			const name = planner.name.trim();
 			if (!name) continue;
@@ -49,10 +49,29 @@ function buildOwnerMembersFromProjectPlanners(rows: OpsProjectPoolRow[]): Projec
 				username: "",
 				name,
 				avatar: planner.avatar || "",
+				hireDate: planner.hireDate || planner.hire_date || "",
 				wechatName: "",
 				tags: ["制片/策划"],
 				project: row,
 				matchedTags: ["制片/策划"],
+			});
+		}
+	}
+	return members;
+}
+
+function buildOwnerMembersFromProjectMembers(rows: OpsProjectPoolRow[], tagNames: readonly string[]): ProjectPoolOwnerMember[] {
+	const tagSet = new Set(tagNames.map((name) => name.trim()).filter(Boolean));
+	if (!tagSet.size) return [];
+	const members: ProjectPoolOwnerMember[] = [];
+	for (const row of rows) {
+		for (const member of row.members || []) {
+			const matchedTags = (member.tags || []).filter((tag) => tagSet.has(tag));
+			if (!matchedTags.length) continue;
+			members.push({
+				...member,
+				project: row,
+				matchedTags,
 			});
 		}
 	}
@@ -196,12 +215,15 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(activeRows)));
 					return;
 				}
-				const rowById = new Map(activeRows.map((row) => [row.id, row]));
-				const result = await opsApi.projectPoolOwnerMembers({ projectIds: activeRows.map((row) => row.id), tagNames: [...role.tags] });
-				const members: ProjectPoolOwnerMember[] = [];
-				for (const member of result.members) {
-					const project = rowById.get(member.projectId);
-					if (project) members.push({ ...member, project, matchedTags: member.tags });
+				const localMembers = buildOwnerMembersFromProjectMembers(activeRows, role.tags);
+				const members: ProjectPoolOwnerMember[] = [...localMembers];
+				if (!members.length) {
+					const rowById = new Map(activeRows.map((row) => [row.id, row]));
+					const result = await opsApi.projectPoolOwnerMembers({ projectIds: activeRows.map((row) => row.id), tagNames: [...role.tags] });
+					for (const member of result.members) {
+						const project = rowById.get(member.projectId);
+						if (project) members.push({ ...member, project, matchedTags: member.tags });
+					}
 				}
 				if (!cancelled) setOwnerGroups(groupProjectsByOwner(members));
 			} catch (e) {

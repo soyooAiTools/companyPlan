@@ -399,6 +399,7 @@ async function migrateSchema() {
   // 微信名称/头像(同步自 soyoo /ops/users,供负责人下拉显示 头像｜网名｜姓名)
   await ensureColumn("people", "wechat_name", "VARCHAR(191)");
   await ensureColumn("people", "wechat_avatar", "VARCHAR(1024)");
+  await ensureColumn("people", "hire_date", "VARCHAR(40)");
   await ensureSystemPerson();
   // 弃用字段加注释(保留不删):
   await ensureColumnComment("tickets", "discipline", "VARCHAR(80) NOT NULL", "弃用:改用 tag_id;新单仍写标签名兼容历史");

@@ -12,6 +12,7 @@ import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
+export { refreshProjectPoolSnapshotsByMember } from "./project-pool/snapshot-store.mjs";
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
 export { listOwnerMembersByTags } from "./project-pool/owners.mjs";
 
@@ -121,6 +122,7 @@ export async function getProjectMembers(projectId) {
     avatar: m.avatar,
     wechatName: m.wechatName,
     username: m.username,
+    status: m.status,
     tags: (m.tags || []).map((t) => t.name).filter(Boolean),
   }));
 }

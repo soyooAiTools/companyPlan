@@ -3,7 +3,7 @@
 import { prisma } from "./prisma.mjs";
 import { soyooClient } from "./soyoo-client.mjs";
 import { getProjectWithMembers, getUser } from "./ops-realtime.mjs";
-import { autoCreateProgramFirstTicket, refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
+import { autoCreateProgramFirstTicket, refreshProjectPoolSnapshot, refreshProjectPoolSnapshotsByMember } from "./services/ops-project-pool.mjs";
 
 async function getLastSeq() {
   const row = await prisma.ops_sync_state.findUnique({ where: { k: "last_seq" } });
@@ -41,12 +41,14 @@ async function refreshUser(userId) {
       name: u.name,
       wechat_name: u.wechatName,
       wechat_avatar: u.avatar,
+      hire_date: u.hireDate || null,
       role_key: u.isAdmin ? "admin" : "member",
       disabled_at: u.status === "disabled" ? new Date().toISOString() : null,
     },
   });
   await prisma.tickets.updateMany({ where: { owner_id: u.id }, data: { owner_name: u.name, owner_avatar: u.avatar, owner_username: u.username } });
   await prisma.tickets.updateMany({ where: { requester_id: u.id }, data: { requester_name: u.name, requester_avatar: u.avatar, requester_username: u.username } });
+  await refreshProjectPoolSnapshotsByMember(u.id);
 }
 // 项目改名/改状态 → 刷该项目所有工单的 项目/客户 快照
 async function refreshProject(projectId) {

@@ -62,6 +62,11 @@ export default function MembersModal({ open, project, members, loading, onCancel
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Space size={6} wrap style={{ width: "100%", rowGap: 4 }}>
                   <span className="ops-project-member-name">{m.name || m.username || "-"}</span>
+                  {m.status === "disabled" ? (
+                    <Tag color="default" style={{ marginInlineEnd: 0 }}>
+                      已禁用
+                    </Tag>
+                  ) : null}
                   {m.tags.map((t) => (
                     <Tag key={t} color={t === "制片" ? "geekblue" : "default"} style={{ marginInlineEnd: 0 }}>
                       {t}

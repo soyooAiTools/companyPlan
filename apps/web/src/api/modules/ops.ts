@@ -116,7 +116,6 @@ export interface OpsMe {
 	notifyStart?: string; // 通知时段开始 HH:mm(此窗口外前端不弹桌面)
 	notifyEnd?: string; // 通知时段结束 HH:mm
 }
-
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
@@ -129,7 +128,8 @@ export interface OpsProjectPoolRow {
 	startedAt: string | null; // soyoo 项目启动时间
 	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
-	planners: { name: string; avatar: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
+	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
+	members?: OpsProjectPoolMember[]; // 项目成员轻量快照,用于按负责人分组和新人标识
 	statusChangedAt: string | null;
 	memberCount: number;
 	segments: { id: number; name: string; count: number }[]; // 目前环节 + 各环节未完成工单数
@@ -158,6 +158,8 @@ export interface OpsProjectPoolMember {
 	avatar: string; // 微信头像 URL
 	wechatName: string;
 	username: string;
+	hireDate?: string; // 入职日期 YYYY-MM-DD,用于新人标识
+	status?: string; // active / disabled
 	tags: string[]; // 角色标签名(如 制片/美术)
 }
 export interface OpsProjectPoolOwnerMember extends OpsProjectPoolMember {

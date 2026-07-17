@@ -108,6 +108,21 @@ export async function refreshProjectPoolSnapshot(projectId) {
   return row;
 }
 
+export async function refreshProjectPoolSnapshotsByMember(userId) {
+  await ensureProjectPoolSnapshotTable();
+  const uid = String(userId || "").replace(/^ops-user-/, "");
+  if (!uid) return 0;
+  const dbRows = await prisma.$queryRaw`SELECT project_id, member_ids_json FROM ops_project_pool_snapshot`;
+  let count = 0;
+  for (const row of dbRows) {
+    const memberIds = snapshotMemberIds(row).map((id) => String(id).replace(/^ops-user-/, ""));
+    if (!memberIds.includes(uid)) continue;
+    const refreshed = await refreshProjectPoolSnapshot(row.project_id);
+    if (refreshed) count += 1;
+  }
+  return count;
+}
+
 async function fetchAllSoyooProjectsForSnapshot() {
   const out = [];
   for (let page = 1; page <= 100; page += 1) {

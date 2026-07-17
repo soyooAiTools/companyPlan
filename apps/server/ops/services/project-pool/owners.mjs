@@ -23,7 +23,7 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
 
     for (const row of rows) {
       const person = row.people;
-      if (!person || person.disabled_at) continue;
+      if (!person) continue;
       const key = `${row.project_id}:${person.id}`;
       const item =
         merged.get(key) || {
@@ -33,6 +33,8 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
           name: person.name || person.username || "",
           avatar: person.wechat_avatar || "",
           wechatName: person.wechat_name || "",
+          hireDate: "",
+          status: person.disabled_at ? "disabled" : "",
           tags: [],
         };
       const tagName = tagNameById.get(row.tag_id);
@@ -63,6 +65,8 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
         name: ticket.owner_name || ticket.owner_username || "",
         avatar: ticket.owner_avatar || "",
         wechatName: "",
+        hireDate: "",
+        status: "",
         tags: [],
       };
     if (ticket.tag_name && !item.tags.includes(ticket.tag_name)) {
@@ -71,5 +75,27 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
     merged.set(key, item);
   }
 
+  await fillPeopleMeta([...merged.values()]);
   return { members: [...merged.values()] };
+}
+
+function userIdCandidates(userId) {
+  const id = String(userId || "");
+  if (!id) return [];
+  return id.startsWith("ops-user-") ? [id, id.replace(/^ops-user-/, "")] : [id, `ops-user-${id}`];
+}
+
+async function fillPeopleMeta(members) {
+  const rawIds = [...new Set(members.flatMap((member) => userIdCandidates(member.id)))].filter(Boolean);
+  if (!rawIds.length) return;
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT id, hire_date, disabled_at FROM people WHERE id IN (${rawIds.map(() => "?").join(",")})`,
+    ...rawIds,
+  );
+  const metaById = new Map(rows.map((row) => [String(row.id), { hireDate: String(row.hire_date || ""), disabled: !!row.disabled_at }]));
+  for (const member of members) {
+    const meta = userIdCandidates(member.id).map((id) => metaById.get(id)).find(Boolean);
+    member.hireDate = meta?.hireDate || "";
+    if (meta?.disabled) member.status = "disabled";
+  }
 }

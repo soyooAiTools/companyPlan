@@ -59,7 +59,7 @@ export async function loadStatusSettingsMap() {
 }
 
 function normalizePlanners(p) {
-  if (Array.isArray(p.planners) && p.planners.length) return p.planners.map((x) => ({ name: x.name ?? "", avatar: x.avatar ?? "" }));
+  if (Array.isArray(p.planners) && p.planners.length) return p.planners.map((x) => ({ name: x.name ?? "", avatar: x.avatar ?? "", hireDate: x.hireDate ?? x.hire_date ?? "" }));
   if (p.planner_avatar) return [{ name: p.planner_name ?? "", avatar: p.planner_avatar }];
   return [];
 }
@@ -70,7 +70,20 @@ export function normalizeProjectForPoolRow(project, members = []) {
     id: String(project.id),
     tenant_id: project.tenant_id ?? project.clientId ?? "",
     tenant_name: project.tenant_name ?? project.client ?? "",
-    member_count: Array.isArray(members) ? members.filter((m) => m.status !== "disabled").length : Number(project.member_count ?? 0),
+    member_count: Array.isArray(members) ? members.length : Number(project.member_count ?? 0),
+    members: Array.isArray(members)
+      ? members
+          .map((m) => ({
+            id: String(m.id ?? ""),
+            username: m.username ?? "",
+            name: m.name ?? m.username ?? "",
+            avatar: m.avatar ?? "",
+            wechatName: m.wechatName ?? "",
+            hireDate: m.hireDate ?? "",
+            status: m.status ?? "",
+            tags: (m.tags || []).map((t) => t.name ?? "").filter(Boolean),
+          }))
+      : [],
   };
 }
 
@@ -96,6 +109,7 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
     remark: ext.remark || "",
     statusChangedAt: project.status_changed_at ?? null,
     memberCount: project.member_count ?? 0,
+    members: Array.isArray(project.members) ? project.members : [],
     segments: orderSegments(agg.segCounts || {}, segMap),
     ticketGroups: agg.groups || {},
     ticketTotal: agg.total || 0,
