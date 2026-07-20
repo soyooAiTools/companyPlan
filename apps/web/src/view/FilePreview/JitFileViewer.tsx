@@ -38,12 +38,14 @@ export default function JitFileViewer({ fileUrl, filename, type, onError }: JitF
 	const viewerRef = useRef<ViewerInstance | null>(null);
 	const [progress, setProgress] = useState(0);
 	const [phase, setPhase] = useState<"downloading" | "rendering" | "ready">("downloading");
+	const [failed, setFailed] = useState(false);
 
 	useEffect(() => {
 		if (!containerRef.current) return;
 		let disposed = false;
 		let abortDownload: (() => void) | null = null;
 		onError("");
+		setFailed(false);
 		setProgress(0);
 		setPhase("downloading");
 		const download = downloadFileWithProgress(fileUrl, (percent) => {
@@ -68,13 +70,19 @@ export default function JitFileViewer({ fileUrl, filename, type, onError }: JitF
 					onLoad: () => {
 						if (!disposed) setPhase("ready");
 					},
-					onError: (err) => onError(err?.message || "文件预览失败"),
+					onError: (err) => {
+						if (!disposed) {
+							setFailed(true);
+							onError(err?.message || "文件预览失败");
+						}
+					},
 				});
 				viewerRef.current = viewer;
 				return viewer.mount();
 			})
 			.catch((err: unknown) => {
 				if (disposed) return;
+				setFailed(true);
 				onError(err instanceof Error ? err.message : "文件预览失败");
 			});
 		return () => {
@@ -87,7 +95,7 @@ export default function JitFileViewer({ fileUrl, filename, type, onError }: JitF
 
 	return (
 		<div className="file-preview-page__viewer-wrap">
-			{phase !== "ready" ? (
+			{!failed && phase !== "ready" ? (
 				<div className="file-preview-page__progress">
 					<div className="file-preview-page__progress-title">{phase === "downloading" ? `文件下载中 ${progress}%` : "文件渲染中..."}</div>
 					<div className="file-preview-page__progress-track">

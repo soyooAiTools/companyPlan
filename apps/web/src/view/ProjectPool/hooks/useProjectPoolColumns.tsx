@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Button, Avatar, Checkbox, Input, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Avatar, Checkbox, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { EditOutlined, FilterFilled, QuestionCircleOutlined, SearchOutlined } from "@ant-design/icons";
+import { EditOutlined, FilterFilled, QuestionCircleOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
+import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 
@@ -18,18 +19,18 @@ export type ProjectPoolColumnActions = {
 };
 
 export type ProjectPoolColumnFilters = {
-	search: string;
 	statusFilter: string[];
 	stageFilter: string[];
 	plannerFilter: string[];
 	plannerOptions: { name: string; avatar?: string }[];
 	segmentFilter: number[];
 	segmentOptions: OpsSegment[];
-	onSearchChange: (value: string) => void;
+	advancedFilter: AdvancedFilterValue;
 	onStatusFilterChange: (value: string[]) => void;
 	onStageFilterChange: (value: string[]) => void;
 	onPlannerFilterChange: (value: string[]) => void;
 	onSegmentFilterChange: (value: number[]) => void;
+	onAdvancedFilterChange: (value: AdvancedFilterValue) => void;
 };
 
 const headerTip = (text: string, tip: string) => (
@@ -66,36 +67,6 @@ const dateSortValue = (date?: string | null) => {
 	const time = new Date(date).getTime();
 	return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
 };
-
-function HeaderSearchDropdown({ value, onApply, close }: { value: string; onApply: (value: string) => void; close: () => void }) {
-	const [draft, setDraft] = useState(value);
-	useEffect(() => setDraft(value), [value]);
-	const apply = (nextValue: string) => {
-		onApply(nextValue);
-		close();
-	};
-	return (
-		<div style={{ width: 240, padding: 10 }} onClick={(e) => e.stopPropagation()}>
-			<Input
-				autoFocus
-				allowClear
-				placeholder="搜索项目/客户/策划"
-				value={draft}
-				prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-				onChange={(e) => setDraft(e.target.value)}
-				onPressEnter={() => apply(draft)}
-			/>
-			<div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-				<Button size="small" type="text" disabled={!draft && !value} onClick={() => apply("")}>
-					清空
-				</Button>
-				<Button size="small" type="primary" onClick={() => apply(draft)}>
-					确定
-				</Button>
-			</div>
-		</div>
-	);
-}
 
 function HeaderMultiDropdown<T extends string | number>({
 	value,
@@ -141,14 +112,35 @@ export function useProjectPoolColumns(
 	filters?: ProjectPoolColumnFilters,
 	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder } = {},
 ): ColumnsType<OpsProjectPoolRow> {
+	const plannerFilterOptions = (filters?.plannerOptions || []).map((planner) => ({
+		value: planner.name,
+		searchText: planner.name,
+		label: (
+			<Space size={6}>
+				<Avatar size={18} src={planner.avatar || undefined} style={{ background: "#e2e8f0", color: "#475569", fontSize: 10 }}>
+					{planner.name.slice(0, 1)}
+				</Avatar>
+				<span>{planner.name}</span>
+			</Space>
+		),
+	}));
+	const advancedFilterFields = filters
+		? [
+				{ key: "name", label: "项目名称" },
+				{ key: "tenantName", label: "客户" },
+			]
+		: [];
+
+	const advancedFilterActive = filters ? compactAdvancedFilter(filters.advancedFilter).rules.length > 0 : false;
 	return [
 		{
 			title: "项目名称",
 			key: "name",
 			width: 220,
 			fixed: "left",
-			filterDropdown: filters ? ({ close }) => <HeaderSearchDropdown value={filters.search} onApply={filters.onSearchChange} close={close} /> : undefined,
-			filterIcon: filters ? () => (filters.search ? <SearchOutlined style={{ color: "#1677ff" }} /> : <SearchOutlined style={{ color: "#94a3b8" }} />) : undefined,
+			filterDropdown: filters ? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} /> : undefined,
+			filterDropdownProps: filters ? { align: { offset: [240, 0] } } : undefined,
+			filterIcon: filters ? () => <FilterFilled style={{ color: advancedFilterActive ? "#1677ff" : "#94a3b8" }} /> : undefined,
 			render: (_: unknown, row, index) => (
 				<div style={{ display: "flex", alignItems: "baseline", gap: 9, minWidth: 0 }}>
 					<span style={{ width: 24, flexShrink: 0, textAlign: "right", color: "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
@@ -169,17 +161,7 @@ export function useProjectPoolColumns(
 				? ({ close }) => (
 						<HeaderMultiDropdown
 							value={filters.plannerFilter || []}
-							options={(filters.plannerOptions || []).map((planner) => ({
-								value: planner.name,
-								label: (
-									<Space size={6}>
-										<Avatar size={18} src={planner.avatar || undefined} style={{ background: "#e2e8f0", color: "#475569", fontSize: 10 }}>
-											{planner.name.slice(0, 1)}
-										</Avatar>
-										<span>{planner.name}</span>
-									</Space>
-								),
-							}))}
+							options={plannerFilterOptions}
 							onApply={filters.onPlannerFilterChange}
 							close={close}
 						/>
@@ -314,9 +296,7 @@ export function useProjectPoolColumns(
 				return (
 					<div style={{ display: "flex", alignItems: "center", gap: 4, width: 160, minWidth: 0 }}>
 						{preview ? (
-							<span style={{ fontSize: 13, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-								{preview}
-							</span>
+							<span style={{ fontSize: 13, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{preview}</span>
 						) : (
 							<Typography.Text type="secondary">—</Typography.Text>
 						)}

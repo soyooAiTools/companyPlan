@@ -112,7 +112,19 @@ export default function OpsApp() {
                     />
                   </Tooltip>
                 </div>
-                <Menu mode="inline" inlineCollapsed={collapsed} selectedKeys={[selected]} style={{ flex: 1, borderInlineEnd: "none", overflowY: "auto" }} onClick={(e) => onMenuClick(e.key)} items={items} />
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <Menu mode="inline" inlineCollapsed={collapsed} selectedKeys={[selected]} style={{ borderInlineEnd: "none" }} onClick={(e) => onMenuClick(e.key)} items={items.filter((item) => item.key !== "settings")} />
+                  {items.some((item) => item.key === "settings") ? (
+                    <Menu mode="inline" inlineCollapsed={collapsed} selectedKeys={[selected]} style={{ borderInlineEnd: "none" }} onClick={(e) => onMenuClick(e.key)} items={items.filter((item) => item.key === "settings")} />
+                  ) : null}
+                  <div style={{ padding: collapsed ? "0 12px" : "0 24px" }}>
+                    <Tooltip title={collapsed ? "更新日志" : ""} placement="right">
+                      <span>
+                        <UpdateLogFloat collapsed={collapsed} menuTrigger />
+                      </span>
+                    </Tooltip>
+                  </div>
+                </div>
                 <div style={{ padding: collapsed ? "10px 8px" : 12, borderTop: "1px solid #f0f0f0", flexShrink: 0 }}>
                   {collapsed ? (
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
@@ -122,11 +134,6 @@ export default function OpsApp() {
                         </Avatar>
                       </Tooltip>
                       <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
-                      <Tooltip title="更新日志" placement="right">
-                        <span>
-                          <UpdateLogFloat collapsed />
-                        </span>
-                      </Tooltip>
                       <Tooltip title="退出登录" placement="right">
                         <Button icon={<LogoutOutlined />} onClick={logout} />
                       </Tooltip>
@@ -144,9 +151,6 @@ export default function OpsApp() {
                         ) : null}
                       </div>
                         <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
-                      </div>
-                      <div style={{ marginBottom: 8 }}>
-                        <UpdateLogFloat />
                       </div>
                       <Button block icon={<LogoutOutlined />} onClick={logout}>
                         退出登录

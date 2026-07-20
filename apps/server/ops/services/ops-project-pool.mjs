@@ -16,7 +16,89 @@ export { refreshProjectPoolSnapshotsByMember } from "./project-pool/snapshot-sto
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
 export { listOwnerMembersByTags } from "./project-pool/owners.mjs";
 
-function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "" }) {
+const ADVANCED_FILTER_OPERATORS = new Set(["eq", "neq", "contains", "not_contains", "empty", "not_empty"]);
+const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", "remark"]);
+
+function parseAdvancedFilter(input) {
+  if (!input) return null;
+  try {
+    const data = typeof input === "string" ? JSON.parse(input) : input;
+    const match = data?.match === "all" ? "all" : "any";
+    const rules = Array.isArray(data?.rules)
+      ? data.rules
+          .map((rule) => ({
+            field: String(rule?.field || "").trim(),
+            operator: String(rule?.operator || "").trim(),
+            value: String(rule?.value ?? "").trim(),
+          }))
+          .filter((rule) => ADVANCED_FILTER_FIELDS.has(rule.field) && ADVANCED_FILTER_OPERATORS.has(rule.operator))
+      : [];
+    return rules.length ? { match, rules } : null;
+  } catch {
+    return null;
+  }
+}
+
+function rowAdvancedFieldText(row, field) {
+  switch (field) {
+    case "name":
+      return row.name || "";
+    case "tenant":
+    case "tenantName":
+      return row.tenantName || "";
+    case "planner":
+    case "plannerName": {
+      const plannerNames = Array.isArray(row.planners) && row.planners.length ? row.planners.map((planner) => planner.name).filter(Boolean) : [];
+      return plannerNames.length ? plannerNames.join(" ") : row.plannerName || "";
+    }
+    case "status":
+      return row.status || "";
+    case "stage":
+      return row.stage || "";
+    case "segment":
+      return (row.segments || []).map((item) => `${item.id} ${item.name}`).join(" ");
+    case "remark":
+      return row.remark || "";
+    default:
+      return "";
+  }
+}
+
+function matchAdvancedRule(row, rule) {
+  const value = String(rule.value || "").toLowerCase();
+  if (rule.field === "segment" && ["eq", "neq"].includes(rule.operator)) {
+    const matched = (row.segments || []).some((item) => String(item.id) === rule.value || String(item.name || "").toLowerCase() === value);
+    return rule.operator === "eq" ? matched : !matched;
+  }
+  const text = String(rowAdvancedFieldText(row, rule.field) || "").toLowerCase();
+  switch (rule.operator) {
+    case "eq":
+      return text === value;
+    case "neq":
+      return text !== value;
+    case "contains":
+      return text.includes(value);
+    case "not_contains":
+      return !text.includes(value);
+    case "empty":
+      return !text.trim();
+    case "not_empty":
+      return !!text.trim();
+    default:
+      return true;
+  }
+}
+
+function applyAdvancedFilter(rows, advancedFilter) {
+  const filter = parseAdvancedFilter(advancedFilter);
+  if (!filter) return rows;
+  return rows.filter((row) => {
+    const results = filter.rules.map((rule) => matchAdvancedRule(row, rule));
+    return filter.match === "all" ? results.every(Boolean) : results.some(Boolean);
+  });
+}
+
+function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "" }) {
   let nextRows = rows;
   const kw = String(q || "").trim().toLowerCase();
   if (kw) {
@@ -57,6 +139,8 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
       .filter((n) => Number.isInteger(n) && n > 0),
   );
   if (segmentSet.size) nextRows = nextRows.filter((row) => (row.segments || []).some((item) => segmentSet.has(Number(item.id))));
+
+  nextRows = applyAdvancedFilter(nextRows, advancedFilter);
 
   return nextRows;
 }
@@ -107,7 +191,7 @@ function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   });
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "", onlyMine = false }) {
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "", onlyMine = false }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
@@ -120,7 +204,7 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
   } else {
     rows = rows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
   }
-  rows = filterProjectPoolRows(rows, { q, stage, planner, segment });
+  rows = filterProjectPoolRows(rows, { q, stage, planner, segment, advancedFilter });
 
   rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
   const total = rows.length;
@@ -130,10 +214,10 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
-  const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, admin: isAdmin(user) });
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, sortBy, sortOrder });
+    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder });
     timer.mark("snapshot.query", { rows: result.rows.length, total: result.total });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
@@ -145,10 +229,10 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
 }
 
 // ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
-export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
-  const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, userId: meId(user) });
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, userId: meId(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, sortBy, sortOrder, onlyMine: true });
+    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder, onlyMine: true });
     timer.mark("snapshot.query", { rows: result.rows.length, total: result.total });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
@@ -675,8 +759,8 @@ async function stageOverdueProjectsForNotify() {
   return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: "stage" }));
 }
 
-export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", sortBy = "", sortOrder = "" }) {
-  const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, sortBy, sortOrder, admin: isAdmin(user) });
+export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+  const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
     // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
     // const cutoffs = await staleCutoffs();
@@ -689,7 +773,7 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
     const idSet = new Set(extraIds);
     const allRows = filterProjectPoolRows(
       (await loadVisibleSnapshotRows({ user })).filter((row) => idSet.has(String(row.id))),
-      { q, status, stage, planner, segment },
+      { q, status, stage, planner, segment, advancedFilter },
     );
     sortProjectPoolRows(allRows, { sortBy: sortBy || "nextDeadline", sortOrder: sortOrder || "asc" });
     const total = allRows.length;

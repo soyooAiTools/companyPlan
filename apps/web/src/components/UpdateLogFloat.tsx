@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { Button, Empty, Modal, Spin } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Badge, Button, Empty, Modal, Spin } from "antd";
 import { FullscreenExitOutlined, FullscreenOutlined, HistoryOutlined } from "@ant-design/icons";
 
 type UpdateLogItem = {
@@ -14,14 +14,22 @@ type MonthGroup = {
 
 type UpdateLogFloatProps = {
 	collapsed?: boolean;
+	menuTrigger?: boolean;
 };
 
-export default function UpdateLogFloat({ collapsed = false }: UpdateLogFloatProps) {
+const UPDATE_LOG_SEEN_KEY = "ops.updateLogs.seenSignature";
+
+function signatureOf(logs: UpdateLogItem[]): string {
+	return logs.map((log) => `${log.date}:${log.items.join("|")}`).join(";");
+}
+
+export default function UpdateLogFloat({ collapsed = false, menuTrigger = false }: UpdateLogFloatProps) {
 	const [open, setOpen] = useState(false);
 	const [fullScreen, setFullScreen] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [logs, setLogs] = useState<UpdateLogItem[]>([]);
 	const [activeDate, setActiveDate] = useState("");
+	const [hasUnread, setHasUnread] = useState(false);
 	const contentRef = useRef<HTMLDivElement | null>(null);
 
 	const monthGroups = useMemo<MonthGroup[]>(() => {
@@ -38,16 +46,53 @@ export default function UpdateLogFloat({ collapsed = false }: UpdateLogFloatProp
 		return groups;
 	}, [logs]);
 
+	const applyLogs = (nextLogs: UpdateLogItem[]) => {
+		setLogs(nextLogs);
+		setActiveDate((current) => current || nextLogs[0]?.date || "");
+		const signature = signatureOf(nextLogs);
+		setHasUnread(Boolean(signature) && localStorage.getItem(UPDATE_LOG_SEEN_KEY) !== signature);
+		return signature;
+	};
+
+	const fetchLogs = async () => {
+		const res = await fetch(`/update-logs.json?t=${Date.now()}`, { cache: "no-store" });
+		const data = (await res.json()) as UpdateLogItem[];
+		const nextLogs = Array.isArray(data) ? data : [];
+		return { logs: nextLogs, signature: applyLogs(nextLogs) };
+	};
+
+	useEffect(() => {
+		let alive = true;
+		fetch(`/update-logs.json?t=${Date.now()}`, { cache: "no-store" })
+			.then((res) => res.json())
+			.then((data: UpdateLogItem[]) => {
+				if (!alive) return;
+				applyLogs(Array.isArray(data) ? data : []);
+			})
+			.catch(() => {
+				if (alive) setHasUnread(false);
+			});
+		return () => {
+			alive = false;
+		};
+	}, []);
+
+	const markSeen = (signature: string) => {
+		if (!signature) return;
+		localStorage.setItem(UPDATE_LOG_SEEN_KEY, signature);
+		setHasUnread(false);
+	};
+
 	const openLogs = async () => {
 		setOpen(true);
-		if (logs.length) return;
+		if (logs.length) {
+			markSeen(signatureOf(logs));
+			return;
+		}
 		setLoading(true);
 		try {
-			const res = await fetch(`/update-logs.json?t=${Date.now()}`, { cache: "no-store" });
-			const data = (await res.json()) as UpdateLogItem[];
-			const nextLogs = Array.isArray(data) ? data : [];
-			setLogs(nextLogs);
-			setActiveDate(nextLogs[0]?.date || "");
+			const result = await fetchLogs();
+			markSeen(result.signature);
 		} catch {
 			setLogs([]);
 			setActiveDate("");
@@ -69,23 +114,26 @@ export default function UpdateLogFloat({ collapsed = false }: UpdateLogFloatProp
 
 	return (
 		<>
-			<Button
-				type="default"
-				icon={<HistoryOutlined />}
-				onClick={openLogs}
-				style={{
-					width: collapsed ? 40 : "100%",
-					height: collapsed ? 36 : 34,
-					borderRadius: collapsed ? 8 : 6,
-					background: "#fff",
-					borderColor: "#dbe3ec",
-					color: "#334155",
-					fontWeight: 600,
-					paddingInline: collapsed ? 0 : undefined,
-				}}
-			>
-				{collapsed ? null : "更新日志"}
-			</Button>
+			<Badge dot={hasUnread} offset={collapsed ? [-4, 4] : [-2, 6]} style={{ display: "block" }}>
+				<Button
+					type={menuTrigger ? "text" : "default"}
+					icon={<HistoryOutlined />}
+					onClick={openLogs}
+					style={{
+						width: menuTrigger ? "100%" : collapsed ? 40 : "100%",
+						height: menuTrigger ? 40 : collapsed ? 36 : 34,
+						justifyContent: collapsed ? "center" : "flex-start",
+						borderRadius: menuTrigger ? 8 : collapsed ? 8 : 6,
+						background: menuTrigger ? "transparent" : "#fff",
+						borderColor: menuTrigger ? "transparent" : "#dbe3ec",
+						color: menuTrigger ? "#334155" : "#334155",
+						fontWeight: menuTrigger ? 400 : 600,
+						paddingInline: menuTrigger ? (collapsed ? 0 : 4) : collapsed ? 0 : undefined,
+					}}
+				>
+					{collapsed ? null : "更新日志"}
+				</Button>
+			</Badge>
 
 			<Modal
 				title={

@@ -156,6 +156,7 @@ type OpsProjectPoolListParams = {
 	stage?: string[];
 	segment?: number[];
 	planner?: string[];
+	advancedFilter?: string;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
 };
@@ -370,6 +371,7 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(",")); // 制作阶段多选 → 逗号分隔
 		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
 		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -386,6 +388,7 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -414,6 +417,7 @@ export const opsApi = {
 		if (params.stage?.length) qs.set("stage", params.stage.join(","));
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);

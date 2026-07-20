@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsProjectPoolSortOrder, OpsSegment } from "@/api/modules/ops";
+import { emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
@@ -20,6 +21,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [plannerFilter, setPlannerFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
   const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>(undefined);
   const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>(undefined);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
@@ -27,7 +29,9 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [allRowsLoading, setAllRowsLoading] = useState(false);
   const [allRowsKey, setAllRowsKey] = useState("");
   const [filterOptionRows, setFilterOptionRows] = useState<OpsProjectPoolRow[]>([]);
-  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(",")].join("|");
+  const advancedFilterParam = stringifyAdvancedFilter(advancedFilter);
+  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), advancedFilterParam || ""].join("|");
+  const allRowsSourceKey = mine ? "mine" : "all";
 
   const load = async () => {
     setLoading(true);
@@ -36,10 +40,10 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     try {
       const result =
         tab === "stale"
-          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder })
+          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder })
           : mine
-            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder })
-            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, sortBy, sortOrder });
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder });
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
@@ -55,11 +59,11 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       setAllRowsKey("");
       return;
     }
-    if (allRowsKey === filterKey && allRows.length) return;
+    if (allRowsKey === allRowsSourceKey && allRows.length) return;
     setAllRowsLoading(true);
     try {
       const pageSizeForAll = 500;
-      const base = { q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter };
+      const base = {};
       const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...base });
       const nextRows = [...first.rows];
       const pageCount = Math.ceil(first.total / pageSizeForAll);
@@ -73,7 +77,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
         for (const result of rest) nextRows.push(...result.rows);
       }
       setAllRows(nextRows);
-      setAllRowsKey(filterKey);
+      setAllRowsKey(allRowsSourceKey);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载分组数据失败");
       setAllRows([]);
@@ -118,6 +122,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setStageFilter([]);
     setPlannerFilter([]);
     setSegmentFilter([]);
+    setAdvancedFilter(emptyAdvancedFilter);
     setSortBy(undefined);
     setSortOrder(undefined);
   }, [mine]);
@@ -131,7 +136,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, sortBy, sortOrder, debounced]);
+  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, advancedFilterParam, sortBy, sortOrder, debounced]);
 
   useEffect(() => {
     opsApi
@@ -173,6 +178,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setPlannerFilter,
     segmentFilter,
     setSegmentFilter,
+    advancedFilter,
+    setAdvancedFilter,
     sortBy,
     setSortBy,
     sortOrder,
@@ -182,6 +189,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     allRowsLoading,
     filterOptionRows,
     filterKey,
+    allRowsSourceKey,
     load,
     loadAllRows,
   };

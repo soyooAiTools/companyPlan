@@ -67,8 +67,8 @@
 	position: absolute;
 	left: 50%;
 	top: 50%;
-	z-index: 2;
-	transform: translate(-50%, -50%);
+	z-index: 60;
+	transform: translate(-50%, -58%);
 }
 
 .file-preview-page__error {

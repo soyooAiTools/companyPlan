@@ -32,6 +32,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           stage: String(req.query.stage ?? ""),
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -54,6 +55,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           stage: String(req.query.stage ?? ""), // 制作阶段多选(逗号分隔)
           planner: String(req.query.planner ?? ""), // 策划多选(逗号分隔)
           segment: String(req.query.segment ?? ""), // 环节多选(逗号分隔):只看包含这些未完成环节工单的项目
+          advancedFilter: String(req.query.advanced_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -76,6 +78,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           stage: String(req.query.stage ?? ""),
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),

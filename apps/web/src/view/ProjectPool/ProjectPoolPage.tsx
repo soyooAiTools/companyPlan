@@ -22,6 +22,7 @@ import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
 import type { ProjectPoolSheetKey } from "./sheets/sheetTypes";
 import { groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember } from "./utils/groupProjectRows";
+import { filterProjectPoolRows } from "./utils/filterProjectPoolRows";
 
 dayjs.locale("zh-cn");
 
@@ -100,7 +101,6 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setPageSize,
 		loading,
 		search,
-		setSearch,
 		statusFilter,
 		setStatusFilter,
 		stageFilter,
@@ -109,6 +109,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		setPlannerFilter,
 		segmentFilter,
 		setSegmentFilter,
+		advancedFilter,
+		setAdvancedFilter,
 		sortBy,
 		setSortBy,
 		sortOrder,
@@ -117,7 +119,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		allRows,
 		allRowsLoading,
 		filterOptionRows,
-		filterKey,
+		allRowsSourceKey,
 		load,
 		loadAllRows,
 	} = useProjectPoolData(message, { mine, pagedEnabled: mine || !groupMode });
@@ -157,12 +159,12 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	const changeOwnerRole = (nextRole: typeof ownerRoleKey) => {
 		if (nextRole === ownerRoleKey) return;
 		setOwnerRoleKey(nextRole);
-		setSearch("");
 		setStatusFilter([]);
-		setStageFilter([]);
-		setPlannerFilter([]);
-		setSegmentFilter([]);
-		setOwnerSearch("");
+			setStageFilter([]);
+			setPlannerFilter([]);
+			setSegmentFilter([]);
+			setAdvancedFilter({ match: "any", rules: [] });
+			setOwnerSearch("");
 		setOwnerOnlyNew(false);
 		setOwnerCollapsed(false);
 		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
@@ -195,7 +197,20 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	useEffect(() => {
 		if (!mine && !isStaleSheet && sheet !== "project" && tab === "all") void loadAllRows();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isStaleSheet, tab, sheet, filterKey, mine]);
+	}, [isStaleSheet, tab, sheet, allRowsSourceKey, mine]);
+
+	const filteredGroupRows = useMemo(
+		() =>
+			filterProjectPoolRows(allRows, {
+				q: search,
+				status: statusFilter,
+				stage: stageFilter,
+				planner: plannerFilter,
+				segment: segmentFilter,
+				advancedFilter,
+			}),
+		[advancedFilter, allRows, plannerFilter, search, segmentFilter, stageFilter, statusFilter],
+	);
 
 	useEffect(() => {
 		if (sheet !== "owner" || tab !== "all") {
@@ -217,7 +232,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 			setOwnerGroups([]);
 			try {
 				const role = OWNER_ROLE_OPTIONS.find((option) => option.key === ownerRoleKey) || OWNER_ROLE_OPTIONS[0];
-				const activeRows = allRows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
+				const activeRows = filteredGroupRows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
 				if (role.source === "project_planners") {
 					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(activeRows)));
 					return;
@@ -246,7 +261,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		return () => {
 			cancelled = true;
 		};
-	}, [allRows, allRowsLoading, message, ownerRoleKey, sheet, tab]);
+	}, [allRowsLoading, filteredGroupRows, message, ownerRoleKey, sheet, tab]);
 
 	const visibleOwnerGroups = useMemo(() => {
 		const keyword = ownerSearch.trim().toLowerCase();
@@ -298,14 +313,17 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		dialogs.actions,
 		groupMode ? 0 : (page - 1) * pageSize,
 		{
-			search,
 			statusFilter,
 			stageFilter,
 			plannerFilter,
 			plannerOptions,
 			segmentFilter,
 			segmentOptions,
-			onSearchChange: setSearch,
+			advancedFilter,
+			onAdvancedFilterChange: (value) => {
+				setAdvancedFilter(value);
+				setPage(1);
+			},
 			onStatusFilterChange: (value) => {
 				setStatusFilter(value);
 				setPage(1);
@@ -389,7 +407,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 				) : !isStaleSheet && groupMode ? (
 					<GroupedProjectSheet
 						mode={groupMode}
-						rows={allRows}
+						rows={filteredGroupRows}
 						groupsOverride={sheet === "owner" ? visibleOwnerGroups : undefined}
 						columns={displayColumns}
 						loading={allRowsLoading || (sheet === "owner" && ownerGroupsLoading)}
