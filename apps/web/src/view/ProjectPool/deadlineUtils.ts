@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import type { OpsProjectPoolRow, OpsProjectStageDeadline } from "@/api/modules/ops";
+import { DEFAULT_STAGE_PLAN_TEMPLATE_KEY, getStagePlanTemplate, type StagePlanTemplateKey } from "./stagePlanTemplates";
 
 export const stageDescriptionFallback: Record<string, string> = {
 	interactive_alpha: String.raw`不含灯光\UI音效`,
@@ -15,7 +16,7 @@ export const stageDeadlineTemplates: OpsProjectStageDeadline[] = [
 	{ key: "final_delivery", name: "最终交付版", description: "封包版", date: "" },
 ];
 
-export const defaultStageIntervals = [2, 3, 7, 3];
+export const defaultStagePlanTemplateKey = DEFAULT_STAGE_PLAN_TEMPLATE_KEY;
 
 export const stageRangeLabel = (stage?: string | null) => {
 	const name = String(stage || "").trim();
@@ -61,12 +62,15 @@ const addDeadlineDays = (date: dayjs.Dayjs, days: number, skipWeekend: boolean) 
 	return cursor;
 };
 
-export const inferStageDeadlines = (baseDate: string, intervals: number[], skipWeekend: boolean) => {
+const addWorkdayIndex = (date: dayjs.Dayjs, workdayIndex: number, skipWeekend: boolean) => addDeadlineDays(date, Math.max(1, Number(workdayIndex) || 1) - 1, skipWeekend);
+
+export const inferStageDeadlines = (baseDate: string, templateKey: StagePlanTemplateKey | string, skipWeekend: boolean) => {
 	if (!baseDate) return normalizeStageDeadlines();
-	let cursor = dayjs(baseDate);
+	const base = dayjs(baseDate);
+	const template = getStagePlanTemplate(templateKey);
 	return stageDeadlineTemplates.map((tpl, index) => {
-		if (index > 0) cursor = addDeadlineDays(cursor, intervals[index - 1], skipWeekend);
-		return { ...tpl, date: cursor.format("YYYY-MM-DD") };
+		const workdayIndex = template.workdayIndexes[tpl.key] ?? index + 1;
+		return { ...tpl, date: addWorkdayIndex(base, workdayIndex, skipWeekend).format("YYYY-MM-DD") };
 	});
 };
 

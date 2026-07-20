@@ -1,8 +1,9 @@
 import dayjs from "dayjs";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
-import { Checkbox, DatePicker, InputNumber, Modal, Space } from "antd";
+import { Checkbox, DatePicker, Modal, Radio, Space } from "antd";
 import type { OpsProjectPoolRow, OpsProjectStageDeadline } from "@/api/modules/ops";
 import { stageDeadlineTemplates } from "../../deadlineUtils";
+import { STAGE_PLAN_TEMPLATES, type StagePlanTemplateKey } from "../../stagePlanTemplates";
 
 type StageDeadlineModalProps = {
   open: boolean;
@@ -10,17 +11,38 @@ type StageDeadlineModalProps = {
   rows: OpsProjectStageDeadline[];
   auto: boolean;
   skipWeekend: boolean;
-  intervals: number[];
+  templateKey: StagePlanTemplateKey | "";
   saving: boolean;
   onAutoChange: (checked: boolean) => void;
   onSkipWeekendChange: (checked: boolean) => void;
-  onIntervalChange: (index: number, value: number | string | null) => void;
+  onTemplateChange: (key: StagePlanTemplateKey) => void;
   onDateChange: (index: number, date: string) => void;
   onSave: () => void;
   onCancel: () => void;
 };
 
-export default function StageDeadlineModal({ open, target, rows, auto, skipWeekend, intervals, saving, onAutoChange, onSkipWeekendChange, onIntervalChange, onDateChange, onSave, onCancel }: StageDeadlineModalProps) {
+const dateRangeDaysText = (rows: OpsProjectStageDeadline[], skipWeekend: boolean) => {
+  const start = rows[0]?.date;
+  const end = rows[rows.length - 1]?.date;
+  if (!start || !end) return "";
+  const startDate = dayjs(start, "YYYY-MM-DD");
+  const endDate = dayjs(end, "YYYY-MM-DD");
+  if (!startDate.isValid() || !endDate.isValid() || endDate.isBefore(startDate, "day")) return "";
+  let workdayCount = 0;
+  let naturalDayCount = 0;
+  let cursor = startDate;
+  while (!cursor.isAfter(endDate, "day")) {
+    naturalDayCount += 1;
+    if (cursor.day() !== 0 && cursor.day() !== 6) workdayCount += 1;
+    cursor = cursor.add(1, "day");
+  }
+  const main = skipWeekend ? `${workdayCount} 个工作日` : `${naturalDayCount} 个自然日`;
+  const sub = skipWeekend ? `自然日 ${naturalDayCount} 天` : `工作日 ${workdayCount} 天`;
+  return `从 ${startDate.format("YYYY-MM-DD")} ～ ${endDate.format("YYYY-MM-DD")}，共 ${main}（${sub}）`;
+};
+
+export default function StageDeadlineModal({ open, target, rows, auto, skipWeekend, templateKey, saving, onAutoChange, onSkipWeekendChange, onTemplateChange, onDateChange, onSave, onCancel }: StageDeadlineModalProps) {
+  const rangeText = dateRangeDaysText(rows, skipWeekend);
   return (
     <Modal title={`校准计划交付日期 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
@@ -38,16 +60,22 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
               排除周末
             </Checkbox>
           </Space>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, auto)", gap: 8, alignItems: "center" }}>
-            {stageDeadlineTemplates.slice(1).map((tpl, index) => (
-              <span key={tpl.key} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#64748b", fontSize: 12 }}>
-                {tpl.name}
-                <InputNumber min={0} size="small" value={intervals[index]} controls={false} style={{ width: 44 }} onClick={(e) => e.stopPropagation()} onChange={(v) => onIntervalChange(index, v)} />
-                天
-              </span>
-            ))}
-          </div>
+          <Space size={8} style={{ opacity: auto ? 1 : 0.5 }}>
+            <span style={{ color: "#64748b", fontSize: 13 }}>开发周期</span>
+            <Radio.Group
+              disabled={!auto}
+              size="small"
+              value={templateKey}
+              options={STAGE_PLAN_TEMPLATES.map((tpl) => ({ label: tpl.label, value: tpl.key }))}
+              onChange={(event) => onTemplateChange(event.target.value)}
+            />
+          </Space>
         </div>
+        {auto ? (
+          <div style={{ color: "#d97706", fontSize: 12 }}>
+            周期模板按工作日编号推算：资产确认为第 1 个工作日，后续阶段按所选周期固定节点生成。
+          </div>
+        ) : null}
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
           {rows.map((item, index) => (
             <div
@@ -87,6 +115,7 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
             </div>
           ))}
         </div>
+        {rangeText ? <div style={{ color: "#cf1322", fontSize: 14, fontWeight: 700 }}>{rangeText}</div> : null}
       </Space>
     </Modal>
   );

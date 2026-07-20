@@ -3,7 +3,8 @@ import { flushSync } from "react-dom";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
-import { defaultStageIntervals, inferStageDeadlines, normalizeStageDeadlines } from "../deadlineUtils";
+import { inferStageDeadlines, normalizeStageDeadlines } from "../deadlineUtils";
+import type { StagePlanTemplateKey } from "../stagePlanTemplates";
 import type { ProjectLogKind } from "../logUtils";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
@@ -63,7 +64,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const [deadlineRows, setDeadlineRows] = useState<OpsProjectStageDeadline[]>(normalizeStageDeadlines());
   const [deadlineAuto, setDeadlineAuto] = useState(true);
   const [deadlineSkipWeekend, setDeadlineSkipWeekend] = useState(true);
-  const [deadlineIntervals, setDeadlineIntervals] = useState(defaultStageIntervals);
+  const [deadlineTemplateKey, setDeadlineTemplateKey] = useState<StagePlanTemplateKey | "">("");
   const [deadlineSaving, setDeadlineSaving] = useState(false);
 
   const openChange = (row: OpsProjectPoolRow, field: "status" | "stage") => {
@@ -259,7 +260,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const openDeadlineEdit = (row: OpsProjectPoolRow) => {
     setDeadlineTarget(row);
     setDeadlineRows(normalizeStageDeadlines(row.stageDeadlines));
-    setDeadlineIntervals(defaultStageIntervals);
+    setDeadlineTemplateKey("");
     setDeadlineAuto(true);
     setDeadlineSkipWeekend(true);
     setDeadlineOpen(true);
@@ -267,25 +268,37 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
 
   const updateDeadlineDate = (index: number, date: string) => {
     if (index === 0 && deadlineAuto) {
-      setDeadlineRows(inferStageDeadlines(date, deadlineIntervals, deadlineSkipWeekend));
+      if (deadlineTemplateKey) {
+        setDeadlineRows(inferStageDeadlines(date, deadlineTemplateKey, deadlineSkipWeekend));
+      } else {
+        setDeadlineRows((old) => old.map((item, i) => (i === index ? { ...item, date } : item)));
+      }
       return;
     }
     setDeadlineRows((old) => old.map((item, i) => (i === index ? { ...item, date } : item)));
   };
 
-  const updateDeadlineInterval = (index: number, value: number | string | null) => {
-    const next = deadlineIntervals.map((n, i) => (i === index ? Math.max(0, Number(value) || 0) : n));
-    setDeadlineIntervals(next);
-    if (deadlineAuto && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, next, deadlineSkipWeekend));
+  const updateDeadlineTemplate = (key: StagePlanTemplateKey) => {
+    setDeadlineTemplateKey(key);
+    if (deadlineAuto && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, key, deadlineSkipWeekend));
   };
 
   const toggleDeadlineSkipWeekend = (checked: boolean) => {
     setDeadlineSkipWeekend(checked);
-    if (deadlineAuto && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, deadlineIntervals, checked));
+    if (deadlineAuto && deadlineTemplateKey && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, deadlineTemplateKey, checked));
+  };
+
+  const toggleDeadlineAuto = (checked: boolean) => {
+    setDeadlineAuto(checked);
+    if (checked && deadlineTemplateKey && deadlineRows[0]?.date) setDeadlineRows(inferStageDeadlines(deadlineRows[0].date, deadlineTemplateKey, deadlineSkipWeekend));
   };
 
   const saveDeadlineRows = async () => {
     if (!deadlineTarget) return;
+    if (deadlineAuto && !deadlineTemplateKey) {
+      message.warning("请先选择开发周期");
+      return;
+    }
     if (deadlineRows.some((item) => !item.date)) {
       message.warning("请补全 5 个阶段的交付日期");
       return;
@@ -370,11 +383,11 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       rows: deadlineRows,
       auto: deadlineAuto,
       skipWeekend: deadlineSkipWeekend,
-      intervals: deadlineIntervals,
+      templateKey: deadlineTemplateKey,
       saving: deadlineSaving,
-      setAuto: setDeadlineAuto,
+      setAuto: toggleDeadlineAuto,
       changeSkipWeekend: toggleDeadlineSkipWeekend,
-      changeInterval: updateDeadlineInterval,
+      changeTemplate: updateDeadlineTemplate,
       changeDate: updateDeadlineDate,
       save: saveDeadlineRows,
       close: () => setDeadlineOpen(false),
