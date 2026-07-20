@@ -44,7 +44,7 @@ const dateRangeDaysText = (rows: OpsProjectStageDeadline[], skipWeekend: boolean
 export default function StageDeadlineModal({ open, target, rows, auto, skipWeekend, templateKey, saving, onAutoChange, onSkipWeekendChange, onTemplateChange, onDateChange, onSave, onCancel }: StageDeadlineModalProps) {
   const rangeText = dateRangeDaysText(rows, skipWeekend);
   return (
-    <Modal title={`校准计划交付日期 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
+    <Modal title={`计划交付日期 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
       <Space direction="vertical" size={12} style={{ width: "100%" }}>
         {auto ? (
           <div style={{ color: "#cf1322", fontSize: 15, fontWeight: 700 }}>

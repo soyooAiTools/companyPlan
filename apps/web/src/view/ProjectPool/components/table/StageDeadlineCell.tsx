@@ -12,7 +12,7 @@ type StageDeadlineCellProps = {
 export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProps) {
   const items = Array.isArray(row.stageDeadlines) ? row.stageDeadlines : [];
   const edit = (
-    <Tooltip title="校准计划交付日期">
+    <Tooltip title="计划交付日期">
       <Button
         type="text"
         size="small"
