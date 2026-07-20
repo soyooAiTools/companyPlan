@@ -111,7 +111,16 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
                   {index === 0 ? "资产确认结果交付客户" : `${stageDeadlineTemplates[index - 1].name} → ${item.name}`}
                 </div>
               </div>
-              <DatePicker allowClear={false} locale={zhCN} value={item.date ? dayjs(item.date) : null} format="YYYY-MM-DD" style={{ width: 160 }} onClick={(e) => e.stopPropagation()} onChange={(date) => onDateChange(index, date ? date.format("YYYY-MM-DD") : "")} />
+              <DatePicker
+                allowClear={false}
+                disabled={index > 0}
+                locale={zhCN}
+                value={item.date ? dayjs(item.date) : null}
+                format="YYYY-MM-DD"
+                style={{ width: 160 }}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(date) => onDateChange(index, date ? date.format("YYYY-MM-DD") : "")}
+              />
             </div>
           ))}
         </div>
