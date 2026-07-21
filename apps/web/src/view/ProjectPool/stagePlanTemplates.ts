@@ -50,7 +50,7 @@ export const STAGE_PLAN_TEMPLATES: StagePlanTemplate[] = [
 			scene_still: 3,
 			interactive_alpha: 4,
 			feature_complete: 7,
-			final_delivery: 22,
+			final_delivery: 23,
 		},
 	},
 ];

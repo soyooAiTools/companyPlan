@@ -79,7 +79,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         columns={columns}
         size="small"
         virtual
-        scroll={scrollY ? { x: 1350, y: scrollY } : { x: 1350 }}
+        scroll={scrollY ? { x: 1480, y: scrollY } : { x: 1480 }}
         pagination={tablePagination}
         onChange={(_pagination, _filters, sorter, extra) => {
           if (extra.action !== "sort") return;

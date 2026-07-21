@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
-import { inferStageDeadlines, normalizeStageDeadlines } from "../deadlineUtils";
+import { inferStageDeadlines, normalizeStageDeadlines, normalizeStageDeadlinesForEdit } from "../deadlineUtils";
 import type { StagePlanTemplateKey } from "../stagePlanTemplates";
 import type { ProjectLogKind } from "../logUtils";
 
@@ -36,6 +36,12 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const [rmTarget, setRmTarget] = useState<OpsProjectPoolRow | null>(null);
   const [rmValue, setRmValue] = useState("");
   const [rmSaving, setRmSaving] = useState(false);
+
+  const [metaOpen, setMetaOpen] = useState(false);
+  const [metaTarget, setMetaTarget] = useState<OpsProjectPoolRow | null>(null);
+  const [metaCustomerContact, setMetaCustomerContact] = useState("");
+  const [metaRequirementDoc, setMetaRequirementDoc] = useState("");
+  const [metaSaving, setMetaSaving] = useState(false);
 
   const [memOpen, setMemOpen] = useState(false);
   const [memProject, setMemProject] = useState<OpsProjectPoolRow | null>(null);
@@ -73,6 +79,28 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setChValue(field === "status" ? row.status : row.stage);
     setChComment("");
     setChOpen(true);
+  };
+
+  const openMeta = (row: OpsProjectPoolRow) => {
+    setMetaTarget(row);
+    setMetaCustomerContact(row.customerContact || "");
+    setMetaRequirementDoc(row.requirementDoc || "");
+    setMetaOpen(true);
+  };
+
+  const saveMeta = async () => {
+    if (!metaTarget) return;
+    setMetaSaving(true);
+    try {
+      await opsApi.changeProjectMeta(metaTarget.id, { customerContact: metaCustomerContact, requirementDoc: metaRequirementDoc });
+      message.success("客户信息已更新");
+      setMetaOpen(false);
+      await reload();
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "保存失败");
+    } finally {
+      setMetaSaving(false);
+    }
   };
 
   const confirmChange = async () => {
@@ -259,7 +287,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
 
   const openDeadlineEdit = (row: OpsProjectPoolRow) => {
     setDeadlineTarget(row);
-    setDeadlineRows(normalizeStageDeadlines(row.stageDeadlines));
+    setDeadlineRows(normalizeStageDeadlinesForEdit(row.stageDeadlines));
     setDeadlineTemplateKey("");
     setDeadlineAuto(true);
     setDeadlineSkipWeekend(true);
@@ -347,6 +375,17 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       save: saveRemark,
       close: () => setRmOpen(false),
     },
+    meta: {
+      open: metaOpen,
+      target: metaTarget,
+      customerContact: metaCustomerContact,
+      requirementDoc: metaRequirementDoc,
+      saving: metaSaving,
+      setCustomerContact: setMetaCustomerContact,
+      setRequirementDoc: setMetaRequirementDoc,
+      save: saveMeta,
+      close: () => setMetaOpen(false),
+    },
     members: {
       open: memOpen,
       project: memProject,
@@ -395,6 +434,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     actions: {
       openChange,
       openRemark,
+      openMeta,
       openLogs,
       openMembers,
       openSegTickets,

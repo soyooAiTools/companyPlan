@@ -120,7 +120,10 @@ export interface OpsMe {
 export interface OpsProjectPoolRow {
 	id: string;
 	name: string;
+	tenantId?: string; // 客户 id,项目池直接提单时用于预填客户
 	tenantName: string; // 客户名(= soyoo tenant_name)
+	customerContact?: string; // 客户侧具体对接人,对应飞书「客户」列
+	requirementDoc?: string; // 客户需求文档链接,对应飞书「需求文档」列
 	status: string;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
@@ -440,6 +443,11 @@ export const opsApi = {
 		requestJson<{ ok: boolean; stageDeadlines: OpsProjectStageDeadline[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage-deadlines`, {
 			method: "POST",
 			body: JSON.stringify({ stageDeadlines }),
+		}),
+	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string }) =>
+		requestJson<{ ok: boolean; customerContact: string; requirementDoc: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/meta`, {
+			method: "POST",
+			body: JSON.stringify(body),
 		}),
 	changeProjectRemark: (projectId: string, remark: string) =>
 		requestJson<{ ok: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/remark`, {

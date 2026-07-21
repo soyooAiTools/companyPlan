@@ -82,7 +82,7 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
   );
 
   return (
-    <Space size={4}>
+    <Space size={4} style={{ maxWidth: 282, minWidth: 0, overflow: "hidden" }}>
       <Tooltip
         title={full}
         placement="topLeft"
@@ -91,7 +91,7 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
           root: { maxWidth: "none" },
           container: { width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" },
         }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 220, minWidth: 0 }}>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 250, minWidth: 0, overflow: "hidden" }}>
           <span style={{ color: "#0f172a", fontWeight: 700, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
             ({fmtStageDate(next.date)}){next.name || next.key}
           </span>

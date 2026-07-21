@@ -5,11 +5,13 @@ import "dayjs/locale/zh-cn";
 import { App, Button, Input, Radio, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsProjectPoolRow } from "@/api/modules/ops";
+import { opsApi, type OpsProjectPoolMember, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
 import MembersModal from "./components/dialogs/MembersModal";
 import ProjectLogsDrawer from "./components/dialogs/ProjectLogsDrawer";
+import ProjectMetaModal from "./components/dialogs/ProjectMetaModal";
+import ProjectPoolCreateTicketModal from "./components/dialogs/ProjectPoolCreateTicketModal";
 import RemarkModal from "./components/dialogs/RemarkModal";
 import SegmentTicketDetailDrawer from "./components/dialogs/SegmentTicketDetailDrawer";
 import SegmentTicketsModal from "./components/dialogs/SegmentTicketsModal";
@@ -123,7 +125,11 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 		load,
 		loadAllRows,
 	} = useProjectPoolData(message, { mine, pagedEnabled: mine || !groupMode });
-	const dialogs = useProjectPoolModals(message, load);
+	const reloadAfterProjectChange = async () => {
+		if (mine || !groupMode) await load();
+		if (!mine && tab === "all") await loadAllRows(true);
+	};
+	const dialogs = useProjectPoolModals(message, reloadAfterProjectChange);
 	const [ownerRoleKey, setOwnerRoleKey] = useState<(typeof OWNER_ROLE_OPTIONS)[number]["key"]>("program");
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
@@ -131,6 +137,8 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	const [ownerOnlyNew, setOwnerOnlyNew] = useState(false);
 	const [ownerCollapseAction, setOwnerCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
 	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
+	const [createTicketProject, setCreateTicketProject] = useState<OpsProjectPoolRow | null>(null);
+	const [createTicketMember, setCreateTicketMember] = useState<OpsProjectPoolMember | null>(null);
 
 	// 表格内部滚动高度:实测「表格区域」高度 − 表头/分页固定占位,做到分页精准贴底(自适应工具栏换行/各种屏高)
 	const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -310,7 +318,10 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 	}, [allRows, filterOptionRows, rows]);
 
 	const columns = useProjectPoolColumns(
-		dialogs.actions,
+		{
+			...dialogs.actions,
+			openCreateTicket: (row) => setCreateTicketProject(row),
+		},
 		groupMode ? 0 : (page - 1) * pageSize,
 		{
 			statusFilter,
@@ -464,6 +475,17 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 				onSave={dialogs.remark.save}
 				onCancel={dialogs.remark.close}
 			/>
+			<ProjectMetaModal
+				open={dialogs.meta.open}
+				target={dialogs.meta.target}
+				customerContact={dialogs.meta.customerContact}
+				requirementDoc={dialogs.meta.requirementDoc}
+				saving={dialogs.meta.saving}
+				onCustomerContactChange={dialogs.meta.setCustomerContact}
+				onRequirementDocChange={dialogs.meta.setRequirementDoc}
+				onSave={dialogs.meta.save}
+				onCancel={dialogs.meta.close}
+			/>
 			<StageDeadlineModal
 				open={dialogs.deadline.open}
 				target={dialogs.deadline.target}
@@ -493,6 +515,12 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 				project={dialogs.members.project}
 				members={dialogs.members.rows}
 				loading={dialogs.members.loading}
+				onCreateTicket={(member) => {
+					if (dialogs.members.project) {
+						setCreateTicketProject(dialogs.members.project);
+						setCreateTicketMember(member);
+					}
+				}}
 				onCancel={dialogs.members.close}
 			/>
 			<SegmentTicketsModal
@@ -518,6 +546,17 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 				events={dialogs.segmentTicketDetail.events}
 				loading={dialogs.segmentTicketDetail.loading}
 				onClose={dialogs.segmentTicketDetail.close}
+			/>
+			<ProjectPoolCreateTicketModal
+				open={!!createTicketProject}
+				project={createTicketProject}
+				member={createTicketMember}
+				messageApi={message}
+				onCreated={reloadAfterProjectChange}
+				onCancel={() => {
+					setCreateTicketProject(null);
+					setCreateTicketMember(null);
+				}}
 			/>
 		</div>
 	);

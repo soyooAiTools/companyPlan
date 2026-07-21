@@ -52,6 +52,14 @@ export const normalizeStageDeadlines = (items?: OpsProjectStageDeadline[]) => {
 	});
 };
 
+export const defaultAssetConfirmDate = () => dayjs().add(4, "day").format("YYYY-MM-DD");
+
+export const normalizeStageDeadlinesForEdit = (items?: OpsProjectStageDeadline[]) => {
+	const rows = normalizeStageDeadlines(items);
+	if (!rows[0]?.date) rows[0] = { ...rows[0], date: defaultAssetConfirmDate() };
+	return rows;
+};
+
 const addDeadlineDays = (date: dayjs.Dayjs, days: number, skipWeekend: boolean) => {
 	let cursor = date;
 	let remaining = Math.max(0, Number(days) || 0);
