@@ -558,6 +558,42 @@ export async function changeProjectStageDeadlines({ user, projectId, stageBaseDa
   return { ok: true, stageDeadlines: nextDeadlines };
 }
 
+// ---- 改客户对接信息:写 soyoo projects.customer_contact/requirement_doc → 同步飞书 → 刷新快照 ----
+export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
+  const { project, members } = await getProjectWithMembers(projectId);
+  if (!project) return { error: "项目不存在", code: 404 };
+  if (!isAdmin(user)) {
+    const m = members.find((x) => x.id === meId(user));
+    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
+  }
+  const oldContact = String(project.customer_contact ?? "");
+  const oldDoc = String(project.requirement_doc ?? "");
+  const nextContact = String(customerContact ?? "").trim();
+  const nextDoc = String(requirementDoc ?? "").trim();
+  const r = await soyooClient.setProjectMeta(projectId, { customer_contact: nextContact, requirement_doc: nextDoc });
+  if (oldContact !== nextContact || oldDoc !== nextDoc) {
+    const html = [
+      `<div>客户对接人：${escapeHtml(oldContact || "空")} → ${escapeHtml(nextContact || "空")}</div>`,
+      `<div>需求文档：${escapeHtml(oldDoc || "空")} → ${escapeHtml(nextDoc || "空")}</div>`,
+    ].join("");
+    await prisma.ops_project_status_logs.create({
+      data: {
+        project_id: String(projectId),
+        project_name: project.name,
+        kind: "remark",
+        from_status: null,
+        to_status: "修改客户信息",
+        actor_id: meId(user),
+        actor_name: user?.name || user?.username || "",
+        comment_html: html,
+        created_at: nowIso(),
+      },
+    });
+  }
+  await refreshProjectPoolSnapshot(projectId);
+  return { ok: true, customerContact: r?.data?.customer_contact ?? nextContact, requirementDoc: r?.data?.requirement_doc ?? nextDoc };
+}
+
 // ---- 改备注(纯 ops:富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
 export async function changeProjectRemark({ user, projectId, remark }) {
   const { project, members } = await getProjectWithMembers(projectId);

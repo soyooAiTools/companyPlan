@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Button, Avatar, Checkbox, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { EditOutlined, FilterFilled, QuestionCircleOutlined } from "@ant-design/icons";
+import { EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
@@ -12,10 +12,12 @@ import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartD
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
+	openMeta: (row: OpsProjectPoolRow) => void;
 	openDeadlineEdit: (row: OpsProjectPoolRow) => void;
 	openRemark: (row: OpsProjectPoolRow) => void;
 	openSegTickets: (row: OpsProjectPoolRow, segment: { id: number; name: string }) => void;
 	openMembers: (row: OpsProjectPoolRow) => void;
+	openCreateTicket?: (row: OpsProjectPoolRow) => void;
 };
 
 export type ProjectPoolColumnFilters = {
@@ -67,6 +69,74 @@ const dateSortValue = (date?: string | null) => {
 	const time = new Date(date).getTime();
 	return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
 };
+
+function EditableTextCell({
+	value,
+	placeholder = "—",
+	readonly,
+	width = 105,
+	onEdit,
+}: {
+	value?: string;
+	placeholder?: string;
+	readonly?: boolean;
+	width?: number;
+	onEdit: () => void;
+}) {
+	const text = String(value || "").trim();
+	if (readonly) {
+		return (
+			<Typography.Text style={{ maxWidth: width }} ellipsis title={text}>
+				{text || "—"}
+			</Typography.Text>
+		);
+	}
+	return (
+		<button
+			type="button"
+			className={`project-pool-editable-cell${text ? "" : " is-empty"}`}
+			onClick={(e) => {
+				e.stopPropagation();
+				onEdit();
+			}}
+			style={{ width, maxWidth: width }}
+			title={text}>
+			{text || placeholder}
+		</button>
+	);
+}
+
+const editableCellStyles = (
+	<style>
+		{`
+			.project-pool-editable-cell {
+				display: block;
+				border: 0;
+				background: transparent;
+				padding: 2px 4px;
+				margin: 0 0 0 -4px;
+				text-align: left;
+				border-radius: 4px;
+				cursor: pointer;
+				color: #334155;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			.project-pool-editable-cell:empty,
+			.project-pool-editable-cell:not(:empty) {
+				font: inherit;
+			}
+			.project-pool-editable-cell:hover {
+				background: #f1f5f9;
+				color: #0f766e;
+			}
+			.project-pool-editable-cell.is-empty {
+				color: #94a3b8;
+			}
+		`}
+	</style>
+);
 
 function HeaderMultiDropdown<T extends string | number>({
 	value,
@@ -136,20 +206,50 @@ export function useProjectPoolColumns(
 		{
 			title: "项目名称",
 			key: "name",
-			width: 220,
+			width: 270,
 			fixed: "left",
 			filterDropdown: filters ? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} /> : undefined,
 			filterDropdownProps: filters ? { align: { offset: [240, 0] } } : undefined,
 			filterIcon: filters ? () => <FilterFilled style={{ color: advancedFilterActive ? "#1677ff" : "#94a3b8" }} /> : undefined,
 			render: (_: unknown, row, index) => (
-				<div style={{ display: "flex", alignItems: "baseline", gap: 9, minWidth: 0 }}>
+				<div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, height: "100%" }}>
 					<span style={{ width: 24, flexShrink: 0, textAlign: "right", color: "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
 						{rowNumberOffset + index + 1}
 					</span>
-					<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all" }}>
+					<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all", flex: 1 }}>
 						{row.name || "—"}
-						<span style={{ color: "#64748b", fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
+						<span style={{ color: "#64748b", fontSize: 13, fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
 					</div>
+					{!options.readonly && actions.openCreateTicket ? (
+						<Button
+							type="link"
+							size="small"
+							style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
+							onClick={(e) => {
+								e.stopPropagation();
+								actions.openCreateTicket?.(row);
+							}}>
+							+ 提单
+						</Button>
+					) : null}
+				</div>
+			),
+		},
+		{
+			title: "客户对接人",
+			key: "customerContact",
+			width: 170,
+			render: (_: unknown, row) => (
+				<div style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: 152, minWidth: 0 }}>
+					{editableCellStyles}
+					<EditableTextCell value={row.customerContact} readonly={options.readonly} width={row.requirementDoc ? 82 : 132} onEdit={() => actions.openMeta(row)} />
+					{row.requirementDoc ? (
+						<a href={row.requirementDoc} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1677ff", fontSize: 13 }} onClick={(e) => e.stopPropagation()}>
+							<span style={{ color: "#cbd5e1" }}>·</span>
+							<FileTextOutlined style={{ fontSize: 13 }} />
+							文档
+						</a>
+					) : null}
 				</div>
 			),
 		},
@@ -190,7 +290,7 @@ export function useProjectPoolColumns(
 		{
 			title: headerTip("当前阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
 			key: "stage",
-			width: 150,
+			width: 230,
 			filterDropdown: filters
 				? ({ close }) => (
 						<HeaderMultiDropdown
@@ -205,6 +305,7 @@ export function useProjectPoolColumns(
 			render: (_: unknown, row) => (
 				<Tag
 					style={{
+						display: "inline-block",
 						background: "#f0f5ff",
 						color: "#1d39c4",
 						padding: "2px 10px",
@@ -212,8 +313,10 @@ export function useProjectPoolColumns(
 						borderRadius: 6,
 						border: "none",
 						margin: 0,
+						whiteSpace: "nowrap",
 						cursor: options.readonly ? "default" : "pointer",
 					}}
+					title={stageRangeLabel(row.stage)}
 					onClick={(e) => {
 						e.stopPropagation();
 						if (!options.readonly) actions.openChange(row, "stage");
@@ -225,7 +328,7 @@ export function useProjectPoolColumns(
 		{
 			title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。"),
 			key: "stageDeadlines",
-			width: 210,
+			width: 290,
 			sorter: options.serverSort ? true : (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
 			sortOrder: options.sortBy === "nextDeadline" ? options.sortOrder : null,
 			render: (_: unknown, row) => <StageDeadlineCell row={row} onEdit={actions.openDeadlineEdit} />,

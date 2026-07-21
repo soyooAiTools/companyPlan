@@ -53,13 +53,13 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
   };
 
-  const loadAllRows = async () => {
+  const loadAllRows = async (force = false) => {
     if (tab !== "all") {
       setAllRows([]);
       setAllRowsKey("");
       return;
     }
-    if (allRowsKey === allRowsSourceKey && allRows.length) return;
+    if (!force && allRowsKey === allRowsSourceKey && allRows.length) return;
     setAllRowsLoading(true);
     try {
       const pageSizeForAll = 500;
