@@ -117,7 +117,7 @@ export default function OpsApp() {
                   {items.some((item) => item.key === "settings") ? (
                     <Menu mode="inline" inlineCollapsed={collapsed} selectedKeys={[selected]} style={{ borderInlineEnd: "none" }} onClick={(e) => onMenuClick(e.key)} items={items.filter((item) => item.key === "settings")} />
                   ) : null}
-                  <div style={{ padding: collapsed ? "0 12px" : "0 24px" }}>
+                  <div style={{ display: "flex", justifyContent: collapsed ? "center" : "flex-start", padding: collapsed ? 0 : "0 24px" }}>
                     <Tooltip title={collapsed ? "更新日志" : ""} placement="right">
                       <span>
                         <UpdateLogFloat collapsed={collapsed} menuTrigger />

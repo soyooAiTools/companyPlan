@@ -181,11 +181,11 @@ export default function UpdateLogFloat({ collapsed = false, menuTrigger = false 
 						style={{
 							display: "grid",
 							gridTemplateColumns: "164px minmax(0, 1fr)",
-							minHeight: fullScreen ? "72vh" : 560,
-							maxHeight: fullScreen ? "78vh" : "72vh",
+							height: fullScreen ? "78vh" : "72vh",
+							minHeight: 0,
 						}}
 					>
-						<aside style={{ borderRight: "1px solid #e2e8f0", padding: "6px 16px 6px 0", overflowY: "auto" }}>
+						<aside style={{ minHeight: 0, borderRight: "1px solid #e2e8f0", padding: "6px 16px 6px 0", overflowY: "auto" }}>
 							{monthGroups.map((group) => (
 								<div key={group.month} style={{ marginBottom: 18 }}>
 									<div style={{ display: "flex", alignItems: "center", gap: 7, color: "#334155", fontSize: 14, marginBottom: 8 }}>
@@ -225,7 +225,7 @@ export default function UpdateLogFloat({ collapsed = false, menuTrigger = false 
 							))}
 						</aside>
 
-						<div ref={contentRef} style={{ overflowY: "auto", padding: "0 18px 4px 24px" }}>
+						<div ref={contentRef} style={{ minHeight: 0, overflowY: "auto", padding: "0 18px 4px 24px" }}>
 							{logs.map((log) => (
 								<section id={`update-log-${log.date}`} key={log.date} style={{ paddingBottom: 30 }}>
 									<h3 style={{ margin: "0 0 14px", color: "#0f172a", fontSize: 18, fontWeight: 700 }}>{log.date}</h3>

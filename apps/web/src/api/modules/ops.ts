@@ -50,6 +50,7 @@ export interface OpsTicket {
 	client: string;
 	projectName: string;
 	projectId: string;
+	projectStage?: string; // 项目当前阶段(部分接口返回)
 	tagName: string; // 环节名
 	needType: string;
 	priority: string;
@@ -262,6 +263,30 @@ export interface OpsNotification {
 	createdAt: string;
 	realert?: boolean; // 仅 SSE 推送时出现:超时的"重复提醒",前端只重弹桌面、不计未读
 }
+// ===== 人员进度 =====
+export interface OpsPeopleProgressRole {
+	key: string;
+	label: string;
+}
+export interface OpsPeopleProgressRow {
+	userId: string;
+	name: string;
+	username: string;
+	avatar: string;
+	wechatName: string;
+	hireDate: string;
+	isNewcomer: boolean;
+	disabled: boolean;
+	roles: string[];
+	unfinished: number;
+	doing: number;
+	queued: number;
+	blocked: number;
+	overdue: number;
+	projectCount: number;
+	ticketCount: number;
+}
+export type OpsPeopleProgressTicketStatus = "all" | "doing" | "queued" | "blocked" | "overdue";
 export interface OpsNotifSettingEvent {
 	eventKey: string;
 	enabled: boolean;
@@ -352,6 +377,24 @@ export const opsApi = {
 			method: "PATCH",
 			body: JSON.stringify({ priority }),
 		}),
+	peopleProgressRoles: () => requestJson<{ roles: OpsPeopleProgressRole[] }>("/api/ops/people-progress/roles"),
+	peopleProgress: (params: { role?: string; q?: string; overdueOnly?: boolean; newcomerOnly?: boolean } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.role && params.role !== "all") qs.set("role", params.role);
+		if (params.q) qs.set("q", params.q);
+		if (params.overdueOnly) qs.set("overdueOnly", "1");
+		if (params.newcomerOnly) qs.set("newcomerOnly", "1");
+		const s = qs.toString();
+		return requestJson<{ rows: OpsPeopleProgressRow[] }>(`/api/ops/people-progress${s ? `?${s}` : ""}`);
+	},
+	peopleProgressTickets: (userId: string, params: { role?: string; status?: OpsPeopleProgressTicketStatus; q?: string } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.role && params.role !== "all") qs.set("role", params.role);
+		if (params.status && params.status !== "all") qs.set("status", params.status);
+		if (params.q) qs.set("q", params.q);
+		const s = qs.toString();
+		return requestJson<{ tickets: OpsTicket[] }>(`/api/ops/people-progress/${encodeURIComponent(userId)}/tickets${s ? `?${s}` : ""}`);
+	},
 	// 项目成员(指派候选)
 	projectMembers: (projectId: string) =>
 		requestJson<{ members: { id: string; username: string; name: string; avatar: string; wechatName: string; status: string; segmentNames?: string[] }[] }>(

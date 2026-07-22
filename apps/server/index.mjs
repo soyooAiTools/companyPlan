@@ -25,6 +25,7 @@ import { securityHeaders, validateWriteOrigin } from "./middleware/security.mjs"
 import { registerCompanyPlanRoutes } from "./router/company-plan-routes.mjs";
 import { registerOpsRoutes } from "./ops/ops-routes.mjs";
 import { registerProjectPoolRoutes } from "./ops/project-pool-routes.mjs";
+import { registerPeopleProgressRoutes } from "./ops/people-progress-routes.mjs";
 import { registerNotificationRoutes } from "./ops/notification-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
@@ -68,6 +69,7 @@ registerCompanyPlanRoutes(app, companyPlanController, {
 // 新需求提单接口(Prisma,/api/ops/*),与旧接口共存
 registerOpsRoutes(app, { requireAuth, requireAdmin });
 registerProjectPoolRoutes(app, { requireAuth, requireAdmin });
+registerPeopleProgressRoutes(app, { requireAuth, requireAdmin });
 registerNotificationRoutes(app, { requireAuth, requireAdmin });
 
 const distDir = join(repoRoot, "apps", "web", "dist");
