@@ -64,7 +64,7 @@ export default function PeopleProgressPage() {
 	};
 
 	return (
-		<div style={{ padding: "8px 12px 12px" }}>
+		<div>
 			<Card styles={{ body: { padding: 12 } }} style={{ borderRadius: 8 }}>
 				<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
 					<div>

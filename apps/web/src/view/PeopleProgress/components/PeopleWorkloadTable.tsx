@@ -20,6 +20,8 @@ const badgeStyle = {
 	lineHeight: "18px",
 };
 
+const hasTextSelection = () => window.getSelection()?.toString().trim();
+
 export default function PeopleWorkloadTable({ rows, loading, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
@@ -94,7 +96,16 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 			title: "角色",
 			dataIndex: "roles",
 			width: 180,
-			render: (roles: string[]) => (roles?.length ? roles.map((role) => <Tag key={role}>{role}</Tag>) : <span style={{ color: "#94a3b8" }}>-</span>),
+			render: (roles: string[]) =>
+				roles?.length ? (
+					roles.map((role) => (
+						<Tag key={role} style={{ marginRight: "10px" }}>
+							{role}
+						</Tag>
+					))
+				) : (
+					<span style={{ color: "#94a3b8" }}>-</span>
+				),
 		},
 		{ title: "未完成", dataIndex: "unfinished", width: 110, sorter: (a, b) => a.unfinished - b.unfinished, defaultSortOrder: "descend" },
 		{ title: "进行中", dataIndex: "doing", width: 110, sorter: (a, b) => a.doing - b.doing },
@@ -145,7 +156,10 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 				scroll={{ x: 956, y: "calc(100vh - 250px)" }}
 				style={{ background: "#fff" }}
 				onRow={(row) => ({
-					onClick: () => onOpenTickets(row),
+					onClick: () => {
+						if (hasTextSelection()) return;
+						onOpenTickets(row);
+					},
 				})}
 			/>
 		</>

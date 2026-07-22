@@ -19,6 +19,14 @@ const ROLE_DEFS = [
 
 const roleByKey = new Map(ROLE_DEFS.map((role) => [role.key, role]));
 
+function normalizeRoleLabel(tagName) {
+  const text = String(tagName || "").trim().toLowerCase();
+  if (!text) return "";
+  if (text.includes("unity") || text.includes("cocos") || text.includes("程序") || text.includes("开发")) return "程序";
+  const role = ROLE_DEFS.find((item) => item.key !== "all" && item.keywords.some((keyword) => text.includes(keyword.toLowerCase())));
+  return role?.label || "";
+}
+
 function ticketRoleText(ticket) {
   return `${ticket.discipline || ""} ${ticket.tag_name || ""} ${ticket.need_type || ""}`.toLowerCase();
 }
@@ -101,7 +109,7 @@ function mapTicket(ticket, stageByProjectId = new Map()) {
     projectName: ticket.project_name ?? "",
     projectId: ticket.project_id,
     projectStage: stageByProjectId.get(String(ticket.project_id)) || "",
-    tagName: ticket.tag_name || ticket.discipline || "",
+    tagName: ticket.need_type || ticket.discipline || ticket.tag_name || "",
     needType: ticket.need_type,
     priority: ticket.priority,
     status: ticket.status,
@@ -175,6 +183,44 @@ async function loadPeopleByIds(ids) {
   return peopleById;
 }
 
+async function loadPersonRoleLabels(tickets) {
+  const projectIds = [...new Set(tickets.map((ticket) => String(ticket.project_id || "").trim()).filter(Boolean))];
+  const ownerIds = [
+    ...new Set(
+      tickets
+        .flatMap((ticket) => {
+          const rawId = String(ticket.owner_id || "").trim();
+          const normalizedId = normalizePersonId(rawId);
+          return [rawId, normalizedId, normalizedId ? `ops-user-${normalizedId}` : ""];
+        })
+        .filter(Boolean),
+    ),
+  ];
+  if (!projectIds.length || !ownerIds.length) return new Map();
+  const tagRows = await prisma.project_member_tags.findMany({
+    where: { project_id: { in: projectIds }, person_id: { in: ownerIds } },
+    select: { person_id: true, tag_id: true },
+  });
+  const tagIds = [...new Set(tagRows.map((row) => String(row.tag_id)).filter(Boolean))];
+  if (!tagIds.length) return new Map();
+  const tags = await prisma.tags.findMany({ where: { id: { in: tagIds } }, select: { id: true, name: true } });
+  const tagNameById = new Map(tags.map((tag) => [String(tag.id), tag.name]));
+  const labelsByPersonId = new Map();
+
+  for (const row of tagRows) {
+    const label = normalizeRoleLabel(tagNameById.get(String(row.tag_id)));
+    if (!label) continue;
+    const rawId = String(row.person_id);
+    const ids = [rawId, normalizePersonId(rawId), `ops-user-${normalizePersonId(rawId)}`].filter(Boolean);
+    for (const id of ids) {
+      const labels = labelsByPersonId.get(id) || new Set();
+      labels.add(label);
+      labelsByPersonId.set(id, labels);
+    }
+  }
+  return labelsByPersonId;
+}
+
 export function listPeopleProgressRoles() {
   return ROLE_DEFS;
 }
@@ -182,6 +228,7 @@ export function listPeopleProgressRoles() {
 export async function listPeopleProgress({ role = "all", q = "", overdueOnly = false, newcomerOnly = false }) {
   const tickets = (await loadActiveTickets()).filter((ticket) => roleMatches(ticket, role) && (!overdueOnly || isOverdueTicket(ticket)));
   const peopleById = await loadPeopleByIds(tickets.map((ticket) => ticket.owner_id));
+  const roleLabelsByPersonId = await loadPersonRoleLabels(tickets);
   const groups = new Map();
 
   for (const ticket of tickets) {
@@ -218,7 +265,12 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
     if (isOverdueTicket(ticket)) group.overdue += 1;
     if (ticket.project_id) group.projectIds.add(String(ticket.project_id));
     group.ticketIds.add(String(ticket.id));
-    ticketRoleLabels(ticket).forEach((label) => group.roles.add(label));
+    const roleLabels = roleLabelsByPersonId.get(rawOwnerId) || roleLabelsByPersonId.get(normalizedOwnerId);
+    if (roleLabels?.size) {
+      roleLabels.forEach((label) => group.roles.add(label));
+    } else {
+      ticketRoleLabels(ticket).forEach((label) => group.roles.add(label));
+    }
   }
 
   return [...groups.values()]

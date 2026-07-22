@@ -24,6 +24,8 @@ const STATUS_OPTIONS: { label: string; value: PeopleTicketStatus }[] = [
 	{ label: "逾期", value: "overdue" },
 ];
 
+const hasTextSelection = () => window.getSelection()?.toString().trim();
+
 export default function PersonTicketsModal({ open, person, role, onClose }: PersonTicketsModalProps) {
 	const [tickets, setTickets] = useState<OpsTicket[]>([]);
 	const [loading, setLoading] = useState(false);
@@ -264,7 +266,13 @@ export default function PersonTicketsModal({ open, person, role, onClose }: Pers
 							dataSource={visibleTickets}
 							pagination={{ pageSize: 10, showSizeChanger: false }}
 							scroll={{ x: 1090, y: 480 }}
-							onRow={(ticket) => ({ onClick: () => openDetail(ticket), style: { cursor: "pointer" } })}
+							onRow={(ticket) => ({
+								onClick: () => {
+									if (hasTextSelection()) return;
+									openDetail(ticket);
+								},
+								style: { cursor: "pointer" },
+							})}
 						/>
 					</Spin>
 				</div>
