@@ -21,22 +21,9 @@ const badgeStyle = {
 };
 
 const hasTextSelection = () => window.getSelection()?.toString().trim();
-
-function normalizeRoleLabel(role: string) {
-	const raw = String(role || "").trim();
-	const text = raw.toLowerCase();
-	if (!text) return "";
-	if (text.includes("unity")) return "unity开发";
-	if (text.includes("cocos")) return "cocos开发";
-	if (text.includes("程序") || text.includes("开发")) return "程序";
-	return raw;
-}
-
-function compactRoleLabels(roles: string[]) {
-	const labels = [...new Set((roles || []).map(normalizeRoleLabel).filter(Boolean))];
-	const hasSpecificProgram = labels.includes("unity开发") || labels.includes("cocos开发");
-	return hasSpecificProgram ? labels.filter((label) => label !== "程序") : labels;
-}
+const hiddenRoleLabels = new Set(["管理员", "外包"]);
+const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
+const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
 
 export default function PeopleWorkloadTable({ rows, loading, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
 	const columns: ColumnsType<PeopleProgressRow> = [
@@ -99,6 +86,11 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 						<span style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>{row.name}</span>
 						<span style={{ color: "#94a3b8", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis" }}>{row.wechatName || row.username || "-"}</span>
 						{row.isNewcomer ? <span style={{ ...badgeStyle, color: "#dc2626", border: "1px solid #ef4444", background: "#fff1f2", flex: "0 0 auto" }}>新</span> : null}
+						{hasRoleLabel(row.roles, "外包") ? (
+							<Tag style={{ marginInlineEnd: 0, color: "#9a3412", borderColor: "#fb923c", background: "#ffedd5", fontWeight: 600 }}>
+								外包
+							</Tag>
+						) : null}
 						{row.disabled ? (
 							<Tag color="red" style={{ marginInlineEnd: 0 }}>
 								已禁用
@@ -113,7 +105,7 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 			dataIndex: "roles",
 			width: 180,
 			render: (roles: string[]) => {
-				const labels = compactRoleLabels(roles);
+				const labels = visibleRoleLabels(roles);
 				return labels.length ? (
 					labels.map((role) => (
 						<Tag key={role} style={{ marginRight: "10px" }}>
@@ -151,7 +143,7 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 				}
 				.people-progress-table .ant-table-column-sorter-up.active,
 				.people-progress-table .ant-table-column-sorter-down.active {
-					color: #0f766e;
+					color: #dc2626;
 				}
 				.people-progress-table .ant-table-tbody > tr {
 					cursor: pointer;

@@ -65,7 +65,7 @@ export default function PeopleProgressPage() {
 
 	return (
 		<div>
-			<Card styles={{ body: { padding: 12 } }} style={{ borderRadius: 8 }}>
+			<Card styles={{ body: { padding: 12 } }} style={{ borderRadius: 8, minHeight: "calc(100vh - 32px)" }}>
 				<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
 					<div>
 						<Typography.Title level={4} style={{ margin: 0, lineHeight: "28px" }}>

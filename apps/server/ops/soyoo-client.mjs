@@ -69,6 +69,7 @@ async function cached(key, fn) {
 
 export const soyooClient = {
   myProjects: (userId) => call(`/integration/users/${encodeURIComponent(soyooId(userId))}/projects`),
+  users: () => callAllPages(`/ops/users`),
   allProjects: () => cached("ops-all-projects", () => callAllPages(`/integration/projects?exclude=${encodeURIComponent("回收中")}`)), // 管理员建单:全部非回收项目(短缓存)
   projectMembers: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/members`),
   project: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooId(projectId))}`),

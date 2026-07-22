@@ -1,5 +1,6 @@
 import { remainingBusinessHours } from "../business-hours.mjs";
 import { prisma } from "../prisma.mjs";
+import { soyooClient } from "../soyoo-client.mjs";
 
 const DONE_STATUS = "已完成";
 const ACTIVE_STATUSES = new Set(["排队中", "进行中", "阻塞"]);
@@ -18,6 +19,12 @@ const ROLE_DEFS = [
 ];
 
 const roleByKey = new Map(ROLE_DEFS.map((role) => [role.key, role]));
+function roleLabelMatches(label, roleKey) {
+  const role = roleByKey.get(roleKey) || roleByKey.get("all");
+  if (!role || role.key === "all") return true;
+  const text = String(label || "").toLowerCase();
+  return role.keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+}
 
 function ticketRoleText(ticket) {
   return `${ticket.discipline || ""} ${ticket.tag_name || ""} ${ticket.need_type || ""}`.toLowerCase();
@@ -177,42 +184,48 @@ async function loadPeopleByIds(ids) {
   return peopleById;
 }
 
-async function loadPersonRoleLabels(tickets) {
-  const projectIds = [...new Set(tickets.map((ticket) => String(ticket.project_id || "").trim()).filter(Boolean))];
-  const ownerIds = [
+function soyooUserTags(user) {
+  return [
     ...new Set(
-      tickets
-        .flatMap((ticket) => {
-          const rawId = String(ticket.owner_id || "").trim();
-          const normalizedId = normalizePersonId(rawId);
-          return [rawId, normalizedId, normalizedId ? `ops-user-${normalizedId}` : ""];
-        })
-        .filter(Boolean),
+      (Array.isArray(user?.tags) ? user.tags : [])
+        .map((tag) => (typeof tag === "string" ? tag : tag?.name))
+        .map((name) => String(name || "").trim())
+        .filter(Boolean)
     ),
   ];
-  if (!projectIds.length || !ownerIds.length) return new Map();
-  const tagRows = await prisma.project_member_tags.findMany({
-    where: { project_id: { in: projectIds }, person_id: { in: ownerIds } },
-    select: { person_id: true, tag_id: true },
-  });
-  const tagIds = [...new Set(tagRows.map((row) => String(row.tag_id)).filter(Boolean))];
-  if (!tagIds.length) return new Map();
-  const tags = await prisma.tags.findMany({ where: { id: { in: tagIds } }, select: { id: true, name: true } });
-  const tagNameById = new Map(tags.map((tag) => [String(tag.id), tag.name]));
-  const labelsByPersonId = new Map();
+}
 
-  for (const row of tagRows) {
-    const label = String(tagNameById.get(String(row.tag_id)) || "").trim();
-    if (!label) continue;
-    const rawId = String(row.person_id);
-    const ids = [rawId, normalizePersonId(rawId), `ops-user-${normalizePersonId(rawId)}`].filter(Boolean);
-    for (const id of ids) {
-      const labels = labelsByPersonId.get(id) || new Set();
-      labels.add(label);
-      labelsByPersonId.set(id, labels);
-    }
+async function loadSoyooPeopleGroups(roleKey = "all") {
+  const peopleRows = await soyooClient.users();
+  const groups = new Map();
+
+  for (const person of peopleRows) {
+    const rawId = String(person.id ?? "").trim();
+    const key = normalizePersonId(rawId) || rawId;
+    if (!key) continue;
+    const labels = soyooUserTags(person);
+    if (roleKey !== "all" && !labels.some((label) => roleLabelMatches(label, roleKey))) continue;
+    const hireDate = normalizeHireDate(person.hire_date);
+    groups.set(key, {
+      userId: key,
+      name: person.nickname || person.name || person.username || "未指定",
+      username: person.username || "",
+      avatar: person.wechat_avatar_url || person.wechat_avatar || "",
+      wechatName: person.wechat_name || "",
+      hireDate,
+      isNewcomer: isNewcomer(hireDate),
+      disabled: String(person.status || "").toLowerCase() === "disabled",
+      roles: new Set(labels),
+      projectIds: new Set(),
+      unfinished: 0,
+      doing: 0,
+      queued: 0,
+      blocked: 0,
+      overdue: 0,
+      ticketIds: new Set(),
+    });
   }
-  return labelsByPersonId;
+  return groups;
 }
 
 export function listPeopleProgressRoles() {
@@ -220,10 +233,15 @@ export function listPeopleProgressRoles() {
 }
 
 export async function listPeopleProgress({ role = "all", q = "", overdueOnly = false, newcomerOnly = false }) {
-  const tickets = (await loadActiveTickets()).filter((ticket) => roleMatches(ticket, role) && (!overdueOnly || isOverdueTicket(ticket)));
+  const peopleGroups = await loadSoyooPeopleGroups(role);
+  const tickets = (await loadActiveTickets()).filter((ticket) => {
+    const ownerKey = normalizePersonId(ticket.owner_id) || String(ticket.owner_id || "").trim();
+    const ownerGroup = peopleGroups.get(ownerKey);
+    const ownerMatchesRole = ownerGroup ? role === "all" || [...ownerGroup.roles].some((label) => roleLabelMatches(label, role)) : roleMatches(ticket, role);
+    return ownerMatchesRole && (!overdueOnly || isOverdueTicket(ticket));
+  });
   const peopleById = await loadPeopleByIds(tickets.map((ticket) => ticket.owner_id));
-  const roleLabelsByPersonId = await loadPersonRoleLabels(tickets);
-  const groups = new Map();
+  const groups = new Map(peopleGroups);
 
   for (const ticket of tickets) {
     const rawOwnerId = String(ticket.owner_id || "").trim();
@@ -259,15 +277,10 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
     if (isOverdueTicket(ticket)) group.overdue += 1;
     if (ticket.project_id) group.projectIds.add(String(ticket.project_id));
     group.ticketIds.add(String(ticket.id));
-    const roleLabels = roleLabelsByPersonId.get(rawOwnerId) || roleLabelsByPersonId.get(normalizedOwnerId);
-    if (roleLabels?.size) {
-      roleLabels.forEach((label) => group.roles.add(label));
-    } else {
-      ticketRoleLabels(ticket).forEach((label) => group.roles.add(label));
-    }
   }
 
   return [...groups.values()]
+    .filter((group) => !overdueOnly || group.overdue > 0)
     .filter((group) => !newcomerOnly || group.isNewcomer)
     .map((group) => ({
       userId: group.userId,
