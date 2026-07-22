@@ -19,14 +19,6 @@ const ROLE_DEFS = [
 
 const roleByKey = new Map(ROLE_DEFS.map((role) => [role.key, role]));
 
-function normalizeRoleLabel(tagName) {
-  const text = String(tagName || "").trim().toLowerCase();
-  if (!text) return "";
-  if (text.includes("unity") || text.includes("cocos") || text.includes("程序") || text.includes("开发")) return "程序";
-  const role = ROLE_DEFS.find((item) => item.key !== "all" && item.keywords.some((keyword) => text.includes(keyword.toLowerCase())));
-  return role?.label || "";
-}
-
 function ticketRoleText(ticket) {
   return `${ticket.discipline || ""} ${ticket.tag_name || ""} ${ticket.need_type || ""}`.toLowerCase();
 }
@@ -39,6 +31,8 @@ function roleMatches(ticket, roleKey) {
 }
 
 function ticketRoleLabels(ticket) {
+  const directLabels = [ticket.tag_name, ticket.discipline].map((value) => String(value || "").trim()).filter(Boolean);
+  if (directLabels.length) return [...new Set(directLabels)];
   const text = ticketRoleText(ticket);
   const labels = ROLE_DEFS.filter((role) => role.key !== "all" && role.keywords.some((keyword) => text.includes(keyword.toLowerCase()))).map((role) => role.label);
   return [...new Set(labels)];
@@ -208,7 +202,7 @@ async function loadPersonRoleLabels(tickets) {
   const labelsByPersonId = new Map();
 
   for (const row of tagRows) {
-    const label = normalizeRoleLabel(tagNameById.get(String(row.tag_id)));
+    const label = String(tagNameById.get(String(row.tag_id)) || "").trim();
     if (!label) continue;
     const rawId = String(row.person_id);
     const ids = [rawId, normalizePersonId(rawId), `ops-user-${normalizePersonId(rawId)}`].filter(Boolean);

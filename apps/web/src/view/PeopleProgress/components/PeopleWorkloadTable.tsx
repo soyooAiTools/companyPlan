@@ -22,6 +22,22 @@ const badgeStyle = {
 
 const hasTextSelection = () => window.getSelection()?.toString().trim();
 
+function normalizeRoleLabel(role: string) {
+	const raw = String(role || "").trim();
+	const text = raw.toLowerCase();
+	if (!text) return "";
+	if (text.includes("unity")) return "unity开发";
+	if (text.includes("cocos")) return "cocos开发";
+	if (text.includes("程序") || text.includes("开发")) return "程序";
+	return raw;
+}
+
+function compactRoleLabels(roles: string[]) {
+	const labels = [...new Set((roles || []).map(normalizeRoleLabel).filter(Boolean))];
+	const hasSpecificProgram = labels.includes("unity开发") || labels.includes("cocos开发");
+	return hasSpecificProgram ? labels.filter((label) => label !== "程序") : labels;
+}
+
 export default function PeopleWorkloadTable({ rows, loading, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
@@ -96,20 +112,20 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 			title: "角色",
 			dataIndex: "roles",
 			width: 180,
-			render: (roles: string[]) =>
-				roles?.length ? (
-					roles.map((role) => (
+			render: (roles: string[]) => {
+				const labels = compactRoleLabels(roles);
+				return labels.length ? (
+					labels.map((role) => (
 						<Tag key={role} style={{ marginRight: "10px" }}>
 							{role}
 						</Tag>
 					))
 				) : (
 					<span style={{ color: "#94a3b8" }}>-</span>
-				),
+				);
+			},
 		},
-		{ title: "未完成", dataIndex: "unfinished", width: 110, sorter: (a, b) => a.unfinished - b.unfinished, defaultSortOrder: "descend" },
-		{ title: "进行中", dataIndex: "doing", width: 110, sorter: (a, b) => a.doing - b.doing },
-		{ title: "排队中", dataIndex: "queued", width: 110, sorter: (a, b) => a.queued - b.queued },
+		{ title: "进行中", dataIndex: "unfinished", width: 110, sorter: (a, b) => a.unfinished - b.unfinished, defaultSortOrder: "descend" },
 		{
 			title: "工单逾期",
 			dataIndex: "overdue",
@@ -117,7 +133,6 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 			sorter: (a, b) => a.overdue - b.overdue,
 			render: (value: number) => <span style={{ color: value > 0 ? "#dc2626" : "#64748b", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
 		},
-		{ title: "涉及项目", dataIndex: "projectCount", width: 120, sorter: (a, b) => a.projectCount - b.projectCount },
 	];
 	return (
 		<>
