@@ -6,6 +6,7 @@ import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import { Node, mergeAttributes } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
+import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import { App, Button, Input, Popover, Tooltip } from "antd";
 import {
@@ -139,7 +140,12 @@ export default function RichTextEditor({
           const previewType = previewTypeOf(file.name, file.type, signed.publicUrl);
           if (previewType) {
             if (file.size > MAX_INLINE_PREVIEW_BYTES) {
-              chain.insertContent([{ type: "text", text: `📎 ${file.name} ` }]).run();
+              chain
+                .insertContent([
+                  { type: "text", text: `📎 ${file.name}`, marks: [{ type: "link", attrs: { href: signed.publicUrl, target: "_blank", rel: "noopener noreferrer nofollow" } }] },
+                  { type: "text", text: " " },
+                ])
+                .run();
               message.open({ key: messageKey, type: "success", content: "上传完成", duration: 1.2 });
               setTimeout(() => {
                 setUploadingItems((items) => items.filter((item) => item.key !== messageKey));
@@ -199,11 +205,12 @@ export default function RichTextEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
-        link: {
-          openOnClick: false,
-          autolink: true,
-          HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
-        },
+        link: false,
+      }),
+      Link.configure({
+        openOnClick: false,
+        autolink: true,
+        HTMLAttributes: { rel: "noopener noreferrer nofollow", target: "_blank" },
       }),
       Image.configure({ inline: false, allowBase64: true }),
       Video,
