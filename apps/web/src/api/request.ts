@@ -5,6 +5,7 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 export const apiUrl = (url: string) => (API_BASE && url.startsWith("/") ? API_BASE + url : url);
 
 export async function readApiError(response: Response) {
+  if (response.status >= 500) return "服务重启中...";
   try {
     const data = (await response.json()) as { error?: string };
     return data.error || `请求失败：${response.status}`;
@@ -14,14 +15,19 @@ export async function readApiError(response: Response) {
 }
 
 export async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(apiUrl(url), {
-    credentials: "include",
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(url), {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new Error("服务重启中...");
+  }
 
   if (!response.ok) {
     throw new Error(await readApiError(response));
@@ -31,14 +37,19 @@ export async function requestJson<T>(url: string, init?: RequestInit): Promise<T
 }
 
 export async function requestJsonOrUnauthorized<T>(url: string, init?: RequestInit): Promise<T | null> {
-  const response = await fetch(apiUrl(url), {
-    credentials: "include",
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(url), {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new Error("服务重启中...");
+  }
 
   if (response.status === 401) return null;
   if (!response.ok) {
@@ -49,14 +60,19 @@ export async function requestJsonOrUnauthorized<T>(url: string, init?: RequestIn
 }
 
 export async function requestEmpty(url: string, init?: RequestInit): Promise<void> {
-  const response = await fetch(apiUrl(url), {
-    credentials: "include",
-    ...init,
-    headers: {
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(apiUrl(url), {
+      credentials: "include",
+      ...init,
+      headers: {
+        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        ...init?.headers,
+      },
+    });
+  } catch {
+    throw new Error("服务重启中...");
+  }
 
   if (!response.ok) {
     throw new Error(await readApiError(response));

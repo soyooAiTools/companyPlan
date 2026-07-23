@@ -80,7 +80,7 @@ async function refreshProject(projectId) {
 async function handleProjectChange(ch, logger) {
   const projectId = String(ch.entity_id);
   const programOwnerId = programFirstTicketOwnerId(ch.action);
-  if (ch.action === "create_project" || programOwnerId) {
+  if (programOwnerId) {
     const { project, members } = await getProjectWithMembers(projectId);
     if (!project) return;
     const result = await autoCreateProgramFirstTicket({
@@ -89,7 +89,7 @@ async function handleProjectChange(ch, logger) {
       members,
       projectId,
       ownerUserId: programOwnerId,
-      eventNote: ch.action === "create_project" ? "项目立项后自动生成" : "项目分配程序后自动生成",
+      eventNote: "项目分配程序后自动生成",
     });
     logger?.info?.("[ops-outbox] auto create program ticket", { projectId, requesterUserId: ch.requester_user_id, ...result });
     await refreshProjectPoolSnapshot(projectId);

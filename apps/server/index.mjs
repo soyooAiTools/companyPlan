@@ -82,7 +82,7 @@ if (existsSync(distDir)) {
 
 app.use((error, _request, response, _next) => {
   logger.error(error);
-  response.status(500).json({ error: "服务器内部错误" });
+  response.status(500).json({ error: "服务重启中..." });
 });
 
 app.listen(port, () => {

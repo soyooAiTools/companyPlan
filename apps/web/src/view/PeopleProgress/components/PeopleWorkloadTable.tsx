@@ -117,7 +117,14 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 				);
 			},
 		},
-		{ title: "进行中", dataIndex: "unfinished", width: 110, sorter: (a, b) => a.unfinished - b.unfinished, defaultSortOrder: "descend" },
+		{
+			title: "项目数",
+			dataIndex: "projectCount",
+			width: 100,
+			sorter: (a, b) => a.projectCount - b.projectCount,
+			defaultSortOrder: "descend",
+			render: (value: number) => <span style={{ color: value > 0 ? "#0f766e" : "#94a3b8", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
+		},
 		{
 			title: "工单逾期",
 			dataIndex: "overdue",

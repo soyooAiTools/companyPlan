@@ -262,6 +262,7 @@ const AUTO_PROGRAM_TITLE = "立项：程序第一版(系统生成)";
 const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
 const SYSTEM_REQUESTER_ID = "system";
 const SYSTEM_REQUESTER_NAME = "系统";
+const autoProgramFirstTicketLocks = new Set();
 
 async function ensureSystemRequester() {
   await prisma.people.upsert({
@@ -365,6 +366,10 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
 }
 
 export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, ownerUserId = "", eventNote = "系统自动生成" }) {
+  const lockKey = String(projectId || "");
+  if (autoProgramFirstTicketLocks.has(lockKey)) return { created: false, reason: "ticket_creating" };
+  autoProgramFirstTicketLocks.add(lockKey);
+  try {
   const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
   if (!segment) return { created: false, reason: "segment_not_found" };
   const segTags = await prisma.ops_segment_tags.findMany({ where: { segment_id: segment.id }, select: { tag_id: true } });
@@ -442,6 +447,9 @@ export async function autoCreateProgramFirstTicket({ user, requesterUserId, proj
     },
   });
   return { created: true, ticketId: created.id };
+  } finally {
+    autoProgramFirstTicketLocks.delete(lockKey);
+  }
 }
 
 const STATUS_AUTO_TICKET = {
