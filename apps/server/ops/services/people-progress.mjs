@@ -1,29 +1,37 @@
 import { remainingBusinessHours } from "../business-hours.mjs";
 import { prisma } from "../prisma.mjs";
+import { EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
 import { soyooClient } from "../soyoo-client.mjs";
 
 const DONE_STATUS = "已完成";
 const ACTIVE_STATUSES = new Set(["排队中", "进行中", "阻塞"]);
 const ROLE_DEFS = [
-  { key: "all", label: "全部", keywords: [] },
-  { key: "program", label: "程序", keywords: ["程序", "unity", "cocos", "开发"] },
-  { key: "model", label: "模型", keywords: ["模型"] },
-  { key: "animation", label: "动画", keywords: ["动画"] },
-  { key: "ui", label: "UI", keywords: ["ui"] },
-  { key: "level", label: "地编", keywords: ["地编"] },
-  { key: "effect", label: "特效", keywords: ["特效"] },
-  { key: "producer", label: "制片", keywords: ["制片"] },
-  { key: "storyboard", label: "分镜", keywords: ["分镜"] },
-  { key: "sound", label: "音效", keywords: ["音效"] },
-  { key: "ta", label: "TA", keywords: ["ta"] },
+  { key: "all", label: "全部", keywords: [], memberTags: [] },
+  { key: "program", label: "程序", keywords: ["程序", "unity", "cocos", "开发"], memberTags: ["unity开发", "cocos开发"] },
+  { key: "model", label: "模型", keywords: ["模型"], memberTags: ["模型"] },
+  { key: "animation", label: "动画", keywords: ["动画"], memberTags: ["动画"] },
+  { key: "ui", label: "UI", keywords: ["ui"], memberTags: ["UI"] },
+  { key: "level", label: "地编", keywords: ["地编"], memberTags: ["地编"] },
+  { key: "effect", label: "特效", keywords: ["特效"], memberTags: ["特效"] },
+  { key: "producer", label: "制片", keywords: ["制片"], memberTags: ["制片"] },
+  { key: "storyboard", label: "分镜", keywords: ["分镜"], memberTags: ["分镜"] },
+  { key: "sound", label: "音效", keywords: ["音效"], memberTags: ["音效"] },
+  { key: "ta", label: "TA", keywords: ["ta"], memberTags: ["TA"] },
 ];
 
 const roleByKey = new Map(ROLE_DEFS.map((role) => [role.key, role]));
-function roleLabelMatches(label, roleKey) {
+function roleKeywordMatches(text, roleKey) {
   const role = roleByKey.get(roleKey) || roleByKey.get("all");
   if (!role || role.key === "all") return true;
-  const text = String(label || "").toLowerCase();
-  return role.keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+  const normalized = String(text || "").toLowerCase();
+  return role.keywords.some((keyword) => normalized.includes(keyword.toLowerCase()));
+}
+
+function memberRoleLabelMatches(label, roleKey) {
+  const role = roleByKey.get(roleKey) || roleByKey.get("all");
+  if (!role || role.key === "all") return true;
+  const text = String(label || "").trim().toLowerCase();
+  return (role.memberTags || []).some((tag) => String(tag || "").trim().toLowerCase() === text);
 }
 
 function ticketRoleText(ticket) {
@@ -31,17 +39,14 @@ function ticketRoleText(ticket) {
 }
 
 function roleMatches(ticket, roleKey) {
-  const role = roleByKey.get(roleKey) || roleByKey.get("all");
-  if (!role || role.key === "all") return true;
-  const text = ticketRoleText(ticket);
-  return role.keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+  return roleKeywordMatches(ticketRoleText(ticket), roleKey);
 }
 
 function ticketRoleLabels(ticket) {
   const directLabels = [ticket.tag_name, ticket.discipline].map((value) => String(value || "").trim()).filter(Boolean);
   if (directLabels.length) return [...new Set(directLabels)];
   const text = ticketRoleText(ticket);
-  const labels = ROLE_DEFS.filter((role) => role.key !== "all" && role.keywords.some((keyword) => text.includes(keyword.toLowerCase()))).map((role) => role.label);
+  const labels = ROLE_DEFS.filter((role) => role.key !== "all" && roleKeywordMatches(text, role.key)).map((role) => role.label);
   return [...new Set(labels)];
 }
 
@@ -184,6 +189,41 @@ async function loadPeopleByIds(ids) {
   return peopleById;
 }
 
+function parseJson(value, fallback) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function loadProjectCountsByMemberId(roleKey = "all") {
+  if (roleKey !== "program") return new Map();
+  const rows = await prisma.$queryRaw`
+    SELECT project_id, row_json, tenant_name
+    FROM ops_project_pool_snapshot
+    WHERE status <> '回收中' AND status <> '已完成'
+  `;
+  const projectIdsByMember = new Map();
+  for (const row of rows) {
+    const projectId = String(row.project_id || "").trim();
+    const tenantName = String(row.tenant_name || "").trim().toLowerCase();
+    if (tenantName && EXCLUDED_CLIENT_NAMES.includes(tenantName)) continue;
+    const snapshot = parseJson(row.row_json, null);
+    const members = Array.isArray(snapshot?.members) ? snapshot.members : [];
+    if (!projectId || !members.length) continue;
+    for (const member of members) {
+      const labels = Array.isArray(member?.tags) ? member.tags : [];
+      if (roleKey !== "all" && !labels.some((label) => memberRoleLabelMatches(label, roleKey))) continue;
+      const key = normalizePersonId(member?.id);
+      if (!key) continue;
+      if (!projectIdsByMember.has(key)) projectIdsByMember.set(key, new Set());
+      projectIdsByMember.get(key).add(projectId);
+    }
+  }
+  return new Map([...projectIdsByMember.entries()].map(([key, projectIds]) => [key, projectIds.size]));
+}
+
 function soyooUserTags(user) {
   return [
     ...new Set(
@@ -200,11 +240,12 @@ async function loadSoyooPeopleGroups(roleKey = "all") {
   const groups = new Map();
 
   for (const person of peopleRows) {
+    if (String(person.status || "").toLowerCase() === "disabled") continue;
     const rawId = String(person.id ?? "").trim();
     const key = normalizePersonId(rawId) || rawId;
     if (!key) continue;
     const labels = soyooUserTags(person);
-    if (roleKey !== "all" && !labels.some((label) => roleLabelMatches(label, roleKey))) continue;
+    if (roleKey !== "all" && !labels.some((label) => memberRoleLabelMatches(label, roleKey))) continue;
     const hireDate = normalizeHireDate(person.hire_date);
     groups.set(key, {
       userId: key,
@@ -214,7 +255,7 @@ async function loadSoyooPeopleGroups(roleKey = "all") {
       wechatName: person.wechat_name || "",
       hireDate,
       isNewcomer: isNewcomer(hireDate),
-      disabled: String(person.status || "").toLowerCase() === "disabled",
+      disabled: false,
       roles: new Set(labels),
       projectIds: new Set(),
       unfinished: 0,
@@ -233,11 +274,11 @@ export function listPeopleProgressRoles() {
 }
 
 export async function listPeopleProgress({ role = "all", q = "", overdueOnly = false, newcomerOnly = false }) {
-  const peopleGroups = await loadSoyooPeopleGroups(role);
+  const [peopleGroups, projectCountsByMemberId] = await Promise.all([loadSoyooPeopleGroups(role), loadProjectCountsByMemberId(role)]);
   const tickets = (await loadActiveTickets()).filter((ticket) => {
     const ownerKey = normalizePersonId(ticket.owner_id) || String(ticket.owner_id || "").trim();
     const ownerGroup = peopleGroups.get(ownerKey);
-    const ownerMatchesRole = ownerGroup ? role === "all" || [...ownerGroup.roles].some((label) => roleLabelMatches(label, role)) : roleMatches(ticket, role);
+    const ownerMatchesRole = ownerGroup ? role === "all" || [...ownerGroup.roles].some((label) => memberRoleLabelMatches(label, role)) : roleMatches(ticket, role);
     return ownerMatchesRole && (!overdueOnly || isOverdueTicket(ticket));
   });
   const peopleById = await loadPeopleByIds(tickets.map((ticket) => ticket.owner_id));
@@ -250,6 +291,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
     const key = normalizedOwnerId || rawOwnerId || String(ticket.owner_name || "unknown");
     if (!groups.has(key)) {
       const hireDate = normalizeHireDate(person?.hire_date);
+      if (person?.disabled_at) continue;
       groups.set(key, {
         userId: key,
         name: person?.name || ticket.owner_name || "未指定",
@@ -297,7 +339,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
       queued: group.queued,
       blocked: group.blocked,
       overdue: group.overdue,
-      projectCount: group.projectIds.size,
+      projectCount: projectCountsByMemberId.get(group.userId) || 0,
       ticketCount: group.ticketIds.size,
     }))
     .filter((group) => matchesPersonKeyword(group, q))
@@ -314,7 +356,7 @@ export async function listPersonProgressTickets({ userId, role = "all", status =
   });
   const stageByProjectId = await loadProjectStageByIds(tickets.map((ticket) => ticket.project_id));
   return tickets
-    .filter((ticket) => roleMatches(ticket, role) && matchesKeyword(ticket, q))
+    .filter((ticket) => matchesKeyword(ticket, q))
     .filter((ticket) => {
       if (status === "all") return true;
       if (status === "overdue") return isOverdueTicket(ticket);

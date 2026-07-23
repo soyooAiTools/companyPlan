@@ -119,6 +119,13 @@ export default function PersonTicketsModal({ open, person, role, onClose }: Pers
 
 	const columns: ColumnsType<OpsTicket> = [
 		{
+			title: "序号",
+			width: 52,
+			fixed: "left",
+			align: "center",
+			render: (_, __, index) => <span style={{ color: "#2563eb", fontWeight: 700 }}>{index + 1}</span>,
+		},
+		{
 			title: "提单人",
 			dataIndex: "requesterName",
 			width: 130,

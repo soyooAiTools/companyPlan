@@ -6,6 +6,7 @@ import type { PeopleProgressRow } from "../types";
 type PeopleWorkloadTableProps = {
 	rows: PeopleProgressRow[];
 	loading: boolean;
+	role: string;
 	query: string;
 	onOpenTickets: (row: PeopleProgressRow) => void;
 	onQueryChange: (query: string) => void;
@@ -25,7 +26,7 @@ const hiddenRoleLabels = new Set(["管理员", "外包"]);
 const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
 
-export default function PeopleWorkloadTable({ rows, loading, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
 			title: "序号",
@@ -117,13 +118,24 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 				);
 			},
 		},
+		...(role === "program"
+			? [
+					{
+						title: "项目数",
+						dataIndex: "projectCount",
+						width: 100,
+						sorter: (a: PeopleProgressRow, b: PeopleProgressRow) => a.projectCount - b.projectCount,
+						defaultSortOrder: "descend" as const,
+						render: (value: number) => <span style={{ color: value > 0 ? "#0f766e" : "#94a3b8", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
+					},
+				]
+			: []),
 		{
-			title: "项目数",
-			dataIndex: "projectCount",
+			title: "工单数",
+			dataIndex: "ticketCount",
 			width: 100,
-			sorter: (a, b) => a.projectCount - b.projectCount,
-			defaultSortOrder: "descend",
-			render: (value: number) => <span style={{ color: value > 0 ? "#0f766e" : "#94a3b8", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
+			sorter: (a, b) => a.ticketCount - b.ticketCount,
+			render: (value: number) => <span style={{ color: value > 0 ? "#2563eb" : "#94a3b8", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
 		},
 		{
 			title: "工单逾期",
@@ -167,7 +179,7 @@ export default function PeopleWorkloadTable({ rows, loading, query, onOpenTicket
 				dataSource={rows}
 				size="middle"
 				pagination={false}
-				scroll={{ x: 956, y: "calc(100vh - 250px)" }}
+				scroll={{ x: 1056, y: "calc(100vh - 250px)" }}
 				style={{ background: "#fff" }}
 				onRow={(row) => ({
 					onClick: () => {

@@ -93,6 +93,7 @@ export default function PeopleProgressPage() {
 				<PeopleWorkloadTable
 					rows={rows}
 					loading={loading}
+					role={role}
 					query={query}
 					onQueryChange={setQuery}
 					onSearch={(nextQuery) => {
