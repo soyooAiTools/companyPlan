@@ -137,6 +137,8 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
   const segmentSet = new Set(
     String(segment || "")
       .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
       .map((s) => Number(s))
       .filter((n) => Number.isInteger(n) && n >= 0),
   );

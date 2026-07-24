@@ -30,7 +30,7 @@ const ticketRemain = (ticket: OpsSegmentTicket) => {
   return <span style={{ color: "#64748b", fontSize: 12, fontWeight: 600 }}>剩 {fmtDuration(remaining)}</span>;
 };
 
-const filterSelectStyle = { width: 220, maxWidth: "100%" };
+const filterSelectStyle = { width: 218, maxWidth: "100%" };
 
 function PersonFlowNode({ label, avatar, name, tone }: { label: string; avatar?: string; name?: string; tone: "requester" | "owner" }) {
   const color = tone === "requester" ? "#0369a1" : "#475569";
@@ -128,7 +128,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
   }, [open, tickets]);
 
   return (
-    <Modal title={title} open={open} onCancel={onCancel} footer={null} width={820} keyboard={false}>
+    <Modal title={title} open={open} onCancel={onCancel} footer={null} width="min(960px, calc(100vw - 96px))" keyboard={false}>
       <style>{`
         .ops-segment-ticket-item {
           border-radius: 6px;
@@ -145,7 +145,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
         }
       `}</style>
       {projectOptions.length || segmentOptions.length || statusOptions.length || priorityOptions.length ? (
-        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "-4px 0 10px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, margin: "-4px 0 10px" }}>
           {projectOptions.length ? (
             <Select
               mode="multiple"
