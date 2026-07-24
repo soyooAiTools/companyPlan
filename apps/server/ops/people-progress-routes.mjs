@@ -1,4 +1,4 @@
-import { listPeopleProgress, listPeopleProgressRoles, listPersonProgressTickets } from "./services/people-progress.mjs";
+import { listPeopleProgress, listPeopleProgressRoles, listPersonProgressProjects, listPersonProgressTickets } from "./services/people-progress.mjs";
 
 export function registerPeopleProgressRoutes(app, { requireAuth, requireAdmin }) {
 	app.get("/api/ops/people-progress/roles", requireAuth, requireAdmin, (_req, res) => {
@@ -28,6 +28,19 @@ export function registerPeopleProgressRoutes(app, { requireAuth, requireAdmin })
 				q: String(req.query.q || "").trim(),
 			});
 			res.json({ tickets });
+		} catch (error) {
+			next(error);
+		}
+	});
+
+	app.get("/api/ops/people-progress/:userId/projects", requireAuth, requireAdmin, async (req, res, next) => {
+		try {
+			const projects = await listPersonProgressProjects({
+				userId: req.params.userId,
+				role: String(req.query.role || "program"),
+				q: String(req.query.q || "").trim(),
+			});
+			res.json({ projects });
 		} catch (error) {
 			next(error);
 		}

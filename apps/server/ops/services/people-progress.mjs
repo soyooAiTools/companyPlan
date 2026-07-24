@@ -224,6 +224,45 @@ async function loadProjectCountsByMemberId(roleKey = "all") {
   return new Map([...projectIdsByMember.entries()].map(([key, projectIds]) => [key, projectIds.size]));
 }
 
+async function loadProjectsByMemberId(userId, roleKey = "program") {
+  if (roleKey !== "program") return [];
+  const targetId = normalizePersonId(userId);
+  if (!targetId) return [];
+  const rows = await prisma.$queryRaw`
+    SELECT project_id, row_json, tenant_name
+    FROM ops_project_pool_snapshot
+    WHERE status <> '回收中' AND status <> '已完成'
+  `;
+  const projects = [];
+  const seenProjectIds = new Set();
+  for (const row of rows) {
+    const projectId = String(row.project_id || "").trim();
+    const tenantName = String(row.tenant_name || "").trim().toLowerCase();
+    if (!projectId || seenProjectIds.has(projectId) || (tenantName && EXCLUDED_CLIENT_NAMES.includes(tenantName))) continue;
+    const snapshot = parseJson(row.row_json, null);
+    const members = Array.isArray(snapshot?.members) ? snapshot.members : [];
+    const matched = members.some((member) => {
+      if (String(member?.status || "").toLowerCase() === "disabled") return false;
+      if (normalizePersonId(member?.id) !== targetId) return false;
+      const labels = Array.isArray(member?.tags) ? member.tags : [];
+      return labels.some((label) => memberRoleLabelMatches(label, roleKey));
+    });
+    if (!matched) continue;
+    seenProjectIds.add(projectId);
+    projects.push({
+      id: String(snapshot?.id || projectId),
+      name: snapshot?.name || "",
+      tenantName: snapshot?.tenantName || row.tenant_name || "",
+      plannerName: snapshot?.plannerName || "",
+      status: snapshot?.status || "",
+      stage: snapshot?.stage || "",
+      stageDeadlines: Array.isArray(snapshot?.stageDeadlines) ? snapshot.stageDeadlines : [],
+      startedAt: snapshot?.startedAt || null,
+    });
+  }
+  return projects.sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
+}
+
 function soyooUserTags(user) {
   return [
     ...new Set(
@@ -366,4 +405,17 @@ export async function listPersonProgressTickets({ userId, role = "all", status =
       return true;
     })
     .map((ticket) => mapTicket(ticket, stageByProjectId));
+}
+
+export async function listPersonProgressProjects({ userId, role = "program", q = "" }) {
+  const keyword = String(q || "").trim().toLowerCase();
+  const projects = await loadProjectsByMemberId(userId, role);
+  return projects.filter((project) => {
+    if (!keyword) return true;
+    return [project.name, project.tenantName, project.plannerName, project.status, project.stage, project.id]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .includes(keyword);
+  });
 }

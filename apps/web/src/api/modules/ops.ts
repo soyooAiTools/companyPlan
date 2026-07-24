@@ -286,6 +286,16 @@ export interface OpsPeopleProgressRow {
 	projectCount: number;
 	ticketCount: number;
 }
+export interface OpsPeopleProgressProject {
+	id: string;
+	name: string;
+	tenantName: string;
+	plannerName: string;
+	status: string;
+	stage: string;
+	stageDeadlines: OpsProjectStageDeadline[];
+	startedAt: string | null;
+}
 export type OpsPeopleProgressTicketStatus = "all" | "doing" | "queued" | "blocked" | "overdue";
 export interface OpsNotifSettingEvent {
 	eventKey: string;
@@ -394,6 +404,13 @@ export const opsApi = {
 		if (params.q) qs.set("q", params.q);
 		const s = qs.toString();
 		return requestJson<{ tickets: OpsTicket[] }>(`/api/ops/people-progress/${encodeURIComponent(userId)}/tickets${s ? `?${s}` : ""}`);
+	},
+	peopleProgressProjects: (userId: string, params: { role?: string; q?: string } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.role && params.role !== "all") qs.set("role", params.role);
+		if (params.q) qs.set("q", params.q);
+		const s = qs.toString();
+		return requestJson<{ projects: OpsPeopleProgressProject[] }>(`/api/ops/people-progress/${encodeURIComponent(userId)}/projects${s ? `?${s}` : ""}`);
 	},
 	// 项目成员(指派候选)
 	projectMembers: (projectId: string) =>

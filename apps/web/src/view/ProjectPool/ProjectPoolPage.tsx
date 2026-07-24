@@ -16,6 +16,7 @@ import RemarkModal from "./components/dialogs/RemarkModal";
 import SegmentTicketDetailDrawer from "./components/dialogs/SegmentTicketDetailDrawer";
 import SegmentTicketsModal from "./components/dialogs/SegmentTicketsModal";
 import StageDeadlineModal from "./components/dialogs/StageDeadlineModal";
+import ProjectPoolExportButton from "./components/export/ProjectPoolExportButton";
 import { useProjectPoolColumns } from "./hooks/useProjectPoolColumns";
 import { useProjectPoolData } from "./hooks/useProjectPoolData";
 import { useProjectPoolModals } from "./hooks/useProjectPoolModals";
@@ -83,9 +84,10 @@ function buildOwnerMembersFromProjectMembers(rows: OpsProjectPoolRow[], tagNames
 
 type ProjectPoolPageProps = {
 	mine?: boolean;
+	isAdmin?: boolean;
 };
 
-export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) {
+export default function ProjectPoolPage({ mine = false, isAdmin = false }: ProjectPoolPageProps) {
 	const { message } = App.useApp();
 	const [sheet, setSheet] = useState<ProjectPoolSheetKey>("project");
 	const [sheetContentReady, setSheetContentReady] = useState(true);
@@ -371,7 +373,7 @@ export default function ProjectPoolPage({ mine = false }: ProjectPoolPageProps) 
 					<span style={{ color: "#0f172a", fontSize: 15, fontWeight: 700 }}>我的项目</span>
 				</div>
 			) : (
-				<ProjectPoolSheetTabs value={sheet} onChange={changeSheet} />
+				<ProjectPoolSheetTabs value={sheet} onChange={changeSheet} extra={isAdmin ? <ProjectPoolExportButton /> : null} />
 			)}
 
 			{/* 表格区域:flex 填满剩余高度,内部滚动(表头固定、分页贴底) */}

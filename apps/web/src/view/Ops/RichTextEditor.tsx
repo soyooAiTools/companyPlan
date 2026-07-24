@@ -25,9 +25,10 @@ import {
 } from "@ant-design/icons";
 import { opsApi } from "../../api/modules/ops";
 import { buildFilePreviewUrl, previewTypeOf } from "../../utils/filePreview";
+import { compressImageForUpload } from "./utils/imageUploadCompression";
 import "./RichText.css";
 
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 图片 2MB
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 图片 5MB
 const MAX_FILE_BYTES = 55 * 1024 * 1024; // 视频 / 文档 / 压缩包等 55MB
 const MAX_INLINE_PREVIEW_BYTES = 20 * 1024 * 1024;
 
@@ -35,6 +36,7 @@ type UploadingItem = {
   key: string;
   name: string;
   percent: number;
+  status?: string;
 };
 
 // 内联视频节点(渲染 <video controls src>)
@@ -112,23 +114,30 @@ export default function RichTextEditor({
     async (file: File) => {
       const isImage = file.type.startsWith("image/");
       const isVideo = file.type.startsWith("video/");
+      const messageKey = `ops-upload-${Date.now()}`;
+      setUploadingItems((items) => [...items, { key: messageKey, name: file.name, percent: 0, status: isImage ? "压缩中" : "准备上传" }]);
+      if (isImage) message.open({ key: messageKey, type: "loading", content: `${file.name} 图片压缩中...`, duration: 0 });
+      const uploadFile = isImage ? await compressImageForUpload(file, MAX_IMAGE_BYTES) : file;
       const max = isImage ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
-      if (file.size > max) {
-        message.warning(isImage ? "图片超过 2MB,请压缩后再传" : "文件超过 55MB");
+      if (uploadFile.size > max) {
+        setUploadingItems((items) => items.filter((item) => item.key !== messageKey));
+        message.destroy(messageKey);
+        if (!isImage) message.warning("文件超过 55MB");
         return;
       }
       if (!projectId) {
+        setUploadingItems((items) => items.filter((item) => item.key !== messageKey));
+        message.destroy(messageKey);
         message.warning("请先选择项目,再上传");
         return;
       }
-      const messageKey = `ops-upload-${Date.now()}`;
       try {
-        setUploadingItems((items) => [...items, { key: messageKey, name: file.name, percent: 0 }]);
-        message.open({ key: messageKey, type: "loading", content: `${file.name} 上传中 0%`, duration: 0 });
-        const signed = await opsApi.createUploadUrl({ projectId, filename: file.name, mime: file.type || "application/octet-stream", size: file.size });
-        await putFileToSignedUrl(file, signed.url, signed.headers, (percent) => {
-          setUploadingItems((items) => items.map((item) => (item.key === messageKey ? { ...item, percent } : item)));
-          message.open({ key: messageKey, type: "loading", content: `${file.name} 上传中 ${percent}%`, duration: 0 });
+        setUploadingItems((items) => items.map((item) => (item.key === messageKey ? { ...item, name: uploadFile.name, status: "上传中" } : item)));
+        message.open({ key: messageKey, type: "loading", content: `${uploadFile.name} 上传中 0%`, duration: 0 });
+        const signed = await opsApi.createUploadUrl({ projectId, filename: uploadFile.name, mime: uploadFile.type || "application/octet-stream", size: uploadFile.size });
+        await putFileToSignedUrl(uploadFile, signed.url, signed.headers, (percent) => {
+          setUploadingItems((items) => items.map((item) => (item.key === messageKey ? { ...item, percent, status: "上传中" } : item)));
+          message.open({ key: messageKey, type: "loading", content: `${uploadFile.name} 上传中 ${percent}%`, duration: 0 });
         });
         const chain = editorRef.current?.chain().focus();
         if (!chain) return;
@@ -137,12 +146,12 @@ export default function RichTextEditor({
         } else if (isVideo) {
           chain.insertContent({ type: "video", attrs: { src: signed.publicUrl } }).run();
         } else {
-          const previewType = previewTypeOf(file.name, file.type, signed.publicUrl);
+          const previewType = previewTypeOf(uploadFile.name, uploadFile.type, signed.publicUrl);
           if (previewType) {
-            if (file.size > MAX_INLINE_PREVIEW_BYTES) {
+            if (uploadFile.size > MAX_INLINE_PREVIEW_BYTES) {
               chain
                 .insertContent([
-                  { type: "text", text: `📎 ${file.name}`, marks: [{ type: "link", attrs: { href: signed.publicUrl, target: "_blank", rel: "noopener noreferrer nofollow" } }] },
+                  { type: "text", text: `📎 ${uploadFile.name}`, marks: [{ type: "link", attrs: { href: signed.publicUrl, target: "_blank", rel: "noopener noreferrer nofollow" } }] },
                   { type: "text", text: " " },
                 ])
                 .run();
@@ -152,10 +161,10 @@ export default function RichTextEditor({
               }, 600);
               return;
             }
-            const previewUrl = buildFilePreviewUrl({ url: signed.publicUrl, filename: file.name, type: previewType, size: file.size });
+            const previewUrl = buildFilePreviewUrl({ url: signed.publicUrl, filename: uploadFile.name, type: previewType, size: uploadFile.size });
             chain
               .insertContent([
-                { type: "text", text: `📎 ${file.name} ` },
+                { type: "text", text: `📎 ${uploadFile.name} ` },
                 {
                   type: "text",
                   text: "查看",
@@ -167,7 +176,7 @@ export default function RichTextEditor({
                         target: "_blank",
                         rel: "noopener noreferrer nofollow",
                         "data-preview-type": previewType,
-                        "data-filename": file.name,
+                        "data-filename": uploadFile.name,
                       },
                     },
                   ],
@@ -183,7 +192,7 @@ export default function RichTextEditor({
           }
           chain
             .insertContent([
-              { type: "text", text: `📎 ${file.name}`, marks: [{ type: "link", attrs: { href: signed.publicUrl } }] },
+              { type: "text", text: `📎 ${uploadFile.name}`, marks: [{ type: "link", attrs: { href: signed.publicUrl } }] },
               { type: "text", text: " " },
             ])
             .run();
@@ -306,7 +315,7 @@ export default function RichTextEditor({
   return (
     <div>
       <div style={{ color: "#cf1322", fontSize: 12, lineHeight: 1.5, marginBottom: 6 }}>
-        图片 ≤ 2MB;视频 / Word / Excel / 压缩包等文件 ≤ 55MB
+        图片 ≤ 5MB;视频 / Word / Excel / 压缩包等文件 ≤ 55MB
       </div>
       <div className="ops-editor">
         <div className="ops-editor__toolbar" onMouseDown={(e) => e.preventDefault()}>
@@ -339,7 +348,7 @@ export default function RichTextEditor({
               <Button size="small" type="text" icon={<LinkOutlined />} style={editor.isActive("link") ? { background: "#e6f4f1", color: "#0f766e" } : undefined} />
             </Tooltip>
           </Popover>
-          {btn(false, <PictureOutlined />, "插入图片(≤2MB)", () => pickFile("image/*"))}
+          {btn(false, <PictureOutlined />, "插入图片(≤5MB)", () => pickFile("image/*"))}
           {btn(false, <VideoCameraOutlined />, "插入视频(≤55MB)", () => pickFile("video/*"))}
           {btn(false, <PaperClipOutlined />, "插入附件 / 压缩包(≤55MB)", () => pickFile("*/*"))}
           <div className="ops-editor__sep" />
@@ -351,7 +360,7 @@ export default function RichTextEditor({
             {uploadingItems.map((item) => (
               <div className="ops-editor__upload" key={item.key}>
                 <span className="ops-editor__upload-name">{item.name}</span>
-                <span className="ops-editor__upload-percent">{item.percent}%</span>
+                <span className="ops-editor__upload-percent">{item.status ? `${item.status} ` : ""}{item.percent}%</span>
                 <span className="ops-editor__upload-track">
                   <span className="ops-editor__upload-bar" style={{ width: `${item.percent}%` }} />
                 </span>

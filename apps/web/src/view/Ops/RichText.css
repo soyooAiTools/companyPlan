@@ -109,6 +109,17 @@
   display: block;
   margin: 6px 0;
 }
+.ops-editor .ProseMirror img {
+  width: auto;
+  max-width: min(360px, 100%);
+  max-height: 220px;
+  object-fit: contain;
+}
+.ops-editor .ProseMirror video {
+  width: auto;
+  max-width: min(480px, 100%);
+  max-height: 260px;
+}
 .ops-editor .ProseMirror a,
 .ops-rich a {
   color: #0f766e;

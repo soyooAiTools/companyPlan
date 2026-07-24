@@ -1,11 +1,13 @@
 import { projectPoolSheetOptions, type ProjectPoolSheetKey } from "./sheetTypes";
+import type { ReactNode } from "react";
 
 type ProjectPoolSheetTabsProps = {
 	value: ProjectPoolSheetKey;
 	onChange: (value: ProjectPoolSheetKey) => void;
+	extra?: ReactNode;
 };
 
-export default function ProjectPoolSheetTabs({ value, onChange }: ProjectPoolSheetTabsProps) {
+export default function ProjectPoolSheetTabs({ value, onChange, extra }: ProjectPoolSheetTabsProps) {
 	const leftOptions = projectPoolSheetOptions.filter((option) => option.value !== "stale");
 	const rightOptions = projectPoolSheetOptions.filter((option) => option.value === "stale");
 	const renderTab = (option: (typeof projectPoolSheetOptions)[number]) => {
@@ -45,6 +47,11 @@ export default function ProjectPoolSheetTabs({ value, onChange }: ProjectPoolShe
 					display: flex;
 					align-items: flex-end;
 					gap: 0;
+				}
+				.ops-pool-sheet-tabs-right {
+					display: flex;
+					align-items: flex-end;
+					gap: 10px;
 				}
 				.ops-pool-sheet-tab-wrap {
 					display: flex;
@@ -86,7 +93,10 @@ export default function ProjectPoolSheetTabs({ value, onChange }: ProjectPoolShe
 			`}</style>
 			<div className="ops-pool-sheet-tabs">
 				<div className="ops-pool-sheet-tabs-group">{leftOptions.map(renderTab)}</div>
-				<div className="ops-pool-sheet-tabs-group">{rightOptions.map(renderTab)}</div>
+				<div className="ops-pool-sheet-tabs-right">
+					{extra ? <div style={{ display: "flex", alignItems: "center", height: 40 }}>{extra}</div> : null}
+					<div className="ops-pool-sheet-tabs-group">{rightOptions.map(renderTab)}</div>
+				</div>
 			</div>
 		</>
 	);

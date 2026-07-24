@@ -166,7 +166,7 @@ export default function OpsApp() {
                   <Route path="tickets" element={<TicketsPage isAdmin={isAdmin} />} />
                   <Route path="overview" element={<OverviewPage />} />
                   <Route path="my-projects" element={<ProjectPoolPage key="my-projects" mine />} />
-                  <Route path="projects" element={canPool ? <ProjectPoolPage key="projects" /> : <Navigate to="/tickets" replace />} />
+                  <Route path="projects" element={canPool ? <ProjectPoolPage key="projects" isAdmin={isAdmin} /> : <Navigate to="/tickets" replace />} />
                   <Route path="people" element={<PeoplePage />} />
                   <Route path="settings" element={isAdmin ? <OpsSettingsPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="*" element={<Navigate to="/tickets" replace />} />

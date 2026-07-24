@@ -66,6 +66,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
   const [projectFilter, setProjectFilter] = useState<string[]>([]);
   const [segmentFilter, setSegmentFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [priorityFilter, setPriorityFilter] = useState<string[]>([]);
   const projectOptions = useMemo(() => {
     const projects = new Map<string, { name: string; count: number }>();
     for (const ticket of tickets) {
@@ -99,6 +100,14 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
     }
     return [...statuses].map((status) => ({ value: status, label: status }));
   }, [tickets]);
+  const priorityOptions = useMemo(() => {
+    const priorities = new Map<string, number>();
+    for (const ticket of tickets) {
+      if (!ticket.priority) continue;
+      priorities.set(ticket.priority, (priorities.get(ticket.priority) || 0) + 1);
+    }
+    return [...priorities.entries()].map(([priority, count]) => ({ value: priority, label: `${priority}(${count})` }));
+  }, [tickets]);
   const visibleTickets = useMemo(() => {
     return tickets.filter((ticket) => {
       const source = ticket as TicketWithSource;
@@ -107,13 +116,15 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
       const segmentKeys = [source.segmentId != null ? String(source.segmentId) : "", source.segmentName || ""].filter(Boolean);
       const segmentMatched = !segmentFilter.length || segmentKeys.some((key) => segmentFilter.includes(key));
       const statusMatched = !statusFilter.length || statusFilter.includes(ticket.status);
-      return projectMatched && segmentMatched && statusMatched;
+      const priorityMatched = !priorityFilter.length || priorityFilter.includes(ticket.priority);
+      return projectMatched && segmentMatched && statusMatched && priorityMatched;
     });
-  }, [projectFilter, segmentFilter, statusFilter, tickets]);
+  }, [priorityFilter, projectFilter, segmentFilter, statusFilter, tickets]);
   useEffect(() => {
     setProjectFilter([]);
     setSegmentFilter([]);
     setStatusFilter([]);
+    setPriorityFilter([]);
   }, [open, tickets]);
 
   return (
@@ -133,7 +144,7 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
           z-index: 1;
         }
       `}</style>
-      {projectOptions.length || segmentOptions.length || statusOptions.length ? (
+      {projectOptions.length || segmentOptions.length || statusOptions.length || priorityOptions.length ? (
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 8, margin: "-4px 0 10px" }}>
           {projectOptions.length ? (
             <Select
@@ -178,6 +189,19 @@ export default function SegmentTicketsModal({ open, title, segments, activeSegme
               style={filterSelectStyle}
               maxTagCount="responsive"
               options={statusOptions}
+            />
+          ) : null}
+          {priorityOptions.length ? (
+            <Select
+              mode="multiple"
+              allowClear
+              size="small"
+              placeholder="优先级"
+              value={priorityFilter}
+              onChange={setPriorityFilter}
+              style={filterSelectStyle}
+              maxTagCount="responsive"
+              options={priorityOptions}
             />
           ) : null}
         </div>

@@ -269,7 +269,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (!size || size < 0) return res.status(400).json({ error: "缺少文件大小" });
     const isImage = mime.startsWith("image/");
     const max = isImage ? ossConfig.maxImageBytes : ossConfig.maxFileBytes;
-    if (size > max) return res.status(413).json({ error: isImage ? "图片过大(超过 2MB)" : "文件过大(超过 55MB)" });
+    if (size > max) return res.status(413).json({ error: isImage ? "图片过大(超过 5MB)" : "文件过大(超过 55MB)" });
     try {
       const signed = await createDirectUploadUrl({ projectId: b.projectId, filename, mime });
       res.json(signed);
@@ -293,10 +293,10 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       return res.status(400).json({ error: "文件数据不合法" });
     }
     if (!buffer.length) return res.status(400).json({ error: "文件为空" });
-    // 图片 ≤2MB;视频/压缩包等其它文件 ≤55MB
+    // 图片 ≤5MB;视频/压缩包等其它文件 ≤55MB
     const isImage = mime.startsWith("image/");
     const max = isImage ? ossConfig.maxImageBytes : ossConfig.maxFileBytes;
-    if (buffer.length > max) return res.status(413).json({ error: isImage ? "图片过大(超过 2MB)" : "文件过大(超过 55MB)" });
+    if (buffer.length > max) return res.status(413).json({ error: isImage ? "图片过大(超过 5MB)" : "文件过大(超过 55MB)" });
     try {
       const url = await uploadObject({ projectId: b.projectId, filename: b.filename, buffer, mime });
       res.json({ url });

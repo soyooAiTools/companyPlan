@@ -4,6 +4,7 @@ import { opsApi } from "../../api/modules/ops";
 import type { PeopleProgressRole, PeopleProgressRow } from "./types";
 import PeopleProgressToolbar from "./components/PeopleProgressToolbar";
 import PeopleWorkloadTable from "./components/PeopleWorkloadTable";
+import PersonProjectsModal from "./components/PersonProjectsModal";
 import PersonTicketsModal from "./components/PersonTicketsModal";
 
 const FALLBACK_ROLES: PeopleProgressRole[] = [
@@ -31,6 +32,7 @@ export default function PeopleProgressPage() {
 	const [rows, setRows] = useState<PeopleProgressRow[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [drawerPerson, setDrawerPerson] = useState<PeopleProgressRow | null>(null);
+	const [projectsPerson, setProjectsPerson] = useState<PeopleProgressRow | null>(null);
 
 	const currentRoleLabel = useMemo(() => roles.find((item) => item.key === role)?.label || "全部", [role, roles]);
 
@@ -85,6 +87,7 @@ export default function PeopleProgressPage() {
 					onRoleChange={(nextRole) => {
 						setRole(nextRole);
 						setDrawerPerson(null);
+						setProjectsPerson(null);
 					}}
 					onOverdueOnlyChange={setOverdueOnly}
 					onNewcomerOnlyChange={setNewcomerOnly}
@@ -101,9 +104,11 @@ export default function PeopleProgressPage() {
 						void loadRows(nextQuery);
 					}}
 					onOpenTickets={setDrawerPerson}
+					onOpenProjects={setProjectsPerson}
 				/>
 			</Card>
 			<PersonTicketsModal open={Boolean(drawerPerson)} person={drawerPerson} role={role} onClose={() => setDrawerPerson(null)} />
+			<PersonProjectsModal open={Boolean(projectsPerson)} person={projectsPerson} role={role} onClose={() => setProjectsPerson(null)} />
 		</div>
 	);
 }

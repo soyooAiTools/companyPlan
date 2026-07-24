@@ -9,6 +9,7 @@ type PeopleWorkloadTableProps = {
 	role: string;
 	query: string;
 	onOpenTickets: (row: PeopleProgressRow) => void;
+	onOpenProjects: (row: PeopleProgressRow) => void;
 	onQueryChange: (query: string) => void;
 	onSearch: (query: string) => void;
 };
@@ -26,7 +27,7 @@ const hiddenRoleLabels = new Set(["管理员", "外包"]);
 const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
 
-export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
 			title: "序号",
@@ -126,7 +127,26 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 						width: 100,
 						sorter: (a: PeopleProgressRow, b: PeopleProgressRow) => a.projectCount - b.projectCount,
 						defaultSortOrder: "descend" as const,
-						render: (value: number) => <span style={{ color: value > 0 ? "#0f766e" : "#94a3b8", fontWeight: value > 0 ? 700 : 500 }}>{value}</span>,
+						render: (value: number, row: PeopleProgressRow) => (
+							<button
+								type="button"
+								disabled={!value}
+								onClick={(event) => {
+									event.stopPropagation();
+									if (value) onOpenProjects(row);
+								}}
+								style={{
+									border: 0,
+									background: "transparent",
+									padding: 0,
+									color: value > 0 ? "#0f766e" : "#94a3b8",
+									fontWeight: value > 0 ? 700 : 500,
+									cursor: value > 0 ? "pointer" : "default",
+								}}>
+								{value}
+								{value > 0 ? <span style={{ marginLeft: 8, color: "#2563eb", fontWeight: 500 }}>查看</span> : null}
+							</button>
+						),
 					},
 				]
 			: []),
