@@ -1,9 +1,23 @@
 import pino from "pino";
 
+const logFormat = String(process.env.COMPANYPLAN_LOG_FORMAT || "pretty").toLowerCase();
+const prettyTransport =
+  logFormat === "json"
+    ? undefined
+    : {
+        target: "pino-pretty",
+        options: {
+          colorize: process.stdout.isTTY,
+          translateTime: "SYS:yyyy-mm-dd HH:MM:ss.l",
+          ignore: "pid,hostname",
+        },
+      };
+
 const rawLogger = pino({
   level: process.env.COMPANYPLAN_LOG_LEVEL || process.env.LOG_LEVEL || "info",
   base: undefined,
   timestamp: pino.stdTimeFunctions.isoTime,
+  transport: prettyTransport,
 });
 
 function normalizeMeta(metadata) {

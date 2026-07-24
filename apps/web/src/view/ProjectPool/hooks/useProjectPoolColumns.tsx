@@ -9,6 +9,7 @@ import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/consta
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartDate, stageRangeLabel } from "../deadlineUtils";
+import { NO_SEGMENT_FILTER_VALUE, UNSET_STAGE_FILTER_VALUE } from "../utils/filterProjectPoolRows";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
@@ -295,7 +296,7 @@ export function useProjectPoolColumns(
 				? ({ close }) => (
 						<HeaderMultiDropdown
 							value={filters.stageFilter}
-							options={PROJECT_STAGES.map((stage) => ({ label: stageRangeLabel(stage), value: stage }))}
+							options={[{ label: "未设置", value: UNSET_STAGE_FILTER_VALUE }, ...PROJECT_STAGES.map((stage) => ({ label: stageRangeLabel(stage), value: stage }))]}
 							onApply={filters.onStageFilterChange}
 							close={close}
 						/>
@@ -429,7 +430,7 @@ export function useProjectPoolColumns(
 				? ({ close }) => (
 						<HeaderMultiDropdown
 							value={filters.segmentFilter}
-							options={filters.segmentOptions.map((segment) => ({ label: segment.name, value: segment.id }))}
+							options={[{ label: "无环节", value: NO_SEGMENT_FILTER_VALUE }, ...filters.segmentOptions.map((segment) => ({ label: segment.name, value: segment.id }))]}
 							onApply={filters.onSegmentFilterChange}
 							close={close}
 						/>

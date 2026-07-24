@@ -128,7 +128,7 @@ const downloadExcel = (filename: string, rows: OpsProjectPoolRow[], columns: Res
 	sheet["!autofilter"] = { ref: sheet["!ref"] || "A1:A1" };
 
 	const workbook = XLSX.utils.book_new();
-	XLSX.utils.book_append_sheet(workbook, sheet, "项目池报表");
+	XLSX.utils.book_append_sheet(workbook, sheet, "项目报表");
 	XLSX.writeFile(workbook, filename, { bookType: "xlsx", cellStyles: true });
 };
 
@@ -198,7 +198,7 @@ export default function ProjectPoolExportButton() {
 			message.warning("当前条件下没有可导出的项目");
 			return;
 		}
-		downloadExcel(`项目池报表-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`, filteredRows, selectedColumns);
+		downloadExcel(`项目报表-${dayjs().format("YYYYMMDD-HHmm")}.xlsx`, filteredRows, selectedColumns);
 		setOpen(false);
 	};
 
@@ -208,7 +208,7 @@ export default function ProjectPoolExportButton() {
 				导出报表
 			</Button>
 			<Modal
-				title="导出项目池报表"
+				title="导出项目报表"
 				open={open}
 				width={900}
 				onCancel={() => setOpen(false)}

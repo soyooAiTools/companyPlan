@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Button, Modal, Typography } from "antd";
+import { Button, notification } from "antd";
 
 declare const __APP_VERSION__: string;
 
@@ -19,6 +19,7 @@ async function fetchVersion(): Promise<string | null> {
 export default function VersionChecker() {
 	const baselineRef = useRef(CURRENT_VERSION);
 	const [hasUpdate, setHasUpdate] = useState(false);
+	const [api, contextHolder] = notification.useNotification();
 
 	useEffect(() => {
 		let stopped = false;
@@ -57,21 +58,22 @@ export default function VersionChecker() {
 		return cleanup;
 	}, []);
 
-	return (
-		<Modal
-			title="检测到新版本发布"
-			open={hasUpdate}
-			centered
-			closable={false}
-			keyboard={false}
-			mask={{ closable: false }}
-			footer={
-				<Button type="primary" onClick={() => window.location.reload()}>
+	useEffect(() => {
+		if (!hasUpdate) return;
+		api.warning({
+			key: "app-version-update",
+			message: "检测到新版本发布",
+			description: "系统已发布新版本，避免浏览器缓存，请手动点击刷新按钮。",
+			duration: 0,
+			placement: "topRight",
+			closeIcon: false,
+			btn: (
+				<Button type="primary" size="small" style={{ background: "#0f766e", borderColor: "#0f766e" }} onClick={() => window.location.reload()}>
 					立即刷新
 				</Button>
-			}
-		>
-			<Typography.Text type="secondary">系统已发布新版本，避免浏览器缓存，点击刷新后即可使用最新功能。</Typography.Text>
-		</Modal>
-	);
+			),
+		});
+	}, [api, hasUpdate]);
+
+	return contextHolder;
 }

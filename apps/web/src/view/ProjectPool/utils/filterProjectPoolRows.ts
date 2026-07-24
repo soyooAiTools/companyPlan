@@ -2,6 +2,9 @@ import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import type { AdvancedFilterRule, AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import { compactAdvancedFilter } from "@/components/common/AdvancedFilterBuilder";
 
+export const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
+export const NO_SEGMENT_FILTER_VALUE = 0;
+
 export type ProjectPoolLocalFilters = {
 	q?: string;
 	status?: string[];
@@ -75,7 +78,7 @@ export function filterProjectPoolRows(rows: OpsProjectPoolRow[], filters: Projec
 
 	if (filters.stage?.length) {
 		const stageSet = new Set(filters.stage);
-		nextRows = nextRows.filter((row) => stageSet.has(row.stage));
+		nextRows = nextRows.filter((row) => stageSet.has(row.stage) || (stageSet.has(UNSET_STAGE_FILTER_VALUE) && !String(row.stage || "").trim()));
 	}
 
 	if (filters.planner?.length) {
@@ -87,7 +90,10 @@ export function filterProjectPoolRows(rows: OpsProjectPoolRow[], filters: Projec
 
 	if (filters.segment?.length) {
 		const segmentSet = new Set(filters.segment);
-		nextRows = nextRows.filter((row) => (row.segments || []).some((segment) => segmentSet.has(Number(segment.id))));
+		nextRows = nextRows.filter((row) => {
+			const segments = row.segments || [];
+			return segments.some((segment) => segmentSet.has(Number(segment.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0);
+		});
 	}
 
 	const advanced = compactAdvancedFilter(filters.advancedFilter);
