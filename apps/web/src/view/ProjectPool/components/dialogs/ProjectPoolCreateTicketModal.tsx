@@ -65,7 +65,11 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			setMembers([]);
 			const tn = await opsApi.tenants().catch(() => null);
 			if (!active) return;
-			if (tn) setTenants(tn.tenants);
+			const nextTenants = tn?.tenants ?? [];
+			if (project?.tenantId && project.tenantName && !nextTenants.some((tenant) => String(tenant.id) === String(project.tenantId))) {
+				nextTenants.unshift({ id: project.tenantId, name: project.tenantName });
+			}
+			setTenants(nextTenants);
 			if (!project) return;
 			const fallbackProject: OpsProject = {
 				id: project.id,
