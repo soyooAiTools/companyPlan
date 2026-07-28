@@ -12,6 +12,7 @@ import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
+export { lookupProjectPoolStages } from "./project-pool/snapshot-store.mjs";
 export { refreshProjectPoolSnapshotsByMember } from "./project-pool/snapshot-store.mjs";
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
 export { listOwnerMembersByTags } from "./project-pool/owners.mjs";

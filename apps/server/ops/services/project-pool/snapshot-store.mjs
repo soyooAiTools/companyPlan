@@ -190,6 +190,25 @@ export async function projectPoolSnapshotStats() {
   };
 }
 
+export async function lookupProjectPoolStages(projectIds = []) {
+  await ensureProjectPoolSnapshotTable();
+  const ids = [...new Set((projectIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
+  if (!ids.length) return {};
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT project_id, row_json, stage FROM ops_project_pool_snapshot WHERE project_id IN (${ids.map(() => "?").join(",")})`,
+    ...ids,
+  );
+  const out = {};
+  for (const row of rows) {
+    const snapshot = snapshotDbRowToPoolRow(row) || {};
+    out[String(row.project_id)] = {
+      stage: String(snapshot.stage || row.stage || "").trim(),
+      stageDeadlines: Array.isArray(snapshot.stageDeadlines) ? snapshot.stageDeadlines : [],
+    };
+  }
+  return out;
+}
+
 async function readProjectPoolSnapshotDbRows(statusNames = []) {
   await ensureProjectPoolSnapshotTable();
   const statuses = [...new Set((statusNames || []).map((name) => String(name || "").trim()).filter(Boolean))];

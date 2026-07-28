@@ -22,7 +22,8 @@ if ! grep -q '^COMPANYPLAN_MYSQL_PASSWORD=..' "$ROOT/.env.prod"; then
 fi
 
 # 1) 依赖(--prod=false 确保装上 vite/tsc/prisma 等 devDeps,否则 build/generate 会失败)
-echo "[deploy] pnpm install"
+echo "[deploy] pnpm 
+"
 pnpm install --prod=false
 
 # 2) Prisma 客户端(schema 有 segment_id / wechat 等新字段,不重生成会报 unknown field)

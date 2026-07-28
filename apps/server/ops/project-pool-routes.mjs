@@ -123,6 +123,15 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // helper-server 推荐成员弹框按项目 ID 查询阶段；直接读落库快照，不依赖 Redis 缓存。
+  app.post("/api/ops/project-pool/stages", async (req, res) => {
+    try {
+      res.json({ stages: await pool.lookupProjectPoolStages(req.body?.projectIds || req.body?.project_ids) });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 分组头部工单弹框:按项目批量查工单,避免前端逐环节请求导致漏数
   app.post("/api/ops/project-pool/group-tickets", requireAuth, requirePlanner, async (req, res) => {
     try {
