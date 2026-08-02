@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # companyPlan ops 后端一键部署:校验配置 → 装后端依赖 → 生成 Prisma 客户端 → PM2 启动/热重载
+# 注意:本脚本只部署后端 API,不会 build/deploy 前端 Web。
 # 用法(服务器上,先 git pull 拉最新代码):
 #   npm run deploy        # 或 pnpm run deploy
 set -euo pipefail
@@ -8,6 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 echo "[deploy] 仓库根: $ROOT"
+echo "[deploy] 仅部署后端 API,跳过前端 build"
 
 # 0) 生产配置校验:.env.prod 已 gitignore,不随 git 同步,必须在服务器上手动放到「仓库根目录」
 if [ ! -f "$ROOT/.env.prod" ]; then
