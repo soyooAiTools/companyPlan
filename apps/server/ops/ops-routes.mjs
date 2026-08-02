@@ -24,6 +24,9 @@ function mapTicket(t, segNameById) {
     client: t.client_name ?? t.source_project_name ?? "", // 客户名(快照)
     projectName: t.project_name ?? "",
     projectId: t.project_id,
+    projectVersionId: t.project_version_id ?? "",
+    projectVersionCode: t.project_version_code ?? "",
+    projectVersionName: t.project_version_name ?? "",
     tagName: (t.segment_id != null && segNameById?.get(t.segment_id)) || t.discipline, // 环节名:优先按 segment_id 取「当前」名,回退历史快照
     needType: t.need_type,
     priority: t.priority,
@@ -202,6 +205,9 @@ async function prepareTicketCreate({ user, body }) {
       client_name: clip(s.client_name, 160),
       project_name: clip(s.project_name, 160),
       project_id: s.project_id,
+      project_version_id: clip(body.projectVersionId, 64),
+      project_version_code: clip(body.projectVersionCode, 40),
+      project_version_name: clip(body.projectVersionName, 160),
       project_status: clip(s.project_status, 80),
       tag_id: s.tag_id,
       tag_name: clip(s.tag_name, 120),
@@ -315,7 +321,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // 项目:只返当前用户参与的(实时查 soyoo「我的项目」),可按客户过滤
   app.get("/api/ops/projects", requireAuth, async (req, res) => {
     try {
-      const all = isAdmin(req.user) ? await listAllProjects() : await listMyProjects(req.user); // 管理员看全部非回收项目
+      const all = isAdmin(req.user) ? await listAllProjects() : await listMyProjects(req.user); // 管理员看项目级进行中的项目
       const tenantId = req.query.tenantId ? String(req.query.tenantId) : "";
       const projects = (tenantId ? all.filter((p) => p.clientId === tenantId) : all).map((p) => ({
         id: p.id,
@@ -323,6 +329,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
         tenantId: p.clientId,
         client: p.client,
         status: p.status,
+        versions: p.versions || [],
       }));
       res.json({ projects });
     } catch (e) {

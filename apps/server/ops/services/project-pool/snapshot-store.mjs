@@ -1,10 +1,12 @@
 import { prisma } from "../../prisma.mjs";
-import { soyooClient } from "../../soyoo-client.mjs";
+import { soyooClient, soyooId, soyooProjectId } from "../../soyoo-client.mjs";
 import { getProjectWithMembers } from "../../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../../ops-helpers.mjs";
 import { EXCLUDED_CLIENT_NAMES } from "../../project-pool-constants.mjs";
-import { buildProjectPoolRows, normalizeProjectForPoolRow } from "./read-model.mjs";
+import { buildProjectPoolRows, normalizeProjectForPoolRow, versionRowId } from "./read-model.mjs";
 import { invalidateProjectPoolSnapshotRowsCache, readProjectPoolSnapshotRowsCache, writeProjectPoolSnapshotRowsCache } from "./cache.mjs";
+
+const REBUILD_CONCURRENCY = Math.max(1, Number(process.env.COMPANYPLAN_OPS_REBUILD_CONCURRENCY ?? "8"));
 
 export async function ensureProjectPoolSnapshotTable() {
   await prisma.$executeRaw`
@@ -54,6 +56,80 @@ async function existingSnapshotMemberIds(projectId) {
   return rows.length ? snapshotMemberIds(rows[0]) : [];
 }
 
+function projectVersions(project) {
+  return Array.isArray(project?.versions) ? project.versions.filter((version) => version?.id) : [];
+}
+
+function isProjectLifecycleHidden(project) {
+  const lifecycle = String(project?.project_lifecycle_status || project?.lifecycle_status || "").trim();
+  return lifecycle === "已完成" || lifecycle === "回收中" || lifecycle === "已回收" || lifecycle === "客户暂停";
+}
+
+function isProjectLifecycleActive(row) {
+  const lifecycle = String(row?.projectLifecycleStatus || row?.project_lifecycle_status || row?.lifecycle_status || "").trim();
+  return lifecycle === "进行中" || lifecycle === "正常";
+}
+
+function membersFromResponse(response) {
+  return Array.isArray(response?.members) ? response.members : Array.isArray(response) ? response : [];
+}
+
+function memberMatchesUser(member, userId) {
+  const uid = soyooId(userId);
+  if (!uid) return false;
+  return soyooId(member?.id) === uid || soyooId(member?.user_id) === uid || soyooId(member?.userId) === uid;
+}
+
+function rowHasMember(row, userId) {
+  return Array.isArray(row?.members) && row.members.some((member) => memberMatchesUser(member, userId));
+}
+
+function filterRowForMember(row, userId) {
+  const children = Array.isArray(row?.children) ? row.children : [];
+  if (!children.length) return rowHasMember(row, userId) ? row : null;
+  const matchedChildren = children.filter((child) => rowHasMember(child, userId));
+  if (!matchedChildren.length) return null;
+  return { ...row, children: matchedChildren };
+}
+
+async function loadMembersForProjectVersions(project, parentMembersFallback = []) {
+	const pid = String(project?.id || "");
+	const membersByProjectId = new Map([[pid, parentMembersFallback]]);
+	const memberIds = new Set(parentMembersFallback.map((m) => String(m.id)).filter(Boolean));
+	const versions = projectVersions(project);
+	const versionMembers = await mapConcurrent(versions, REBUILD_CONCURRENCY, async (version) => {
+		const rowId = versionRowId(pid, version.id);
+		try {
+			return { rowId, members: membersFromResponse(await soyooClient.projectMembers(rowId)) };
+		} catch {
+			return { rowId, members: String(version.code || "").toLowerCase() === "v1" || version.is_default ? parentMembersFallback : [] };
+		}
+	});
+	for (const item of versionMembers) {
+		const members = item.members || [];
+		membersByProjectId.set(item.rowId, members);
+		for (const member of members) {
+			if (member?.id) memberIds.add(String(member.id));
+		}
+	}
+	return { membersByProjectId, memberIds: [...memberIds] };
+}
+
+async function mapConcurrent(items, limit, mapper) {
+	const results = new Array(items.length);
+	let next = 0;
+	const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+		for (;;) {
+			const index = next;
+			next += 1;
+			if (index >= items.length) return;
+			results[index] = await mapper(items[index], index);
+		}
+	});
+	await Promise.all(workers);
+	return results;
+}
+
 async function writeProjectPoolSnapshot(row, memberIds, { invalidateCache = true } = {}) {
   await ensureProjectPoolSnapshotTable();
   const now = nowIso();
@@ -78,7 +154,7 @@ async function writeProjectPoolSnapshot(row, memberIds, { invalidateCache = true
 
 export async function refreshProjectPoolSnapshot(projectId) {
   await ensureProjectPoolSnapshotTable();
-  const pid = String(projectId || "");
+  const pid = String(soyooProjectId(projectId) || "");
   if (!pid) return null;
   let project;
   let members = [];
@@ -98,12 +174,13 @@ export async function refreshProjectPoolSnapshot(projectId) {
     await deleteProjectPoolSnapshot(pid, "project_snapshot_deleted");
     return null;
   }
-  if (String(project.status || "").trim() === "回收中") {
+  if (isProjectLifecycleHidden(project)) {
     await deleteProjectPoolSnapshot(pid, "project_snapshot_recycled");
     return null;
   }
-  const [row] = await buildProjectPoolRows([normalizeProjectForPoolRow(project, members)], new Map([[pid, members]]));
-  const memberIds = membersLoaded ? members.map((m) => String(m.id)).filter(Boolean) : await existingSnapshotMemberIds(pid);
+  const { membersByProjectId, memberIds: loadedMemberIds } = await loadMembersForProjectVersions(project, members);
+  const [row] = await buildProjectPoolRows([normalizeProjectForPoolRow(project, members)], membersByProjectId);
+  const memberIds = membersLoaded ? loadedMemberIds : await existingSnapshotMemberIds(pid);
   await writeProjectPoolSnapshot(row, memberIds);
   return row;
 }
@@ -126,7 +203,7 @@ export async function refreshProjectPoolSnapshotsByMember(userId) {
 async function fetchAllSoyooProjectsForSnapshot() {
   const out = [];
   for (let page = 1; page <= 100; page += 1) {
-    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "回收中" });
+    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "已完成,回收中,已回收,客户暂停" });
     const projects = Array.isArray(r?.data) ? r.data : [];
     out.push(...projects);
     const total = Number(r?.total ?? out.length);
@@ -137,25 +214,33 @@ async function fetchAllSoyooProjectsForSnapshot() {
 
 let rebuildSnapshotsRunning = null;
 export async function rebuildProjectPoolSnapshots() {
-  if (rebuildSnapshotsRunning) return rebuildSnapshotsRunning;
-  rebuildSnapshotsRunning = (async () => {
-    await ensureProjectPoolSnapshotTable();
-    const projects = await fetchAllSoyooProjectsForSnapshot();
-    const membersByProjectId = new Map();
-    const memberIdsByProjectId = new Map();
-    for (const project of projects) {
-      let members = [];
-      let membersLoaded = false;
-      try {
-        members = (await getProjectWithMembers(project.id)).members || [];
-        membersLoaded = true;
-      } catch {
-        members = [];
-      }
-      membersByProjectId.set(String(project.id), members);
-      memberIdsByProjectId.set(String(project.id), membersLoaded ? members.map((m) => String(m.id)).filter(Boolean) : await existingSnapshotMemberIds(project.id));
-    }
-    const rows = await buildProjectPoolRows(projects, membersByProjectId);
+	if (rebuildSnapshotsRunning) return rebuildSnapshotsRunning;
+	rebuildSnapshotsRunning = (async () => {
+		await ensureProjectPoolSnapshotTable();
+		const projects = await fetchAllSoyooProjectsForSnapshot();
+		const projectMemberSnapshots = await mapConcurrent(projects, REBUILD_CONCURRENCY, async (project) => {
+			let members = [];
+			let membersLoaded = false;
+			try {
+				members = (await getProjectWithMembers(project.id)).members || [];
+				membersLoaded = true;
+			} catch {
+				members = [];
+			}
+			const loaded = await loadMembersForProjectVersions(project, members);
+			return {
+				projectId: String(project.id),
+				membersByProjectId: loaded.membersByProjectId,
+				memberIds: membersLoaded ? loaded.memberIds : await existingSnapshotMemberIds(project.id),
+			};
+		});
+		const membersByProjectId = new Map();
+		const memberIdsByProjectId = new Map();
+		for (const snapshot of projectMemberSnapshots) {
+			for (const [key, value] of snapshot.membersByProjectId.entries()) membersByProjectId.set(key, value);
+			memberIdsByProjectId.set(snapshot.projectId, snapshot.memberIds);
+		}
+		const rows = await buildProjectPoolRows(projects, membersByProjectId);
     for (const row of rows) {
       await writeProjectPoolSnapshot(row, memberIdsByProjectId.get(String(row.id)) || [], { invalidateCache: false });
     }
@@ -194,17 +279,25 @@ export async function lookupProjectPoolStages(projectIds = []) {
   await ensureProjectPoolSnapshotTable();
   const ids = [...new Set((projectIds || []).map((id) => String(id || "").trim()).filter(Boolean))];
   if (!ids.length) return {};
+  const parentIds = [...new Set(ids.map((id) => soyooProjectId(id)).filter(Boolean))];
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT project_id, row_json, stage FROM ops_project_pool_snapshot WHERE project_id IN (${ids.map(() => "?").join(",")})`,
-    ...ids,
+    `SELECT project_id, row_json, stage FROM ops_project_pool_snapshot WHERE project_id IN (${parentIds.map(() => "?").join(",")})`,
+    ...parentIds,
   );
   const out = {};
   for (const row of rows) {
     const snapshot = snapshotDbRowToPoolRow(row) || {};
-    out[String(row.project_id)] = {
+    const parentId = String(row.project_id);
+    out[parentId] = {
       stage: String(snapshot.stage || row.stage || "").trim(),
       stageDeadlines: Array.isArray(snapshot.stageDeadlines) ? snapshot.stageDeadlines : [],
     };
+    for (const child of Array.isArray(snapshot.children) ? snapshot.children : []) {
+      out[String(child.id)] = {
+        stage: String(child.stage || "").trim(),
+        stageDeadlines: Array.isArray(child.stageDeadlines) ? child.stageDeadlines : [],
+      };
+    }
   }
   return out;
 }
@@ -212,27 +305,17 @@ export async function lookupProjectPoolStages(projectIds = []) {
 async function readProjectPoolSnapshotDbRows(statusNames = []) {
   await ensureProjectPoolSnapshotTable();
   const statuses = [...new Set((statusNames || []).map((name) => String(name || "").trim()).filter(Boolean))];
-  const cachedRows = await readProjectPoolSnapshotRowsCache(statuses);
+  const cachedRows = await readProjectPoolSnapshotRowsCache([]);
   if (cachedRows) return cachedRows;
 
-  const rows = statuses.length
-    ? await prisma.$queryRawUnsafe(
-        `SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot WHERE status IN (${statuses.map(() => "?").join(",")})`,
-        ...statuses,
-      )
-    : await prisma.$queryRaw`SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot`;
+  const rows = await prisma.$queryRaw`SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot`;
   if (!rows.length) {
     await rebuildProjectPoolSnapshots();
-    const rebuiltRows = statuses.length
-      ? await prisma.$queryRawUnsafe(
-          `SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot WHERE status IN (${statuses.map(() => "?").join(",")})`,
-          ...statuses,
-        )
-      : await prisma.$queryRaw`SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot`;
-    await writeProjectPoolSnapshotRowsCache(rebuiltRows, statuses);
+    const rebuiltRows = await prisma.$queryRaw`SELECT project_id, row_json, member_ids_json FROM ops_project_pool_snapshot`;
+    await writeProjectPoolSnapshotRowsCache(rebuiltRows, []);
     return rebuiltRows;
   }
-  await writeProjectPoolSnapshotRowsCache(rows, statuses);
+  await writeProjectPoolSnapshotRowsCache(rows, []);
   return rows;
 }
 
@@ -248,7 +331,13 @@ export async function loadVisibleSnapshotRows({ user, statusNames = [] }) {
   for (const dbRow of dbRows) {
     const row = snapshotDbRowToPoolRow(dbRow);
     if (!row || isExcludedTenantName(row.tenantName)) continue;
-    if (!isAdmin(user) && !snapshotMemberIds(dbRow).map(String).includes(uid)) continue;
+    if (!isProjectLifecycleActive(row)) continue;
+    if (!isAdmin(user)) {
+      if (!snapshotMemberIds(dbRow).map(soyooId).includes(uid)) continue;
+      const scopedRow = filterRowForMember(row, uid);
+      if (scopedRow) rows.push(scopedRow);
+      continue;
+    }
     rows.push(row);
   }
   return rows;
@@ -261,8 +350,10 @@ export async function loadMySnapshotRows({ user, statusNames = [] }) {
   for (const dbRow of dbRows) {
     const row = snapshotDbRowToPoolRow(dbRow);
     if (!row || isExcludedTenantName(row.tenantName)) continue;
-    if (!snapshotMemberIds(dbRow).map(String).includes(uid)) continue;
-    rows.push(row);
+    if (!isProjectLifecycleActive(row)) continue;
+    if (!snapshotMemberIds(dbRow).map(soyooId).includes(uid)) continue;
+    const scopedRow = filterRowForMember(row, uid);
+    if (scopedRow) rows.push(scopedRow);
   }
   return rows;
 }

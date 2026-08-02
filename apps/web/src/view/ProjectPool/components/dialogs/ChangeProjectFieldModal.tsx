@@ -1,7 +1,7 @@
 import { Modal, Select, Space } from "antd";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import RichTextEditor from "@/view/Ops/RichTextEditor";
-import { PROJECT_STAGES, PROJECT_STATUSES } from "@/view/Ops/constants";
+import { OPS_EDITABLE_PROJECT_STATUSES, PROJECT_STAGES } from "@/view/Ops/constants";
 import { stageRangeLabel } from "../../deadlineUtils";
 
 type ChangeProjectFieldModalProps = {
@@ -44,7 +44,7 @@ export default function ChangeProjectFieldModal({ open, field, target, value, co
             value={value || undefined}
             placeholder={field === "status" ? "选择状态" : "选择阶段"}
             style={{ width: field === "stage" ? 320 : 200 }}
-            options={(field === "status" ? PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({
+            options={(field === "status" ? OPS_EDITABLE_PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({
               value: s,
               label: field === "stage" ? `${stageRangeLabel(s)}${s === current ? "(当前)" : ""}` : s === current ? `${s}(当前)` : s,
               disabled: field === "stage" ? PROJECT_STAGES.indexOf(s) <= currentStageIndex : s === current,

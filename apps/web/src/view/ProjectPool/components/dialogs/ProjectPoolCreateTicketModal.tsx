@@ -27,6 +27,14 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 	const selectedProjectId = Form.useWatch("projectId", form) as string | undefined;
 	const projectsRequestSeq = useRef(0);
 
+	const clickedVersion = project?.versionId
+		? {
+				id: project.versionId,
+				code: project.versionCode || "",
+				name: project.versionName || "",
+			}
+		: null;
+
 	const fillInitialMember = (nextSegments: OpsResponsibleSegment[], nextMembers: OpsResponsibleMember[]) => {
 		if (!member) return;
 		const target = nextMembers.find((item) => String(item.id) === String(member.id));
@@ -88,7 +96,8 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			const current = allProjects.projects.find((item) => String(item.id) === String(project.id));
 			const tenantId = project.tenantId || current?.tenantId;
 			if (tenantId && !project.tenantId) form.setFieldValue("tenantId", tenantId);
-			setProjects(tenantId ? allProjects.projects.filter((item) => String(item.tenantId) === String(tenantId)) : allProjects.projects);
+			const nextProjects = tenantId ? allProjects.projects.filter((item) => String(item.tenantId) === String(tenantId)) : allProjects.projects;
+			setProjects(nextProjects);
 		};
 		void init();
 		return () => {
@@ -147,6 +156,9 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			.filter(isComplete)
 			.map((ticket) => ({
 				projectId: v.projectId,
+				projectVersionId: String(v.projectId) === String(project?.id) ? clickedVersion?.id || "" : "",
+				projectVersionCode: String(v.projectId) === String(project?.id) ? clickedVersion?.code || "" : "",
+				projectVersionName: String(v.projectId) === String(project?.id) ? clickedVersion?.name || "" : "",
 				segmentId: Number(ticket.segmentId),
 				ownerId: String(ticket.ownerId),
 				title: String(ticket.title || "").trim(),
@@ -205,6 +217,7 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			segments={segments}
 			members={members}
 			selectedProjectId={selectedProjectId}
+			showProjectVersionSelect={false}
 			invalidTaskIndex={invalidTaskIndex}
 			onTenantChange={onTenantChange}
 			onProjectChange={onProjectChange}

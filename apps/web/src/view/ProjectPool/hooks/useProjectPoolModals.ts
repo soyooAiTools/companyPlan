@@ -148,7 +148,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setLogs([]);
     setLogsLoading(true);
     try {
-      const result = await opsApi.projectStatusLogs(row.id);
+      const includeParent = !!row.isVersionRow && (String(row.versionCode || "").toLowerCase() === "v1" || /默认/.test(String(row.versionName || "")));
+      const result = await opsApi.projectStatusLogs(row.id, { includeParent });
       setLogs(result.logs);
     } catch {
       setLogs([]);

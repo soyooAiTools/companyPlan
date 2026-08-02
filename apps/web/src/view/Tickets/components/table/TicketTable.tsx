@@ -90,6 +90,19 @@ function HeaderSearchDropdown({ value, placeholder, onApply, confirm }: { value:
 	);
 }
 
+function isDefaultTicketVersion(ticket: OpsTicket) {
+	const code = String(ticket.projectVersionCode || "").trim().toLowerCase();
+	const name = String(ticket.projectVersionName || "").trim();
+	return !code || code === "v1" || name === "" || name === "默认版本";
+}
+
+function ticketProjectDisplayName(ticket: OpsTicket) {
+	const projectName = String(ticket.projectName || "").trim();
+	const versionName = String(ticket.projectVersionName || "").trim();
+	if (!projectName || isDefaultTicketVersion(ticket) || !versionName) return projectName;
+	return `${projectName} - ${versionName}`;
+}
+
 export default function TicketTable({
 	tickets,
 	loading,
@@ -188,7 +201,7 @@ export default function TicketTable({
 			filterDropdown: ({ confirm }) => searchDropdown(projectSearch, "搜索 项目/客户", onProjectSearchChange, confirm),
 			render: (_: string, ticket) => (
 				<span>
-					{ticket.projectName}
+					{ticketProjectDisplayName(ticket)}
 					{ticket.client ? <span style={{ color: "#64748b" }}> - {ticket.client}</span> : null}
 				</span>
 			),

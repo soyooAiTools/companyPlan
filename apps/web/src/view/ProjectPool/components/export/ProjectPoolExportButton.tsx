@@ -29,7 +29,10 @@ type ExportColumn = {
 
 type ResolvedExportColumn = Omit<ExportColumn, "key"> & { key: string };
 
-const ACTIVE_PROJECT_STATUSES_EXCLUDE = new Set(["完成", "已完成", "回收中"]);
+const isActiveProjectRow = (row: OpsProjectPoolRow) => {
+	const lifecycle = String(row.projectLifecycleStatus || "").trim();
+	return !lifecycle || lifecycle === "进行中" || lifecycle === "正常";
+};
 
 const nextDeadlineText = (row: OpsProjectPoolRow) => {
 	const deadline = nextStageDeadline(row.stage, Array.isArray(row.stageDeadlines) ? row.stageDeadlines : []);
@@ -143,7 +146,7 @@ export default function ProjectPoolExportButton() {
 	const [statusFilter, setStatusFilter] = useState<string[]>([]);
 	const [columnKeys, setColumnKeys] = useState<ExportColumnKey[]>(defaultColumnKeys);
 
-	const activeRows = useMemo(() => rows.filter((row) => !ACTIVE_PROJECT_STATUSES_EXCLUDE.has(row.status)), [rows]);
+	const activeRows = useMemo(() => rows.filter(isActiveProjectRow), [rows]);
 	const filteredRows = useMemo(() => {
 		return activeRows.filter((row) => {
 			if (tenantFilter.length && !tenantFilter.includes(row.tenantName)) return false;
@@ -161,7 +164,7 @@ export default function ProjectPoolExportButton() {
 	const tenantOptions = useMemo(() => uniqueOptions(activeRows.map((row) => row.tenantName)), [activeRows]);
 	const plannerOptions = useMemo(() => uniqueOptions(activeRows.flatMap(plannerNames)), [activeRows]);
 	const stageOptions = useMemo(() => uniqueOptions([...PROJECT_STAGES, ...activeRows.map((row) => row.stage)]), [activeRows]);
-	const statusOptions = useMemo(() => uniqueOptions([...PROJECT_STATUSES, ...activeRows.map((row) => row.status)].filter((status) => !ACTIVE_PROJECT_STATUSES_EXCLUDE.has(status))), [activeRows]);
+	const statusOptions = useMemo(() => uniqueOptions([...PROJECT_STATUSES, ...activeRows.map((row) => row.status)]), [activeRows]);
 
 	const loadRows = async () => {
 		setLoading(true);
@@ -220,7 +223,7 @@ export default function ProjectPoolExportButton() {
 				mask={{ closable: false }}
 			>
 				<Typography.Text type="secondary">
-					导出范围固定为状态非「已完成 / 回收中」的项目；当前条件共{" "}
+					导出范围固定为项目状态「进行中」；当前条件共{" "}
 					<span style={{ color: "#ef4444", fontWeight: 'bold', fontSize: 20 }}>{filteredRows.length}</span> 个项目。
 				</Typography.Text>
 				<Divider plain>筛选条件</Divider>

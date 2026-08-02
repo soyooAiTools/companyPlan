@@ -1,4 +1,5 @@
 import { Table } from "antd";
+import type { ReactNode } from "react";
 import type { ColumnsType } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import type { OpsProjectPoolSortBy, OpsProjectPoolSortOrder } from "@/api/modules/ops";
@@ -20,6 +21,16 @@ type ProjectPoolTableProps = {
 };
 
 export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs }: ProjectPoolTableProps) {
+  const hasTreeRows = rows.some((row) => Array.isArray(row.children) && row.children.length > 0);
+  const displayColumns = columns.map((column, index) => ({
+    ...column,
+    fixed: index === 0 ? "left" as const : column.fixed,
+    width: index === 0 ? 330 : column.width,
+    render: (value: unknown, row: OpsProjectPoolRow, rowIndex: number) => {
+      if (row.hasVersionChildren && !row.isVersionRow && index > 0) return null;
+      return column.render ? column.render(value, row, rowIndex) : (value as ReactNode);
+    },
+  }));
   const tablePagination =
     pagination === false || !onPageChange || page == null || pageSize == null || total == null
       ? false
@@ -56,6 +67,23 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
           border-top-right-radius: 0 !important;
         }
         .ops-pool-table .ant-table-thead > tr > th { padding-top: 11px; padding-bottom: 11px; background: #fff; font-weight: 600; }
+        .ops-pool-table .ant-table-thead > tr > th:first-child,
+        .ops-pool-table .ant-table-tbody > tr > td:first-child {
+          position: sticky !important;
+          left: 0 !important;
+          z-index: 4;
+          background: #fff;
+          box-shadow: 6px 0 8px -8px rgba(15, 23, 42, 0.22);
+        }
+        .ops-pool-table .ant-table-thead > tr > th:first-child {
+          z-index: 7;
+        }
+        .ops-pool-table .ops-pool-parent-row > td:first-child {
+          background: #f8fafc !important;
+        }
+        .ops-pool-table .ops-pool-stale > td:first-child {
+          background: #fff7f6 !important;
+        }
         .ops-pool-table .ant-table-column-sorter-up.active,
         .ops-pool-table .ant-table-column-sorter-down.active {
           color: #dc2626;
@@ -69,6 +97,35 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
           background: #fff1f0 !important;
           transform: translateY(-1px) scale(1.001);
         }
+        .ops-pool-table .ops-pool-parent-row > td {
+          background: #f8fafc !important;
+          font-weight: 600;
+        }
+        .ops-pool-table .ops-pool-parent-row:hover > td {
+          background: #f1f5f9 !important;
+        }
+        .ops-pool-table .ops-pool-version-row > td {
+          background: #fff !important;
+        }
+        .ops-pool-table .ops-pool-version-row > td:first-child {
+          position: relative;
+        }
+        .ops-pool-table .ops-pool-version-row > td:first-child::before {
+          content: "";
+          position: absolute;
+          left: 36px;
+          top: 0;
+          bottom: 0;
+          border-left: 1px dashed #cbd5e1;
+        }
+        .ops-pool-table .ops-pool-version-row > td:first-child::after {
+          content: "";
+          position: absolute;
+          left: 36px;
+          top: 50%;
+          width: 18px;
+          border-top: 1px dashed #cbd5e1;
+        }
         .ops-pool-table .ant-table-tbody > tr:hover > td:first-child { box-shadow: inset 3px 0 0 #0f766e; }
       `}</style>
       <Table
@@ -76,9 +133,11 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         rowKey="id"
         loading={loading}
         dataSource={rows}
-        columns={columns}
+        columns={displayColumns}
         size="small"
-        virtual
+        virtual={!hasTreeRows}
+        childrenColumnName="children"
+        expandable={hasTreeRows ? { defaultExpandAllRows: true } : undefined}
         scroll={scrollY ? { x: 1480, y: scrollY } : { x: 1480 }}
         pagination={tablePagination}
         onChange={(_pagination, _filters, sorter, extra) => {
@@ -103,11 +162,16 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         onRow={(row) => ({
           onClick: () => {
             if (!onOpenLogs) return;
+            if (row.hasVersionChildren && !row.isVersionRow) return;
             if (window.getSelection()?.toString()) return;
             onOpenLogs(row);
           },
-          className: isNextDeadlineOverdue(row) ? "ops-pool-stale" : undefined,
-          style: { cursor: onOpenLogs ? "pointer" : "default" },
+          className: [
+            isNextDeadlineOverdue(row) ? "ops-pool-stale" : "",
+            row.hasVersionChildren ? "ops-pool-parent-row" : "",
+            row.isVersionRow ? "ops-pool-version-row" : "",
+          ].filter(Boolean).join(" ") || undefined,
+          style: { cursor: onOpenLogs && (!row.hasVersionChildren || row.isVersionRow) ? "pointer" : "default" },
         })}
       />
     </>

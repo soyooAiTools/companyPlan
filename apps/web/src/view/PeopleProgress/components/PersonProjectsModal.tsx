@@ -59,10 +59,18 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 				dataIndex: "name",
 				width: 240,
 				render: (_, project) => (
-					<span style={{ fontWeight: 700 }}>
-						{project.name}
-						{project.tenantName ? <span style={{ color: "#64748b", fontSize: 13, fontWeight: 500 }}> - {project.tenantName}</span> : null}
-					</span>
+					<div style={{ minWidth: 0 }}>
+						<div style={{ fontWeight: 700, color: "#0f172a" }}>
+							{project.name}
+							{project.tenantName ? <span style={{ color: "#64748b", fontSize: 13, fontWeight: 500 }}> - {project.tenantName}</span> : null}
+						</div>
+						{project.versionCode ? (
+							<div style={{ marginTop: 4, color: "#2563eb", fontSize: 13, fontWeight: 600 }}>
+								{project.versionCode}
+								{project.versionName ? ` · ${project.versionName}` : ""}
+							</div>
+						) : null}
+					</div>
 				),
 			},
 			{

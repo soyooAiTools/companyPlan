@@ -3,21 +3,38 @@
 import { soyooClient } from "./soyoo-client.mjs";
 import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
 
+function mapProjectVersions(project) {
+  return Array.isArray(project?.versions)
+    ? project.versions
+        .filter((version) => version?.id)
+        .map((version) => ({
+          id: String(version.id),
+          code: version.code || "",
+          name: version.name || "",
+          isDefault: !!version.is_default || String(version.code || "").toLowerCase() === "v1",
+        }))
+    : [];
+}
+
 // 我参与的项目(提单选项目下拉)
 export async function listMyProjects(user) {
   const data = await soyooClient.myProjects(user.id);
   return (data?.projects ?? [])
-    .filter((p) => p.project_status !== "回收中") // 回收中项目不参与提单(与管理员口径一致)
+    .filter((p) => {
+      const lifecycle = String(p.project_lifecycle_status || p.lifecycle_status || "").trim();
+      return !lifecycle || lifecycle === "进行中" || lifecycle === "正常";
+    }) // 只按项目级生命周期过滤，不按版本状态过滤
     .map((p) => ({
-    id: String(p.project_id),
-    name: p.project_name ?? "",
-    clientId: String(p.tenant_id ?? ""),
-    client: p.tenant_name ?? "",
-    status: p.project_status ?? "",
-  }));
+      id: String(p.project_id),
+      name: p.project_name ?? "",
+      clientId: String(p.tenant_id ?? ""),
+      client: p.tenant_name ?? "",
+      status: p.project_status ?? "",
+      versions: mapProjectVersions(p),
+    }));
 }
 
-// 管理员:全部非回收项目(提单选项目用)。soyoo 无 tenant 过滤,取全量(短缓存),由 handler 按客户筛
+// 管理员:项目级进行中的项目(提单选项目用)。soyoo 无 tenant 过滤,取全量(短缓存),由 handler 按客户筛
 export async function listAllProjects() {
   const rows = await soyooClient.allProjects();
   return (rows ?? []).map((p) => ({
@@ -26,6 +43,7 @@ export async function listAllProjects() {
     clientId: String(p.tenant_id ?? ""),
     client: p.tenant_name ?? "",
     status: p.status ?? "",
+    versions: mapProjectVersions(p),
   }));
 }
 
@@ -122,7 +140,7 @@ export async function buildTicketSnapshot({ projectId, ownerId, requesterUserId,
   const requesterUser = await getUser(requesterUserId);
   return {
     snapshot: {
-      project_id: project.id,
+      project_id: String(projectId),
       project_name: project.name,
       project_status: project.status,
       client_id: project.clientId,

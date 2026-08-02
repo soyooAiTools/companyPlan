@@ -23,7 +23,7 @@ type GroupedProjectPoolViewProps = {
 
 type ProjectGroupTableRow =
 	| { kind: "group"; key: string; group: ProjectPoolGroup }
-	| { kind: "project"; key: string; groupKey: string; project: OpsProjectPoolRow; groupIndex: number };
+	| { kind: "project"; key: string; groupKey: string; project: OpsProjectPoolRow; groupIndex: number; childIndex?: number; childCount?: number };
 
 const GROUP_ROW_HEIGHT = 40;
 const PROJECT_ROW_HEIGHT = 66;
@@ -134,8 +134,13 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 		const nextRows: ProjectGroupTableRow[] = [];
 		for (const group of sortedGroups) {
 			nextRows.push({ kind: "group", key: `group-${group.key}`, group });
+			// 版本子记录
 			if (!collapsedKeys.has(group.key)) {
-				nextRows.push(...group.rows.map((project, groupIndex) => ({ kind: "project" as const, key: `project-${group.key}-${project.id}`, groupKey: group.key, project, groupIndex })));
+				for (const [groupIndex, project] of group.rows.entries()) {
+					nextRows.push({ kind: "project", key: `project-${group.key}-${project.id}`, groupKey: group.key, project, groupIndex });
+					const children = Array.isArray(project.children) ? project.children : [];
+					nextRows.push(...children.map((child, childIndex) => ({ kind: "project" as const, key: `project-${group.key}-${child.id}`, groupKey: group.key, project: child, groupIndex, childIndex, childCount: children.length })));
+				}
 			}
 		}
 		return nextRows;
@@ -176,9 +181,23 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					},
 					render: (_value: unknown, row, index) => {
 						if (row.kind === "group") return columnIndex === 0 ? groupLabel(row.group, collapsedKeys.has(row.group.key), hideStats, onOpenGroupTickets, onOpenGroupDeadlineProjects) : null;
+						if (row.project.hasVersionChildren && !row.project.isVersionRow && columnIndex > 0) return null;
 						const value = projectCellValue(projectColumn, row.project);
-						if (projectColumn.render) return projectColumn.render(value, row.project, row.groupIndex) as ReactNode;
-						return value as ReactNode;
+						const content = projectColumn.render ? (projectColumn.render(value, row.project, row.groupIndex) as ReactNode) : (value as ReactNode);
+						if (columnIndex === 0 && row.project.isVersionRow) {
+							return (
+								<div className={`ops-pool-group-tree-version-cell${row.childIndex === 0 ? " is-first-version" : ""}${row.childIndex === (row.childCount ?? 0) - 1 ? " is-last-version" : ""}`}>
+									<span className="ops-pool-group-tree-gutter" aria-hidden="true">
+										<span className="ops-pool-group-tree-line-v" />
+										<span className="ops-pool-group-tree-line-h" />
+										
+									</span>
+									{/* 版本文案 */}
+									<div className="ops-pool-group-tree-content">{content}</div>
+								</div>
+							);
+						}
+						return content;
 					},
 				};
 				return nextColumn;
@@ -263,7 +282,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					box-shadow: inset 3px 0 0 #0f766e, 6px 0 8px -8px rgba(15, 23, 42, 0.18);
 				}
 				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-project-row > td:first-child {
-					padding-left: 34px;
+					padding-left: 16px;
 					position: relative;
 					position: sticky;
 					left: 0;
@@ -274,14 +293,49 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-project-row.ops-pool-stale > td:first-child {
 					background: #fff7f6 !important;
 				}
-				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-project-row > td:first-child::before {
-					content: "";
+				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-parent-row > td {
+					background: #f8fafc !important;
+					font-weight: 600;
+				}
+				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-version-row > td:first-child {
+					padding-left: 16px;
+					position: relative;
+				}
+				.ops-pool-group-tree-version-cell {
+					display: flex;
+					align-items: center;
+					height: 22px;
+					min-width: 0;
+				}
+				.ops-pool-group-tree-gutter {
+					position: relative;
+					width: 44px;
+					height: 22px;
+					flex: 0 0 44px;
+				}
+				.ops-pool-group-tree-line-v {
 					position: absolute;
-					left: 20px;
-					top: 12px;
-					bottom: 12px;
-					width: 1px;
-					background: #e2e8f0;
+					left: 22px;
+					top: -36px;
+					bottom: -36px;
+					border-left: 1px dashed #cbd5e1;
+				}
+				.ops-pool-group-tree-version-cell.is-first-version .ops-pool-group-tree-line-v {
+					top: -14px;
+				}
+				.ops-pool-group-tree-version-cell.is-last-version .ops-pool-group-tree-line-v {
+					bottom: -14px;
+				}
+				.ops-pool-group-tree-line-h {
+					position: absolute;
+					left: 22px;
+					top: 50%;
+					width: 20px;
+					border-top: 1px dashed #cbd5e1;
+				}
+				.ops-pool-group-tree-content {
+					min-width: 0;
+					flex: 1 1 auto;
 				}
 			`}</style>
 			<VirtualGroupStickyBar<ProjectPoolGroup, ProjectGroupTableRow>
@@ -323,11 +377,12 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 						}
 						return {
 							onClick: () => {
+								if (row.project.hasVersionChildren && !row.project.isVersionRow) return;
 								if (window.getSelection()?.toString()) return;
 								onOpenLogs(row.project);
 							},
-							className: `ops-pool-project-row${isNextDeadlineOverdue(row.project) ? " ops-pool-stale" : ""}`,
-							style: { cursor: "pointer" },
+							className: `ops-pool-project-row${row.project.isVersionRow ? " ops-pool-version-row" : ""}${row.project.hasVersionChildren ? " ops-pool-parent-row" : ""}${isNextDeadlineOverdue(row.project) ? " ops-pool-stale" : ""}`,
+							style: { cursor: row.project.hasVersionChildren && !row.project.isVersionRow ? "default" : "pointer" },
 						};
 					}}
 				/>

@@ -76,6 +76,9 @@ async function initializeSchema() {
       source_project_name VARCHAR(160),
       project_name VARCHAR(160),
       project_id VARCHAR(64) NOT NULL,
+      project_version_id VARCHAR(64),
+      project_version_code VARCHAR(40),
+      project_version_name VARCHAR(160),
       requester_id VARCHAR(64) NOT NULL,
       owner_id VARCHAR(64) NOT NULL,
       discipline VARCHAR(80) NOT NULL,
@@ -409,6 +412,9 @@ async function migrateSchema() {
   // 快照列:建单时把 soyoo 返回的字段都存进工单,显示只读本地,不再 join people/projects
   await ensureColumn("tickets", "client_id", "VARCHAR(64) NOT NULL DEFAULT ''");
   await ensureColumn("tickets", "client_name", "VARCHAR(160)");
+  await ensureColumn("tickets", "project_version_id", "VARCHAR(64)");
+  await ensureColumn("tickets", "project_version_code", "VARCHAR(40)");
+  await ensureColumn("tickets", "project_version_name", "VARCHAR(160)");
   await ensureColumn("tickets", "project_status", "VARCHAR(80)");
   await ensureColumn("tickets", "owner_name", "VARCHAR(120)");
   await ensureColumn("tickets", "owner_avatar", "VARCHAR(1024)");

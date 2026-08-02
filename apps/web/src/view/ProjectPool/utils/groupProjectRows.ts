@@ -42,16 +42,65 @@ const isNewHireDate = (hireDate?: string) => {
   return days >= 0 && days < NEW_HIRE_DAYS;
 };
 
-const groupStats = (rows: ProjectPoolOwnerRow[]): ProjectPoolGroup["stats"] => ({
-  projectCount: rows.length,
-  deadlineOverdue: rows.filter(isNextDeadlineOverdue).length,
-  ticketOverdue: rows.reduce((sum, row) => sum + (row.overdue || 0), 0),
-  ticketTotal: rows.reduce((sum, row) => sum + (row.ticketTotal || 0), 0),
-});
+const groupStatRows = (rows: ProjectPoolOwnerRow[]) => rows.flatMap((row) => (Array.isArray(row.children) && row.children.length ? row.children : [row]));
+
+const groupStats = (rows: ProjectPoolOwnerRow[]): ProjectPoolGroup["stats"] => {
+  const statRows = groupStatRows(rows);
+  return {
+    projectCount: statRows.length,
+    deadlineOverdue: statRows.filter(isNextDeadlineOverdue).length,
+    ticketOverdue: statRows.reduce((sum, row) => sum + (row.overdue || 0), 0),
+    ticketTotal: statRows.reduce((sum, row) => sum + (row.ticketTotal || 0), 0),
+  };
+};
 
 const bySizeDesc = (a: ProjectPoolGroup, b: ProjectPoolGroup) => b.rows.length - a.rows.length || a.title.localeCompare(b.title, "zh-CN");
 const stageOrder = new Map(PROJECT_STAGES.map((stage, index) => [stage, index]));
 const statusOrder = new Map(PROJECT_STATUSES.map((status, index) => [status, index]));
+
+export const flattenProjectPoolRows = (rows: OpsProjectPoolRow[]): OpsProjectPoolRow[] => rows.flatMap((row) => (Array.isArray(row.children) && row.children.length ? row.children : [row]));
+
+function parentRowFromChild(child: OpsProjectPoolRow, sourceRows: OpsProjectPoolRow[]): ProjectPoolOwnerRow {
+  const parentId = String(child.parentId || child.projectId || "");
+  const sourceParent = sourceRows.find((row) => String(row.id) === parentId || String(row.projectId) === parentId);
+  if (sourceParent) return { ...sourceParent, children: [] };
+  return {
+    ...child,
+    id: parentId || child.id,
+    versionId: "",
+    versionCode: "",
+    versionName: "",
+    parentId: "",
+    isVersionRow: false,
+    hasVersionChildren: true,
+    children: [],
+  };
+}
+
+function rowsWithVersionParents(rows: ProjectPoolOwnerRow[], sourceRows: OpsProjectPoolRow[]): ProjectPoolOwnerRow[] {
+  const out: ProjectPoolOwnerRow[] = [];
+  const parentById = new Map<string, ProjectPoolOwnerRow>();
+  for (const row of rows) {
+    if (!row.isVersionRow) {
+      out.push(row);
+      continue;
+    }
+    const parentId = String(row.parentId || row.projectId || "");
+    if (!parentId) {
+      out.push(row);
+      continue;
+    }
+    let parent = parentById.get(parentId);
+    if (!parent) {
+      parent = parentRowFromChild(row, sourceRows);
+      parent.children = [];
+      parentById.set(parentId, parent);
+      out.push(parent);
+    }
+    parent.children = [...(parent.children || []), row];
+  }
+  return out;
+}
 
 // 按策划分组
 export const groupProjectsByPlanner = (rows: OpsProjectPoolRow[]): ProjectPoolGroup[] => {
@@ -83,8 +132,9 @@ export const groupProjectsByPlanner = (rows: OpsProjectPoolRow[]): ProjectPoolGr
 
 // 按环节分组
 export const groupProjectsBySegment = (rows: OpsProjectPoolRow[]): ProjectPoolGroup[] => {
+  const sourceRows = flattenProjectPoolRows(rows);
   const groups = new Map<string, { title: string; segmentId: number; rows: OpsProjectPoolRow[]; ticketTotal: number }>();
-  for (const row of rows) {
+  for (const row of sourceRows) {
     if (!row.segments.length) {
       const group = groups.get("__no_segment") || { title: "暂无环节", segmentId: 0, rows: [], ticketTotal: 0 };
       group.rows.push(row);
@@ -105,7 +155,7 @@ export const groupProjectsBySegment = (rows: OpsProjectPoolRow[]): ProjectPoolGr
       key: `segment-${key}`,
       title: group.title,
       segmentIds: group.segmentId ? [group.segmentId] : undefined,
-      rows: group.rows,
+      rows: rowsWithVersionParents(group.rows, rows),
       stats: { ...groupStats(group.rows), ticketTotal: group.ticketTotal || groupStats(group.rows).ticketTotal },
     }))
     .sort(bySizeDesc);
@@ -113,8 +163,9 @@ export const groupProjectsBySegment = (rows: OpsProjectPoolRow[]): ProjectPoolGr
 
 // 按阶段分组
 export const groupProjectsByStage = (rows: OpsProjectPoolRow[]): ProjectPoolGroup[] => {
+  const sourceRows = flattenProjectPoolRows(rows);
   const groups = new Map<string, { title: string; rawStage: string; rows: OpsProjectPoolRow[] }>();
-  for (const row of rows) {
+  for (const row of sourceRows) {
     const rawStage = row.stage?.trim() || "未设置阶段";
     const key = rawStage || "__no_stage";
     const group = groups.get(key) || { title: rawStage === "未设置阶段" ? rawStage : stageRangeLabel(rawStage), rawStage, rows: [] };
@@ -123,7 +174,7 @@ export const groupProjectsByStage = (rows: OpsProjectPoolRow[]): ProjectPoolGrou
   }
 
   return [...groups.entries()]
-    .map(([key, group]) => ({ key: `stage-${key}`, title: group.title, rows: group.rows, stats: groupStats(group.rows), rawStage: group.rawStage }))
+    .map(([key, group]) => ({ key: `stage-${key}`, title: group.title, rows: rowsWithVersionParents(group.rows, rows), stats: groupStats(group.rows), rawStage: group.rawStage }))
     .sort((a, b) => {
       const aOrder = stageOrder.get(a.rawStage) ?? 999;
       const bOrder = stageOrder.get(b.rawStage) ?? 999;
@@ -133,8 +184,9 @@ export const groupProjectsByStage = (rows: OpsProjectPoolRow[]): ProjectPoolGrou
 
 // 按状态分组
 export const groupProjectsByStatus = (rows: OpsProjectPoolRow[]): ProjectPoolGroup[] => {
+  const sourceRows = flattenProjectPoolRows(rows);
   const groups = new Map<string, { title: string; rows: OpsProjectPoolRow[] }>();
-  for (const row of rows) {
+  for (const row of sourceRows) {
     const title = row.status?.trim() || "未设置状态";
     const key = title || "__no_status";
     const group = groups.get(key) || { title, rows: [] };
@@ -143,7 +195,7 @@ export const groupProjectsByStatus = (rows: OpsProjectPoolRow[]): ProjectPoolGro
   }
 
   return [...groups.entries()]
-    .map(([key, group]) => ({ key: `status-${key}`, title: group.title, rows: group.rows, stats: groupStats(group.rows) }))
+    .map(([key, group]) => ({ key: `status-${key}`, title: group.title, rows: rowsWithVersionParents(group.rows, rows), stats: groupStats(group.rows) }))
     .sort((a, b) => {
       const aOrder = statusOrder.get(a.title) ?? 999;
       const bOrder = statusOrder.get(b.title) ?? 999;
@@ -152,7 +204,7 @@ export const groupProjectsByStatus = (rows: OpsProjectPoolRow[]): ProjectPoolGro
 };
 
 // 按负责人分组
-export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): ProjectPoolGroup[] => {
+export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[], sourceRows: OpsProjectPoolRow[] = []): ProjectPoolGroup[] => {
   const groups = new Map<
     string,
     {
@@ -165,8 +217,8 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
   >();
 
   for (const member of members) {
-    const title = member.name?.trim() || "未指定负责人";
-    const key = title || "__no_owner";
+    const title = member.name?.trim() || member.wechatName?.trim() || member.username?.trim() || member.id?.trim() || "未指定负责人";
+    const key = member.username?.trim() || member.id?.trim() || title || "__no_owner";
     const group = groups.get(key) || { title, avatar: member.avatar || undefined, hireDate: member.hireDate || undefined, disabled: member.status === "disabled", rows: new Map() };
     if (!group.avatar && member.avatar) group.avatar = member.avatar;
     if (!group.hireDate && member.hireDate) group.hireDate = member.hireDate;
@@ -184,6 +236,7 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
         const { ownerTagNames: _ownerTagNames, ...projectRow } = row;
         return projectRow;
       });
+      const displayRows = rowsWithVersionParents(rows, sourceRows.length ? sourceRows : rows);
       return {
         key: `owner-${key}`,
         title: group.title,
@@ -192,8 +245,8 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[]): Project
         isNewHire: isNewHireDate(group.hireDate),
         disabled: group.disabled,
         ownerName: group.title,
-        rows,
-        stats: groupStats(rows),
+        rows: displayRows,
+        stats: groupStats(displayRows),
       };
     })
     .sort(bySizeDesc);

@@ -5,6 +5,7 @@ import { logger } from "../core/logger.mjs";
 
 const BASE = String(process.env.COMPANYPLAN_SOYOO_BASE_URL || opsIntegration?.baseUrl || "").replace(/\/+$/, "");
 const TIMEOUT = Number(opsIntegration?.timeoutMs ?? 12000);
+const PROJECT_LIST_TIMEOUT = Number(process.env.COMPANYPLAN_OPS_PROJECT_LIST_TIMEOUT_MS ?? "60000");
 const CACHE_MS = Number(process.env.COMPANYPLAN_SOYOO_CACHE_MS ?? "30000");
 
 // ops 历史 id 形如 ops-user-123 / ops-project-123;调 soyoo 一律用纯 id
@@ -12,9 +13,35 @@ export function soyooId(id) {
   return String(id ?? "").replace(/^ops-(user|project|tenant|tag)-/, "");
 }
 
+export function parseSoyooProjectRef(id) {
+  const raw = soyooId(id);
+  const [projectId, versionPart] = String(raw).split("::version-");
+  return { projectId, versionId: versionPart || "" };
+}
+
+export function soyooProjectId(id) {
+  return parseSoyooProjectRef(id).projectId;
+}
+
+export function soyooVersionId(id) {
+  return parseSoyooProjectRef(id).versionId;
+}
+
+function withVersionBody(projectId, body = {}) {
+  const versionId = soyooVersionId(projectId);
+  return versionId ? { ...body, version_id: Number(versionId) } : body;
+}
+
+function projectMembersPath(projectId) {
+  const { projectId: pid, versionId } = parseSoyooProjectRef(projectId);
+  const path = `/integration/projects/${encodeURIComponent(pid)}/members`;
+  return versionId ? `${path}?version_id=${encodeURIComponent(versionId)}` : path;
+}
+
 async function callRaw(path, opts = {}) {
+  const timeoutMs = Number(opts.timeoutMs ?? TIMEOUT);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const init = { headers: { Accept: "application/json" }, signal: controller.signal };
     if (opts.method) init.method = opts.method;
@@ -33,7 +60,7 @@ async function callRaw(path, opts = {}) {
     return await res.json().catch(() => ({}));
   } catch (e) {
     // 集中记录所有 soyoo 调用失败的真实原因(超时/网络/非2xx);下游 catch 会吞成"无法连接 soyoo",这里先打日志
-    logger.error(e, { scope: "soyoo", path, timeoutMs: TIMEOUT, timeout: e?.name === "AbortError" });
+    logger.error(e, { scope: "soyoo", path, timeoutMs, timeout: e?.name === "AbortError" });
     throw e;
   } finally {
     clearTimeout(timer);
@@ -48,7 +75,7 @@ async function callAllPages(path) {
   const all = [];
   for (let page = 1; page <= 100; page++) {
     const sep = path.includes("?") ? "&" : "?";
-    const body = await callRaw(`${path}${sep}page=${page}&limit=100`);
+    const body = await callRaw(`${path}${sep}page=${page}&limit=100`, { timeoutMs: path.startsWith("/integration/projects") ? PROJECT_LIST_TIMEOUT : undefined });
     const data = Array.isArray(body?.data) ? body.data : [];
     all.push(...data);
     const total = Number(body?.total ?? all.length);
@@ -59,6 +86,7 @@ async function callAllPages(path) {
 
 // 客户/标签这类小而稳的列表做短缓存,减少重复请求
 const cache = new Map();
+const ACTIVE_PROJECT_EXCLUDE = "已完成,回收中,已回收,客户暂停";
 async function cached(key, fn) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.t < CACHE_MS) return hit.v;
@@ -70,9 +98,9 @@ async function cached(key, fn) {
 export const soyooClient = {
   myProjects: (userId) => call(`/integration/users/${encodeURIComponent(soyooId(userId))}/projects`),
   users: () => callAllPages(`/ops/users`),
-  allProjects: () => cached("ops-all-projects", () => callAllPages(`/integration/projects?exclude=${encodeURIComponent("回收中")}`)), // 管理员建单:全部非回收项目(短缓存)
-  projectMembers: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/members`),
-  project: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooId(projectId))}`),
+  allProjects: () => cached("ops-all-projects", () => callAllPages(`/integration/projects?exclude=${encodeURIComponent(ACTIVE_PROJECT_EXCLUDE)}`)), // 管理员建单:只取项目级进行中项目(短缓存)
+  projectMembers: (projectId) => call(projectMembersPath(projectId)),
+  project: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}`),
   user: (userId) => call(`/integration/users/${encodeURIComponent(soyooId(userId))}`),
   tenants: (opts = {}) => {
     // 前端传 keyword/page → 服务端搜索/分页(转发给 soyoo);不传 → 取全(下拉用,带缓存)
@@ -91,14 +119,14 @@ export const soyooClient = {
     if (opts.keyword) q.set("keyword", String(opts.keyword));
     if (opts.status) q.set("status", String(opts.status));
     if (opts.planner) q.set("planner", String(opts.planner));
-    if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的状态(逗号分隔),如 回收中,未启动
+    if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的项目级状态(逗号分隔),如 回收中,客户暂停
     if (Array.isArray(opts.excludeTenants) && opts.excludeTenants.length) q.set("exclude_tenants", opts.excludeTenants.join(",")); // 排除的客户名(逗号分隔)
     if (opts.memberUserId) q.set("member_user_id", String(opts.memberUserId));
     if (Array.isArray(opts.projectIds) && opts.projectIds.length) q.set("ids", opts.projectIds.join(","));
-    return callRaw(`/integration/projects?${q.toString()}`);
+    return callRaw(`/integration/projects?${q.toString()}`, { timeoutMs: PROJECT_LIST_TIMEOUT });
   },
-  setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/status`, { method: "POST", body: { status } }),
-  setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/stage-deadlines`, { method: "POST", body }),
-  setProjectMeta: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooId(projectId))}/meta`, { method: "POST", body }),
+  setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/status`, { method: "POST", body: withVersionBody(projectId, { status }) }),
+  setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/stage-deadlines`, { method: "POST", body: withVersionBody(projectId, body) }),
+  setProjectMeta: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/meta`, { method: "POST", body: withVersionBody(projectId, body) }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
 };

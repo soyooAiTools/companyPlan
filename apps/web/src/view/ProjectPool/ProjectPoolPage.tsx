@@ -5,7 +5,7 @@ import "dayjs/locale/zh-cn";
 import { App, Button, Input, Radio, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsProjectPoolMember, type OpsProjectPoolRow } from "@/api/modules/ops";
+import { opsApi, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
 import MembersModal from "./components/dialogs/MembersModal";
@@ -24,7 +24,7 @@ import GroupedProjectSheet from "./sheets/GroupedProjectSheet";
 import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
 import type { ProjectPoolSheetKey } from "./sheets/sheetTypes";
-import { groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember } from "./utils/groupProjectRows";
+import { flattenProjectPoolRows, groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember } from "./utils/groupProjectRows";
 import { filterProjectPoolRows } from "./utils/filterProjectPoolRows";
 
 dayjs.locale("zh-cn");
@@ -74,12 +74,60 @@ function buildOwnerMembersFromProjectMembers(rows: OpsProjectPoolRow[], tagNames
 			if (!matchedTags.length) continue;
 			members.push({
 				...member,
+				name: member.name || member.wechatName || member.username || member.id,
 				project: row,
 				matchedTags,
 			});
 		}
 	}
 	return members;
+}
+
+function memberIdentityKeys(member: Pick<OpsProjectPoolMember, "id" | "username" | "name" | "wechatName">) {
+	return [member.username, member.id, member.name, member.wechatName].map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function memberDisplayName(member: Pick<OpsProjectPoolMember, "id" | "username" | "name" | "wechatName">) {
+	return member.name || member.wechatName || member.username || member.id;
+}
+
+function buildMemberMetaMap(rows: OpsProjectPoolRow[]) {
+	const map = new Map<string, OpsProjectPoolMember>();
+	for (const row of rows) {
+		for (const member of row.members || []) {
+			for (const key of memberIdentityKeys(member)) {
+				if (!map.has(key)) map.set(key, member);
+			}
+		}
+	}
+	return map;
+}
+
+function ownerMemberMetaKey(projectId: string, key: string) {
+	return `${projectId}::${key}`;
+}
+
+function buildOwnerMemberMetaMap(members: RemoteProjectPoolOwnerMember[]) {
+	const map = new Map<string, OpsProjectPoolMember>();
+	for (const member of members) {
+		const projectId = String(member.projectId || "");
+		if (!projectId) continue;
+		for (const key of memberIdentityKeys(member)) {
+			const normalizedKey = key.trim();
+			if (normalizedKey && !map.has(ownerMemberMetaKey(projectId, normalizedKey))) {
+				map.set(ownerMemberMetaKey(projectId, normalizedKey), member);
+			}
+		}
+	}
+	return map;
+}
+
+function findOwnerMemberMeta(map: Map<string, OpsProjectPoolMember>, projectId: string, member: OpsProjectPoolMember) {
+	for (const key of memberIdentityKeys(member)) {
+		const meta = map.get(ownerMemberMetaKey(projectId, key));
+		if (meta) return meta;
+	}
+	return null;
 }
 
 type ProjectPoolPageProps = {
@@ -170,11 +218,11 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		if (nextRole === ownerRoleKey) return;
 		setOwnerRoleKey(nextRole);
 		setStatusFilter([]);
-			setStageFilter([]);
-			setPlannerFilter([]);
-			setSegmentFilter([]);
-			setAdvancedFilter({ match: "any", rules: [] });
-			setOwnerSearch("");
+		setStageFilter([]);
+		setPlannerFilter([]);
+		setSegmentFilter([]);
+		setAdvancedFilter({ match: "any", rules: [] });
+		setOwnerSearch("");
 		setOwnerOnlyNew(false);
 		setOwnerCollapsed(false);
 		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
@@ -242,22 +290,47 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setOwnerGroups([]);
 			try {
 				const role = OWNER_ROLE_OPTIONS.find((option) => option.key === ownerRoleKey) || OWNER_ROLE_OPTIONS[0];
-				const activeRows = filteredGroupRows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
+				const activeRows = flattenProjectPoolRows(filteredGroupRows);
 				if (role.source === "project_planners") {
-					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(activeRows)));
+					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(filteredGroupRows), filteredGroupRows));
 					return;
 				}
 				const localMembers = buildOwnerMembersFromProjectMembers(activeRows, role.tags);
-				const members: ProjectPoolOwnerMember[] = [...localMembers];
-				if (!members.length) {
-					const rowById = new Map(activeRows.map((row) => [row.id, row]));
-					const result = await opsApi.projectPoolOwnerMembers({ projectIds: activeRows.map((row) => row.id), tagNames: [...role.tags] });
-					for (const member of result.members) {
-						const project = rowById.get(member.projectId);
-						if (project) members.push({ ...member, project, matchedTags: member.tags });
-					}
+				const rowById = new Map(activeRows.map((row) => [row.id, row]));
+				const snapshotMemberMeta = buildMemberMetaMap(activeRows);
+				const result = await opsApi.projectPoolOwnerMembers({ projectIds: activeRows.map((row) => row.id), tagNames: [...role.tags] });
+				const ownerMemberMeta = buildOwnerMemberMetaMap(result.members);
+				const members: ProjectPoolOwnerMember[] = localMembers.map((member) => {
+					const meta = findOwnerMemberMeta(ownerMemberMeta, member.project.id, member) || memberIdentityKeys(member).map((key) => snapshotMemberMeta.get(key)).find(Boolean) || null;
+					return {
+						...member,
+						name: meta ? memberDisplayName(meta) : memberDisplayName(member),
+						avatar: meta?.avatar || member.avatar,
+						wechatName: meta?.wechatName || member.wechatName,
+						hireDate: meta?.hireDate || member.hireDate,
+						status: meta?.status || member.status,
+					};
+				});
+				const seen = new Set(members.map((member) => `${member.project.id}:${member.id || member.username || member.name}`));
+				for (const member of result.members) {
+					const project = rowById.get(member.projectId);
+					const meta = memberIdentityKeys(member).map((key) => snapshotMemberMeta.get(key)).find(Boolean);
+					if (!project) continue;
+					const dedupeKey = `${project.id}:${member.id || member.username || member.name}`;
+					if (seen.has(dedupeKey)) continue;
+					seen.add(dedupeKey);
+					members.push({
+						...member,
+						name: meta ? memberDisplayName(meta) : memberDisplayName(member),
+						avatar: meta?.avatar || member.avatar,
+						wechatName: meta?.wechatName || member.wechatName,
+						hireDate: meta?.hireDate || member.hireDate,
+						status: meta?.status || member.status,
+						project,
+						matchedTags: member.tags,
+					});
 				}
-				if (!cancelled) setOwnerGroups(groupProjectsByOwner(members));
+				if (!cancelled) setOwnerGroups(groupProjectsByOwner(members, filteredGroupRows));
 			} catch (e) {
 				if (!cancelled) {
 					message.error(e instanceof Error ? e.message : "加载负责人分组失败");
@@ -293,7 +366,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const projectParam = searchParams.get("project");
 	useEffect(() => {
 		if (!projectParam || !rows.length) return;
-		const row = rows.find((r) => r.id === projectParam);
+		const row = flattenProjectPoolRows(rows).find((r) => r.id === projectParam);
 		if (row) {
 			void dialogs.actions.openLogs(row);
 			searchParams.delete("project");
@@ -304,7 +377,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 
 	const plannerOptions = useMemo(() => {
 		const plannersByName = new Map<string, { name: string; avatar?: string }>();
-		const sourceRows = filterOptionRows.length ? filterOptionRows : [...rows, ...allRows];
+		const sourceRows = flattenProjectPoolRows(filterOptionRows.length ? filterOptionRows : [...rows, ...allRows]);
 		for (const row of sourceRows) {
 			const planners: { name: string; avatar?: string }[] = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim() })) : [];
 			for (const planner of planners) {

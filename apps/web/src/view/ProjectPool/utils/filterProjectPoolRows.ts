@@ -14,8 +14,6 @@ export type ProjectPoolLocalFilters = {
 	advancedFilter?: AdvancedFilterValue;
 };
 
-const textIncludes = (value: unknown, keyword: string) => String(value || "").toLowerCase().includes(keyword);
-
 // 项目池“分组 sheet”使用的本地筛选。
 // 全部项目/超时关注的分页筛选主要走后端接口；按策划/环节/阶段/状态/负责人等视角
 // 会先拿 allRows，再用这里在前端做二次过滤和分组，避免切 sheet 时重新请求。
@@ -26,6 +24,10 @@ function rowAdvancedFieldText(row: OpsProjectPoolRow, field: string) {
 		case "tenant":
 		case "tenantName":
 			return row.tenantName || "";
+		case "versionCode":
+			return row.versionCode || "";
+		case "versionName":
+			return row.versionName || "";
 		case "planner":
 		case "plannerName":
 			return row.planners?.length ? row.planners.map((planner) => planner.name).join(" ") : row.plannerName || "";
@@ -61,48 +63,60 @@ function matchAdvancedRule(row: OpsProjectPoolRow, rule: AdvancedFilterRule) {
 	return true;
 }
 
-// 对项目池 rows 应用本地筛选条件。
-// 注意：这里不会触发接口请求，只处理已经加载到前端的 rows。
-// 如果后续高级筛选要在本地支持“属于/不属于”，需要在 matchAdvancedRule 里补 in/not_in。
-export function filterProjectPoolRows(rows: OpsProjectPoolRow[], filters: ProjectPoolLocalFilters) {
-	let nextRows = rows;
+function rowChildren(row: OpsProjectPoolRow) {
+	return Array.isArray(row.children) ? row.children : [];
+}
+
+function rowSearchText(row: OpsProjectPoolRow) {
+	return [row.name, row.tenantName, row.plannerName, row.versionCode, row.versionName].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function matchProjectPoolRow(row: OpsProjectPoolRow, filters: ProjectPoolLocalFilters) {
 	const keyword = String(filters.q || "").trim().toLowerCase();
-	if (keyword) {
-		nextRows = nextRows.filter((row) => [row.name, row.tenantName, row.plannerName].some((value) => textIncludes(value, keyword)));
-	}
+	if (keyword && !rowSearchText(row).includes(keyword)) return false;
 
 	if (filters.status?.length) {
 		const statusSet = new Set(filters.status);
-		nextRows = nextRows.filter((row) => statusSet.has(row.status));
+		if (!statusSet.has(row.status)) return false;
 	}
 
 	if (filters.stage?.length) {
 		const stageSet = new Set(filters.stage);
-		nextRows = nextRows.filter((row) => stageSet.has(row.stage) || (stageSet.has(UNSET_STAGE_FILTER_VALUE) && !String(row.stage || "").trim()));
+		if (!(stageSet.has(row.stage) || (stageSet.has(UNSET_STAGE_FILTER_VALUE) && !String(row.stage || "").trim()))) return false;
 	}
 
 	if (filters.planner?.length) {
-		nextRows = nextRows.filter((row) => {
-			const names = row.planners?.length ? row.planners.map((planner) => planner.name) : String(row.plannerName || "").split(/[、,，/]/);
-			return filters.planner?.some((name) => names.some((candidate) => String(candidate || "").trim() === name || String(candidate || "").includes(name)));
-		});
+		const names = row.planners?.length ? row.planners.map((planner) => planner.name) : String(row.plannerName || "").split(/[、,，/]/);
+		if (!filters.planner.some((name) => names.some((candidate) => String(candidate || "").trim() === name || String(candidate || "").includes(name)))) return false;
 	}
 
 	if (filters.segment?.length) {
 		const segmentSet = new Set(filters.segment);
-		nextRows = nextRows.filter((row) => {
-			const segments = row.segments || [];
-			return segments.some((segment) => segmentSet.has(Number(segment.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0);
-		});
+		const segments = row.segments || [];
+		if (!(segments.some((segment) => segmentSet.has(Number(segment.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0))) return false;
 	}
 
 	const advanced = compactAdvancedFilter(filters.advancedFilter);
 	if (advanced.rules.length) {
-		nextRows = nextRows.filter((row) => {
-			const results = advanced.rules.map((rule) => matchAdvancedRule(row, rule));
-			return advanced.match === "all" ? results.every(Boolean) : results.some(Boolean);
-		});
+		const results = advanced.rules.map((rule) => matchAdvancedRule(row, rule));
+		if (!(advanced.match === "all" ? results.every(Boolean) : results.some(Boolean))) return false;
 	}
 
-	return nextRows;
+	return true;
+}
+
+// 对项目池 rows 应用本地筛选条件。
+// 注意：这里不会触发接口请求，只处理已经加载到前端的 rows。
+// 如果后续高级筛选要在本地支持“属于/不属于”，需要在 matchAdvancedRule 里补 in/not_in。
+export function filterProjectPoolRows(rows: OpsProjectPoolRow[], filters: ProjectPoolLocalFilters) {
+	return rows
+		.map((row) => {
+			const children = rowChildren(row);
+			const parentMatched = matchProjectPoolRow(row, filters);
+			if (!children.length) return parentMatched ? row : null;
+			const matchedChildren = children.filter((child) => matchProjectPoolRow(child, filters));
+			if (parentMatched) return { ...row, children: matchedChildren.length ? matchedChildren : children };
+			return matchedChildren.length ? { ...row, children: matchedChildren } : null;
+		})
+		.filter(Boolean) as OpsProjectPoolRow[];
 }

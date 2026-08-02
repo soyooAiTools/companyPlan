@@ -18,6 +18,13 @@ export interface OpsProject {
 	plannerName: string;
 	developerName: string;
 	status: string;
+	versions?: OpsProjectVersion[];
+}
+export interface OpsProjectVersion {
+	id: string;
+	code: string;
+	name: string;
+	isDefault?: boolean;
 }
 export interface OpsSegmentTag {
 	id: string;
@@ -50,6 +57,9 @@ export interface OpsTicket {
 	client: string;
 	projectName: string;
 	projectId: string;
+	projectVersionId?: string;
+	projectVersionCode?: string;
+	projectVersionName?: string;
 	projectStage?: string; // 项目当前阶段(部分接口返回)
 	tagName: string; // 环节名
 	needType: string;
@@ -89,6 +99,9 @@ export interface OpsTicketEvent {
 }
 export interface CreateTicketBody {
 	projectId: string;
+	projectVersionId?: string;
+	projectVersionCode?: string;
+	projectVersionName?: string;
 	segmentId: number;
 	ownerId: string;
 	title: string;
@@ -120,6 +133,16 @@ export interface OpsMe {
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
+	projectId?: string;
+	versionId?: string;
+	versionCode?: string;
+	versionName?: string;
+	parentId?: string;
+	isVersionRow?: boolean;
+	hasVersionChildren?: boolean;
+	projectLifecycleStatus?: string;
+	sortOrder?: number;
+	children?: OpsProjectPoolRow[];
 	name: string;
 	tenantId?: string; // 客户 id,项目池直接提单时用于预填客户
 	tenantName: string; // 客户名(= soyoo tenant_name)
@@ -288,6 +311,10 @@ export interface OpsPeopleProgressRow {
 }
 export interface OpsPeopleProgressProject {
 	id: string;
+	projectId?: string;
+	versionId?: string;
+	versionCode?: string;
+	versionName?: string;
 	name: string;
 	tenantName: string;
 	plannerName: string;
@@ -514,7 +541,8 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ remark }),
 		}),
-	projectStatusLogs: (projectId: string) => requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs`),
+	projectStatusLogs: (projectId: string, options: { includeParent?: boolean } = {}) =>
+		requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs${options.includeParent ? "?include_parent=1" : ""}`),
 	projectStatusSettings: () => requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings"),
 	saveProjectStatusSettings: (settings: OpsProjectStatusSetting[]) =>
 		requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings", { method: "PUT", body: JSON.stringify({ settings }) }),

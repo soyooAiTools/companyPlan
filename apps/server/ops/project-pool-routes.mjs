@@ -123,6 +123,16 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 手动刷新单个项目快照(管理员):用于测试/修复单个项目状态变化,避免全量重建。
+  app.post("/api/ops/project-pool/:id/refresh-snapshot", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const row = await pool.refreshProjectPoolSnapshot(req.params.id);
+      res.json({ ok: true, refreshed: !!row });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // helper-server 推荐成员弹框按项目 ID 查询阶段；直接读落库快照，不依赖 Redis 缓存。
   app.post("/api/ops/project-pool/stages", async (req, res) => {
     try {
@@ -210,7 +220,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
 
   // 项目状态/阶段流转记录(同一时间线)
   app.get("/api/ops/project-pool/:id/status-logs", requireAuth, requirePlanner, async (req, res) => {
-    res.json({ logs: await pool.getStatusLogs(req.params.id) });
+    res.json({ logs: await pool.getStatusLogs(req.params.id, { includeParentLegacy: req.query.include_parent === "1" }) });
   });
 
   // 某环节下的未完成工单(目前环节点击查看,纯本地工单表)

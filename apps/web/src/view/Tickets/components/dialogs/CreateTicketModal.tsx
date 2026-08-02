@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Avatar, Button, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Spin, Tooltip } from "antd";
 import { CopyOutlined, DeleteOutlined, ExclamationCircleFilled, PlusOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
-import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant } from "../../../../api/modules/ops";
+import type { OpsProject, OpsProjectVersion, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant } from "../../../../api/modules/ops";
 import RichTextEditor from "../../../Ops/RichTextEditor";
 import { PRIORITIES } from "../../constants";
 
@@ -33,9 +33,13 @@ type CreateTicketModalProps = {
 	segments: OpsResponsibleSegment[];
 	members: OpsResponsibleMember[];
 	selectedProjectId?: string;
+	selectedVersionId?: string;
+	selectedProjectVersions?: OpsProjectVersion[];
+	showProjectVersionSelect?: boolean;
 	invalidTaskIndex?: number | null;
 	onTenantChange: (tenantId?: string) => void;
 	onProjectChange: (projectId?: string) => void;
+	onVersionChange?: (versionId?: string) => void;
 	onSubmit: () => void;
 	onCancel: () => void;
 };
@@ -50,9 +54,13 @@ export default function CreateTicketModal({
 	segments,
 	members,
 	selectedProjectId,
+	selectedVersionId,
+	selectedProjectVersions = [],
+	showProjectVersionSelect = true,
 	invalidTaskIndex,
 	onTenantChange,
 	onProjectChange,
+	onVersionChange,
 	onSubmit,
 	onCancel,
 }: CreateTicketModalProps) {
@@ -60,6 +68,7 @@ export default function CreateTicketModal({
 	const [activeIndex, setActiveIndex] = useState(0);
 	const segNameById = new Map(segments.map((s) => [s.id, s.name]));
 	const memberById = new Map(members.map((m) => [m.id, m]));
+	const projectVersions = showProjectVersionSelect ? selectedProjectVersions.length ? selectedProjectVersions : projects.find((project) => String(project.id) === String(selectedProjectId))?.versions || [] : [];
 	useEffect(() => {
 		if (!open) return;
 		setActiveIndex(0);
@@ -106,6 +115,25 @@ export default function CreateTicketModal({
 		);
 		setActiveIndex(nextIndex);
 	};
+	const handleVersionChange = (versionId?: string) => {
+		if (String(versionId || "") === String(selectedVersionId || "")) return;
+		if (!tickets.some(hasTaskDraft)) {
+			onVersionChange?.(versionId);
+			return;
+		}
+		form.setFieldValue("projectVersionId", selectedVersionId);
+		Modal.confirm({
+			title: "确认切换版本？",
+			content: "切换版本会清空下面已填写的工单信息，确定继续吗？",
+			okText: "确定切换",
+			cancelText: "取消",
+			onOk: () => {
+				form.setFieldValue("projectVersionId", versionId);
+				setActiveIndex(0);
+				onVersionChange?.(versionId);
+			},
+		});
+	};
 
 	return (
 		<Modal
@@ -123,12 +151,12 @@ export default function CreateTicketModal({
 			<Form form={form} layout="vertical" preserve initialValues={{ priority: "普通", tickets: [{}] }}>
 				<style>{`.ops-create-ticket-title-item .ant-form-item-label > label { width: 100%; } .ops-create-ticket-title-item .ant-form-item-label > label::after { display: none; }`}</style>
 				<Row gutter={16}>
-					<Col span={8}>
+					<Col span={6}>
 						<Form.Item name="tenantId" label="客户" rules={[{ required: true, message: "请选择客户" }]}>
 							<Select allowClear showSearch optionFilterProp="label" placeholder="选择客户" options={tenants.map((t) => ({ value: t.id, label: t.name }))} onChange={onTenantChange} />
 						</Form.Item>
 					</Col>
-					<Col span={8}>
+					<Col span={projectVersions.length ? 8 : 10}>
 						<Form.Item name="projectId" label="项目名称" rules={[{ required: true, message: "请选择项目" }]}>
 							<Select
 								allowClear
@@ -142,7 +170,21 @@ export default function CreateTicketModal({
 							/>
 						</Form.Item>
 					</Col>
-					<Col span={8}>
+					{projectVersions.length ? (
+						<Col span={6}>
+							<Form.Item name="projectVersionId" label={<span style={{ color: "#dc2626" }}>版本（多版本请选择）</span>}>
+								<Select
+									value={selectedVersionId}
+									options={projectVersions.map((version) => ({
+										value: version.id,
+										label: `${version.code || "版本"}：${version.name || "未命名"}${version.isDefault ? "（默认）" : ""}`,
+									}))}
+									onChange={handleVersionChange}
+								/>
+							</Form.Item>
+						</Col>
+					) : null}
+					<Col span={projectVersions.length ? 4 : 8}>
 						<Form.Item name="priority" label="优先级">
 							<Select allowClear options={PRIORITIES.map((p) => ({ value: p, label: p }))} />
 						</Form.Item>

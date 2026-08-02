@@ -11,6 +11,10 @@ export async function loadProjectExtMap(projectIds) {
   return out;
 }
 
+export function versionRowId(projectId, versionId) {
+  return `${String(projectId)}::version-${String(versionId)}`;
+}
+
 function ensureTicketAgg(map, pid) {
   return (map[pid] ||= { groups: {}, total: 0, atRisk: 0, overdue: 0, segCounts: {} });
 }
@@ -74,50 +78,104 @@ export function normalizeProjectForPoolRow(project, members = []) {
     members: Array.isArray(members)
       ? members
           .map((m) => ({
-            id: String(m.id ?? ""),
+            id: String(m.id ?? m.user_id ?? ""),
             username: m.username ?? "",
-            name: m.name ?? m.username ?? "",
-            avatar: m.avatar ?? "",
-            wechatName: m.wechatName ?? "",
-            hireDate: m.hireDate ?? "",
-            status: m.status ?? "",
-            tags: (m.tags || []).map((t) => t.name ?? "").filter(Boolean),
+            name: m.nickname || m.name || m.wechat_name || m.username || "",
+            avatar: m.avatar ?? m.wechat_avatar_url ?? m.wechat_avatar ?? "",
+            wechatName: m.wechatName ?? m.wechat_name ?? "",
+            hireDate: m.hireDate ?? m.hire_date ?? "",
+            status: m.status ?? m.user_status ?? "",
+            tags: (m.tags || []).map((t) => (typeof t === "string" ? t : t?.name ?? "")).filter(Boolean),
           }))
       : [],
   };
 }
 
-export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, extMap) {
-  const agg = ticketAgg[String(project.id)] || {};
-  const ext = extMap?.[String(project.id)] || {};
+function projectVersions(project) {
+  return Array.isArray(project?.versions)
+    ? project.versions
+        .filter((version) => version?.id)
+        .sort((a, b) => Number(a.sort_order ?? a.sortOrder ?? 0) - Number(b.sort_order ?? b.sortOrder ?? 0) || String(a.code || "").localeCompare(String(b.code || "")))
+    : [];
+}
+
+function isDefaultVersion(version) {
+  return !!version?.is_default || String(version?.code || "").toLowerCase() === "v1";
+}
+
+function defaultVersion(project) {
+  const versions = projectVersions(project);
+  return versions.find(isDefaultVersion) || versions[0] || null;
+}
+
+function versionValue(version, project, key, fallbackKey = key) {
+  const camelKey = key.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase());
+  const fallbackCamelKey = fallbackKey.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase());
+  const value = version?.[key] ?? version?.[camelKey];
+  return value === undefined || value === null || value === "" ? (project?.[fallbackKey] ?? project?.[fallbackCamelKey]) : value;
+}
+
+function normalizeStageDeadlinesValue(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function defaultStageFromDeadlines(items) {
+  const first = Array.isArray(items) ? items.find((item) => item?.key || item?.name) : null;
+  return first?.name || first?.key || "";
+}
+
+export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, extMap, options = {}) {
+  const rowId = String(options.rowId || project.id);
+  const version = options.version || (!options.hasVersionChildren ? null : defaultVersion(project));
+  const agg = ticketAgg[rowId] || {};
+  const ext = extMap?.[rowId] || {};
+  const status = version ? versionValue(version, project, "status") : project.status;
+  const stageDeadlines = normalizeStageDeadlinesValue(version ? versionValue(version, project, "stage_deadlines", "stage_deadlines") : (project.stage_deadlines ?? project.stageDeadlines));
+  const memberCount = version ? Number(version.member_count ?? project.member_count ?? 0) : project.member_count ?? 0;
   const now = nowIso();
-  const setting = statusSettings?.[project.status];
-  const stuckHours = project.status_changed_at ? Math.round(businessHoursBetween(project.status_changed_at, now)) : null;
+  const setting = statusSettings?.[status];
+  const statusChangedAt = version ? versionValue(version, project, "status_changed_at") : project.status_changed_at;
+  const stuckHours = statusChangedAt ? Math.round(businessHoursBetween(statusChangedAt, now)) : null;
   const staleHours = setting?.enabled ? setting.staleHours : 0;
   const isStale = !!(setting?.enabled && setting.staleHours > 0 && stuckHours != null && stuckHours > setting.staleHours);
   return {
-    id: String(project.id),
+    id: rowId,
+    projectId: String(project.id),
+    versionId: version?.id ? String(version.id) : "",
+    versionCode: version?.code || "",
+    versionName: version?.name || "",
+    parentId: options.parentId ? String(options.parentId) : "",
+    isVersionRow: !!options.isVersionRow,
+    hasVersionChildren: !!options.hasVersionChildren,
+    projectLifecycleStatus: project.project_lifecycle_status || project.lifecycle_status || "",
     name: project.name ?? "",
     tenantId: project.tenant_id ?? "",
     tenantName: project.tenant_name ?? "",
-    customerContact: project.customer_contact ?? "",
-    requirementDoc: project.requirement_doc ?? "",
-    status: project.status ?? "",
+    customerContact: (version ? versionValue(version, project, "customer_contact") : project.customer_contact) ?? "",
+    requirementDoc: (version ? versionValue(version, project, "requirement_doc") : project.requirement_doc) ?? "",
+    status: status ?? "",
     plannerName: project.planner_name ?? "",
     planners: normalizePlanners(project),
-    stage: ext.stage || "",
-    stageDeadlines: Array.isArray(project.stage_deadlines) ? project.stage_deadlines : [],
+    stage: ext.stage || defaultStageFromDeadlines(stageDeadlines),
+    stageDeadlines,
     stageChangedAt: ext.stageChangedAt ?? null,
-    startedAt: project.started_at ?? null,
+    startedAt: (version ? versionValue(version, project, "started_at") : project.started_at) ?? null,
     remark: ext.remark || "",
-    statusChangedAt: project.status_changed_at ?? null,
-    memberCount: project.member_count ?? 0,
+    statusChangedAt: statusChangedAt ?? null,
+    memberCount,
     members: Array.isArray(project.members) ? project.members : [],
-    segments: orderSegments(agg.segCounts || {}, segMap),
-    ticketGroups: agg.groups || {},
-    ticketTotal: agg.total || 0,
-    atRisk: agg.atRisk || 0,
-    overdue: agg.overdue || 0,
+    segments: options.isVersionRow ? [] : orderSegments(agg.segCounts || {}, segMap),
+    ticketGroups: options.isVersionRow ? {} : agg.groups || {},
+    ticketTotal: options.isVersionRow ? 0 : agg.total || 0,
+    atRisk: options.isVersionRow ? 0 : agg.atRisk || 0,
+    overdue: options.isVersionRow ? 0 : agg.overdue || 0,
     stuckHours,
     staleHours,
     overByHours: isStale ? stuckHours - staleHours : null,
@@ -131,14 +189,33 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
 
 export async function buildProjectPoolRows(projects, membersByProjectId = new Map()) {
   const ids = projects.map((p) => String(p.id));
+  const versionExtIds = projects.flatMap((project) => projectVersions(project).map((version) => versionRowId(project.id, version.id)));
   const [ticketAgg, segMap, statusSettings, extMap] = await Promise.all([
-    aggregateProjectTickets(ids),
+    aggregateProjectTickets([...ids, ...versionExtIds]),
     loadSegmentOrderMap(),
     loadStatusSettingsMap(),
-    loadProjectExtMap(ids),
+    loadProjectExtMap([...ids, ...versionExtIds]),
   ]);
   return projects.map((project) => {
-    const members = membersByProjectId.get(String(project.id)) || [];
-    return buildProjectPoolRow(normalizeProjectForPoolRow(project, members), ticketAgg, segMap, statusSettings, extMap);
+    const versions = projectVersions(project);
+    const parentMembers = membersByProjectId.get(String(project.id)) || [];
+    const normalizedParent = normalizeProjectForPoolRow(project, parentMembers);
+    if (versions.length <= 1) {
+      const version = versions[0] || null;
+      const members = version ? membersByProjectId.get(versionRowId(project.id, version.id)) || parentMembers : parentMembers;
+      return buildProjectPoolRow(normalizeProjectForPoolRow(project, members), ticketAgg, segMap, statusSettings, extMap, { version });
+    }
+    const parentRow = buildProjectPoolRow(normalizedParent, ticketAgg, segMap, statusSettings, extMap, { hasVersionChildren: true });
+    parentRow.children = versions.map((version) => {
+      const rowId = versionRowId(project.id, version.id);
+      const members = membersByProjectId.get(rowId) || (isDefaultVersion(version) ? parentMembers : []);
+      return buildProjectPoolRow(normalizeProjectForPoolRow(project, members), ticketAgg, segMap, statusSettings, extMap, {
+        rowId,
+        version,
+        parentId: project.id,
+        isVersionRow: true,
+      });
+    });
+    return parentRow;
   });
 }

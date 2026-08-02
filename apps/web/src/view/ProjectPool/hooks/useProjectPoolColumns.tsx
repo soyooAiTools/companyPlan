@@ -199,6 +199,8 @@ export function useProjectPoolColumns(
 		? [
 				{ key: "name", label: "项目名称" },
 				{ key: "tenantName", label: "客户" },
+				{ key: "versionCode", label: "版本标识" },
+				{ key: "versionName", label: "版本名称" },
 			]
 		: [];
 
@@ -209,32 +211,54 @@ export function useProjectPoolColumns(
 			key: "name",
 			width: 270,
 			fixed: "left",
-			filterDropdown: filters ? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} /> : undefined,
+			filterDropdown: filters
+				? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} />
+				: undefined,
 			filterDropdownProps: filters ? { align: { offset: [240, 0] } } : undefined,
 			filterIcon: filters ? () => <FilterFilled style={{ color: advancedFilterActive ? "#1677ff" : "#94a3b8" }} /> : undefined,
-			render: (_: unknown, row, index) => (
-				<div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, height: "100%" }}>
-					<span style={{ width: 24, flexShrink: 0, textAlign: "right", color: "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-						{rowNumberOffset + index + 1}
-					</span>
-					<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all", flex: 1 }}>
-						{row.name || "—"}
-						<span style={{ color: "#64748b", fontSize: 13, fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
+			render: (_: unknown, row, index) => {
+				const isParent = !!row.hasVersionChildren;
+				const isVersion = !!row.isVersionRow;
+				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
+				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
+				return (
+					<div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, height: "100%" }}>
+						<span
+							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+							{isVersion ? "" : rowNumberOffset + index + 1}
+						</span>
+						<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all", flex: 1 }}>
+							{isVersion ? (
+								<>
+									<span>{versionText}</span>
+								</>
+							) : (
+								<>
+									{row.name || "—"}
+									<span style={{ color: "#64748b", fontSize: 13, fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
+									{isParent ? (
+										<Tag color="blue" style={{ marginInlineStart: 8, fontWeight: 500 }}>
+											多版本
+										</Tag>
+									) : null}
+								</>
+							)}
+						</div>
+						{canCreateTicket ? (
+							<Button
+								type="link"
+								size="small"
+								style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
+								onClick={(e) => {
+									e.stopPropagation();
+									actions.openCreateTicket?.(row);
+								}}>
+								+ 提单
+							</Button>
+						) : null}
 					</div>
-					{!options.readonly && actions.openCreateTicket ? (
-						<Button
-							type="link"
-							size="small"
-							style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
-							onClick={(e) => {
-								e.stopPropagation();
-								actions.openCreateTicket?.(row);
-							}}>
-							+ 提单
-						</Button>
-					) : null}
-				</div>
-			),
+				);
+			},
 		},
 		{
 			title: "客户对接人",
@@ -245,7 +269,12 @@ export function useProjectPoolColumns(
 					{editableCellStyles}
 					<EditableTextCell value={row.customerContact} readonly={options.readonly} width={row.requirementDoc ? 82 : 132} onEdit={() => actions.openMeta(row)} />
 					{row.requirementDoc ? (
-						<a href={row.requirementDoc} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1677ff", fontSize: 13 }} onClick={(e) => e.stopPropagation()}>
+						<a
+							href={row.requirementDoc}
+							target="_blank"
+							rel="noreferrer"
+							style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1677ff", fontSize: 13 }}
+							onClick={(e) => e.stopPropagation()}>
 							<span style={{ color: "#cbd5e1" }}>·</span>
 							<FileTextOutlined style={{ fontSize: 13 }} />
 							文档
@@ -259,14 +288,7 @@ export function useProjectPoolColumns(
 			key: "planner",
 			width: 150,
 			filterDropdown: filters
-				? ({ close }) => (
-						<HeaderMultiDropdown
-							value={filters.plannerFilter || []}
-							options={plannerFilterOptions}
-							onApply={filters.onPlannerFilterChange}
-							close={close}
-						/>
-					)
+				? ({ close }) => <HeaderMultiDropdown value={filters.plannerFilter || []} options={plannerFilterOptions} onApply={filters.onPlannerFilterChange} close={close} />
 				: undefined,
 			filterIcon: filters ? () => filterIcon((filters.plannerFilter || []).length > 0) : undefined,
 			render: (_: unknown, row) => {

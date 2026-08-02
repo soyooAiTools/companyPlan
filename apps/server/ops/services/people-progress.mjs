@@ -197,12 +197,90 @@ function parseJson(value, fallback) {
   }
 }
 
+function isActiveProjectSnapshot(snapshot) {
+  const lifecycle = String(snapshot?.projectLifecycleStatus || snapshot?.project_lifecycle_status || snapshot?.lifecycle_status || "").trim();
+  return lifecycle === "进行中" || lifecycle === "正常";
+}
+
+function progressProjectRows(snapshot) {
+  const children = Array.isArray(snapshot?.children) ? snapshot.children : [];
+  return snapshot ? [snapshot, ...children] : [];
+}
+
+function progressAssignableRows(snapshot) {
+  if (!snapshot) return [];
+  const children = Array.isArray(snapshot.children) ? snapshot.children : [];
+  return children.length ? children : [snapshot];
+}
+
+function memberIsActive(member) {
+  if (String(member?.status || "").toLowerCase() === "disabled") return false;
+  return true;
+}
+
+function snapshotMemberIdSet(row, snapshot) {
+  const ids = new Set(parseJson(row.member_ids_json, []).map(normalizePersonId).filter(Boolean));
+  for (const projectRow of progressProjectRows(snapshot)) {
+    for (const member of Array.isArray(projectRow?.members) ? projectRow.members : []) {
+      if (!memberIsActive(member)) continue;
+      const key = normalizePersonId(member?.id);
+      if (key) ids.add(key);
+    }
+  }
+  return ids;
+}
+
+function snapshotHasMember(row, snapshot, targetId) {
+  return snapshotMemberIdSet(row, snapshot).has(targetId);
+}
+
+function memberIdentityKeys(member) {
+  return [
+    normalizePersonId(member?.id),
+    normalizePersonId(member?.user_id),
+    String(member?.username || "").trim(),
+    String(member?.name || "").trim(),
+    String(member?.wechatName || member?.wechat_name || "").trim(),
+  ].filter(Boolean);
+}
+
+function memberTags(member) {
+  return [
+    ...new Set(
+      (Array.isArray(member?.tags) ? member.tags : [])
+        .map((tag) => (typeof tag === "string" ? tag : tag?.name))
+        .map((name) => String(name || "").trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function memberMatchesRole(member, roleKey) {
+  if (roleKey === "all") return true;
+  const tags = memberTags(member);
+  return tags.length ? tags.some((label) => memberRoleLabelMatches(label, roleKey)) : true;
+}
+
+async function personIdentityKeys(userId) {
+  const normalized = normalizePersonId(userId);
+  const keys = new Set([String(userId || "").trim(), normalized, normalized ? `ops-user-${normalized}` : ""].filter(Boolean));
+  const peopleById = await loadPeopleByIds([...keys]);
+  for (const key of [...keys]) {
+    const person = peopleById.get(key) || peopleById.get(normalizePersonId(key));
+    if (!person) continue;
+    keys.add(normalizePersonId(person.id));
+    if (person.username) keys.add(String(person.username).trim());
+    if (person.name) keys.add(String(person.name).trim());
+    if (person.wechat_name) keys.add(String(person.wechat_name).trim());
+  }
+  return keys;
+}
+
 async function loadProjectCountsByMemberId(roleKey = "all") {
   if (roleKey !== "program") return new Map();
   const rows = await prisma.$queryRaw`
-    SELECT project_id, row_json, tenant_name
+    SELECT project_id, row_json, member_ids_json, tenant_name
     FROM ops_project_pool_snapshot
-    WHERE status <> '回收中' AND status <> '已完成'
   `;
   const projectIdsByMember = new Map();
   for (const row of rows) {
@@ -210,15 +288,18 @@ async function loadProjectCountsByMemberId(roleKey = "all") {
     const tenantName = String(row.tenant_name || "").trim().toLowerCase();
     if (tenantName && EXCLUDED_CLIENT_NAMES.includes(tenantName)) continue;
     const snapshot = parseJson(row.row_json, null);
-    const members = Array.isArray(snapshot?.members) ? snapshot.members : [];
-    if (!projectId || !members.length) continue;
-    for (const member of members) {
-      const labels = Array.isArray(member?.tags) ? member.tags : [];
-      if (roleKey !== "all" && !labels.some((label) => memberRoleLabelMatches(label, roleKey))) continue;
-      const key = normalizePersonId(member?.id);
-      if (!key) continue;
-      if (!projectIdsByMember.has(key)) projectIdsByMember.set(key, new Set());
-      projectIdsByMember.get(key).add(projectId);
+    if (!isActiveProjectSnapshot(snapshot)) continue;
+    if (!projectId) continue;
+    for (const projectRow of progressAssignableRows(snapshot)) {
+      const rowId = String(projectRow?.id || projectId).trim();
+      if (!rowId) continue;
+      for (const member of Array.isArray(projectRow?.members) ? projectRow.members : []) {
+        if (!memberIsActive(member) || !memberMatchesRole(member, roleKey)) continue;
+        for (const key of memberIdentityKeys(member)) {
+          if (!projectIdsByMember.has(key)) projectIdsByMember.set(key, new Set());
+          projectIdsByMember.get(key).add(rowId);
+        }
+      }
     }
   }
   return new Map([...projectIdsByMember.entries()].map(([key, projectIds]) => [key, projectIds.size]));
@@ -226,39 +307,43 @@ async function loadProjectCountsByMemberId(roleKey = "all") {
 
 async function loadProjectsByMemberId(userId, roleKey = "program") {
   if (roleKey !== "program") return [];
-  const targetId = normalizePersonId(userId);
-  if (!targetId) return [];
+  const targetKeys = await personIdentityKeys(userId);
+  if (!targetKeys.size) return [];
   const rows = await prisma.$queryRaw`
-    SELECT project_id, row_json, tenant_name
+    SELECT project_id, row_json, member_ids_json, tenant_name
     FROM ops_project_pool_snapshot
-    WHERE status <> '回收中' AND status <> '已完成'
   `;
   const projects = [];
-  const seenProjectIds = new Set();
+  const seenRowIds = new Set();
   for (const row of rows) {
     const projectId = String(row.project_id || "").trim();
     const tenantName = String(row.tenant_name || "").trim().toLowerCase();
-    if (!projectId || seenProjectIds.has(projectId) || (tenantName && EXCLUDED_CLIENT_NAMES.includes(tenantName))) continue;
+    if (!projectId || (tenantName && EXCLUDED_CLIENT_NAMES.includes(tenantName))) continue;
     const snapshot = parseJson(row.row_json, null);
-    const members = Array.isArray(snapshot?.members) ? snapshot.members : [];
-    const matched = members.some((member) => {
-      if (String(member?.status || "").toLowerCase() === "disabled") return false;
-      if (normalizePersonId(member?.id) !== targetId) return false;
-      const labels = Array.isArray(member?.tags) ? member.tags : [];
-      return labels.some((label) => memberRoleLabelMatches(label, roleKey));
-    });
-    if (!matched) continue;
-    seenProjectIds.add(projectId);
-    projects.push({
-      id: String(snapshot?.id || projectId),
-      name: snapshot?.name || "",
-      tenantName: snapshot?.tenantName || row.tenant_name || "",
-      plannerName: snapshot?.plannerName || "",
-      status: snapshot?.status || "",
-      stage: snapshot?.stage || "",
-      stageDeadlines: Array.isArray(snapshot?.stageDeadlines) ? snapshot.stageDeadlines : [],
-      startedAt: snapshot?.startedAt || null,
-    });
+    if (!isActiveProjectSnapshot(snapshot)) continue;
+    for (const projectRow of progressAssignableRows(snapshot)) {
+      const rowId = String(projectRow?.id || projectId).trim();
+      if (!rowId || seenRowIds.has(rowId)) continue;
+      const matched = (Array.isArray(projectRow?.members) ? projectRow.members : []).some(
+        (member) => memberIsActive(member) && memberMatchesRole(member, roleKey) && memberIdentityKeys(member).some((key) => targetKeys.has(key)),
+      );
+      if (!matched) continue;
+      seenRowIds.add(rowId);
+      projects.push({
+        id: rowId,
+        projectId,
+        versionId: projectRow?.versionId || "",
+        versionCode: projectRow?.versionCode || "",
+        versionName: projectRow?.versionName || "",
+        name: snapshot?.name || projectRow?.name || "",
+        tenantName: projectRow?.tenantName || snapshot?.tenantName || row.tenant_name || "",
+        plannerName: projectRow?.plannerName || snapshot?.plannerName || "",
+        status: projectRow?.status || snapshot?.status || "",
+        stage: projectRow?.stage || snapshot?.stage || "",
+        stageDeadlines: Array.isArray(projectRow?.stageDeadlines) ? projectRow.stageDeadlines : Array.isArray(snapshot?.stageDeadlines) ? snapshot.stageDeadlines : [],
+        startedAt: projectRow?.startedAt || snapshot?.startedAt || null,
+      });
+    }
   }
   return projects.sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
 }
@@ -310,6 +395,21 @@ async function loadSoyooPeopleGroups(roleKey = "all") {
 
 export function listPeopleProgressRoles() {
   return ROLE_DEFS;
+}
+
+function projectCountForGroup(projectCountsByMemberId, group) {
+  const keys = [
+    normalizePersonId(group.userId),
+    String(group.userId || "").trim(),
+    String(group.username || "").trim(),
+    String(group.name || "").trim(),
+    String(group.wechatName || "").trim(),
+  ].filter(Boolean);
+  for (const key of keys) {
+    const value = projectCountsByMemberId.get(key);
+    if (value != null) return value;
+  }
+  return 0;
 }
 
 export async function listPeopleProgress({ role = "all", q = "", overdueOnly = false, newcomerOnly = false }) {
@@ -378,7 +478,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
       queued: group.queued,
       blocked: group.blocked,
       overdue: group.overdue,
-      projectCount: projectCountsByMemberId.get(group.userId) || 0,
+      projectCount: projectCountForGroup(projectCountsByMemberId, group),
       ticketCount: group.ticketIds.size,
     }))
     .filter((group) => matchesPersonKeyword(group, q))
@@ -412,7 +512,7 @@ export async function listPersonProgressProjects({ userId, role = "program", q =
   const projects = await loadProjectsByMemberId(userId, role);
   return projects.filter((project) => {
     if (!keyword) return true;
-    return [project.name, project.tenantName, project.plannerName, project.status, project.stage, project.id]
+    return [project.name, project.tenantName, project.plannerName, project.status, project.stage, project.versionCode, project.versionName, project.id]
       .filter(Boolean)
       .join(" ")
       .toLowerCase()
