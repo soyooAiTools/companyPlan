@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# companyPlan ops 后端一键部署:校验配置 → 装依赖 → 生成 Prisma 客户端 → 构建前端 → PM2 启动/热重载
+# companyPlan ops 后端一键部署:校验配置 → 装依赖 → 生成 Prisma 客户端 → PM2 启动/热重载
 # 用法(服务器上,先 git pull 拉最新代码):
 #   npm run deploy        # 或 pnpm run deploy
 set -euo pipefail
@@ -22,17 +22,16 @@ if ! grep -q '^COMPANYPLAN_MYSQL_PASSWORD=..' "$ROOT/.env.prod"; then
 fi
 
 # 1) 依赖(--prod=false 确保装上 vite/tsc/prisma 等 devDeps,否则 build/generate 会失败)
-echo "[deploy] pnpm 
-"
+echo "[deploy] pnpm install"
 pnpm install --prod=false
 
 # 2) Prisma 客户端(schema 有 segment_id / wechat 等新字段,不重生成会报 unknown field)
 echo "[deploy] prisma generate"
 ( cd apps/server && npx --no-install prisma generate )
 
-# 3) 构建前端(server 也会托管 dist;若前端纯走 OSS,可注释掉这步)
-echo "[deploy] build web"
-pnpm build
+# 3) 注释前端构建，不再执行打包
+# echo "[deploy] build web"
+# pnpm build
 
 # 4) PM2 启动或热重载(--update-env 重新读取 env)
 echo "[deploy] pm2 startOrReload"
