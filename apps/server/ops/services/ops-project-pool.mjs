@@ -175,6 +175,10 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
     .filter(Boolean);
 }
 
+function currentPlannerFilterName(user) {
+  return String(user?.name || user?.username || "").trim();
+}
+
 function nextDeadlineSortValue(row) {
   const next = nextStageDeadline(row?.stage || "", row?.stageDeadlines || []);
   if (!next?.date || !/^\d{4}-\d{2}-\d{2}$/.test(next.date)) return null;
@@ -236,14 +240,17 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
     .map((s) => s.trim())
     .filter(Boolean);
   const effectiveStatus = statusFilter.length ? statusFilter : [];
-  let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user, statusNames: effectiveStatus });
+  const plannerScoped = !onlyMine && !isAdmin(user);
+  const snapshotUser = plannerScoped ? { roleKey: "admin" } : user;
+  const effectivePlanner = plannerScoped ? currentPlannerFilterName(user) : planner;
+  let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user: snapshotUser, statusNames: effectiveStatus });
   timer?.mark("加载项目池快照", { rows: rows.length, effectiveStatus: effectiveStatus.length ? effectiveStatus.join(",") : "默认状态" });
   if (effectiveStatus.length) {
     const statusSet = new Set(effectiveStatus);
     rows = filterProjectPoolRows(rows, { status: [...statusSet].join(",") });
   }
   timer?.mark("过滤项目状态", { rows: rows.length });
-  rows = filterProjectPoolRows(rows, { q, stage, planner, segment, advancedFilter });
+  rows = filterProjectPoolRows(rows, { q, stage, planner: effectivePlanner, segment, advancedFilter });
   timer?.mark("应用筛选条件", { rows: rows.length });
 
   rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
