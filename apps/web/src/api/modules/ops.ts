@@ -1,6 +1,21 @@
 // 需求提单 —— 新接口客户端(对应后端 /api/ops/*,Prisma)。环节=分类,绑定 soyoo 标签。
 import { requestJson } from "../request";
 
+const projectPoolRequestCache = new Map<string, { promise: Promise<unknown>; expiresAt: number }>();
+
+function requestProjectPoolJson<T>(url: string): Promise<T> {
+	const now = Date.now();
+	const cached = projectPoolRequestCache.get(url);
+	if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+	const promise = requestJson<T>(url).finally(() => {
+		setTimeout(() => {
+			if (projectPoolRequestCache.get(url)?.promise === promise) projectPoolRequestCache.delete(url);
+		}, 1000);
+	});
+	projectPoolRequestCache.set(url, { promise, expiresAt: now + 1000 });
+	return promise;
+}
+
 export interface OpsTag {
 	id: string;
 	name: string;
@@ -467,7 +482,7 @@ export const opsApi = {
 			qs.set("sortOrder", params.sortOrder);
 		}
 		const s = qs.toString();
-		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
+		return requestProjectPoolJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
 	myProjects: (params: OpsProjectPoolListParams = {}) => {
 		const qs = new URLSearchParams();
@@ -484,7 +499,7 @@ export const opsApi = {
 			qs.set("sortOrder", params.sortOrder);
 		}
 		const s = qs.toString();
-		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
+		return requestProjectPoolJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
 	},
 	projectPoolMembers: (projectId: string) =>
 		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),

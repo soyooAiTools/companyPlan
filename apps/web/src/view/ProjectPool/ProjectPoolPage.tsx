@@ -20,6 +20,7 @@ import ProjectPoolExportButton from "./components/export/ProjectPoolExportButton
 import { useProjectPoolColumns } from "./hooks/useProjectPoolColumns";
 import { useProjectPoolData } from "./hooks/useProjectPoolData";
 import { useProjectPoolModals } from "./hooks/useProjectPoolModals";
+import { useProjectPoolSheet } from "./hooks/useProjectPoolSheet";
 import GroupedProjectSheet from "./sheets/GroupedProjectSheet";
 import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
@@ -137,7 +138,7 @@ type ProjectPoolPageProps = {
 
 export default function ProjectPoolPage({ mine = false, isAdmin = false }: ProjectPoolPageProps) {
 	const { message } = App.useApp();
-	const [sheet, setSheet] = useState<ProjectPoolSheetKey>("project");
+	const [sheet, setSheet] = useProjectPoolSheet(mine);
 	const [sheetContentReady, setSheetContentReady] = useState(true);
 	const switchFrameRef = useRef<number | null>(null);
 	const isStaleSheet = !mine && sheet === "stale";

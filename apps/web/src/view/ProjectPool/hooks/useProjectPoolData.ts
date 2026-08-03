@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsProjectPoolSortOrder, OpsSegment } from "@/api/modules/ops";
@@ -29,6 +29,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [allRowsLoading, setAllRowsLoading] = useState(false);
   const [allRowsKey, setAllRowsKey] = useState("");
   const [filterOptionRows, setFilterOptionRows] = useState<OpsProjectPoolRow[]>([]);
+  const allRowsRequestRef = useRef<Promise<OpsProjectPoolRow[]> | null>(null);
   const advancedFilterParam = stringifyAdvancedFilter(advancedFilter);
   const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), advancedFilterParam || ""].join("|");
   const allRowsSourceKey = mine ? "mine" : "all";
@@ -53,42 +54,11 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
   };
 
-  const loadAllRows = async (force = false) => {
-    if (tab !== "all") {
-      setAllRows([]);
-      setAllRowsKey("");
-      return;
-    }
-    if (!force && allRowsKey === allRowsSourceKey && allRows.length) return;
-    setAllRowsLoading(true);
-    try {
-      const pageSizeForAll = 500;
-      const base = {};
-      const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...base }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...base });
-      const nextRows = [...first.rows];
-      const pageCount = Math.ceil(first.total / pageSizeForAll);
-      if (pageCount > 1) {
-        const rest = await Promise.all(
-          Array.from({ length: pageCount - 1 }, (_, index) => {
-            const nextPage = index + 2;
-            return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...base }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...base });
-          }),
-        );
-        for (const result of rest) nextRows.push(...result.rows);
-      }
-      setAllRows(nextRows);
-      setAllRowsKey(allRowsSourceKey);
-    } catch (e) {
-      message.error(e instanceof Error ? e.message : "加载分组数据失败");
-      setAllRows([]);
-      setAllRowsKey("");
-    } finally {
-      setAllRowsLoading(false);
-    }
-  };
-
-  const loadFilterOptionRows = async () => {
-    try {
+  // 合并项目池全量数据的并发请求:loadAllRows 和 loadFilterOptionRows 可能同时需要 pageSize=500 的数据。
+  // 这里复用正在进行中的 Promise,不是输入防抖;lodash debounce 会延迟触发,但不能让两个调用共享同一次请求结果。
+  const fetchAllRows = async () => {
+    if (allRowsRequestRef.current) return allRowsRequestRef.current;
+    const request = (async () => {
       const pageSizeForAll = 500;
       const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll });
       const nextRows = [...first.rows];
@@ -102,6 +72,45 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
         );
         for (const result of rest) nextRows.push(...result.rows);
       }
+      return nextRows;
+    })();
+    allRowsRequestRef.current = request;
+    try {
+      return await request;
+    } finally {
+      allRowsRequestRef.current = null;
+    }
+  };
+
+  const loadAllRows = async (force = false) => {
+    if (tab !== "all") {
+      setAllRows([]);
+      setAllRowsKey("");
+      return;
+    }
+    if (!force && allRowsKey === allRowsSourceKey && allRows.length) return;
+    setAllRowsLoading(true);
+    try {
+      const nextRows = await fetchAllRows();
+      setAllRows(nextRows);
+      setFilterOptionRows(nextRows);
+      setAllRowsKey(allRowsSourceKey);
+    } catch (e) {
+      message.error(e instanceof Error ? e.message : "加载分组数据失败");
+      setAllRows([]);
+      setAllRowsKey("");
+    } finally {
+      setAllRowsLoading(false);
+    }
+  };
+
+  const loadFilterOptionRows = async () => {
+    if (allRowsKey === allRowsSourceKey && allRows.length) {
+      setFilterOptionRows(allRows);
+      return;
+    }
+    try {
+      const nextRows = await fetchAllRows();
       setFilterOptionRows(nextRows);
     } catch {
       setFilterOptionRows([]);
@@ -113,6 +122,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setRows([]);
     setAllRows([]);
     setAllRowsKey("");
+    allRowsRequestRef.current = null;
     setFilterOptionRows([]);
     setTotal(0);
     setPage(1);
@@ -144,11 +154,6 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       .then((result) => setSegmentOptions(result.segments))
       .catch(() => setSegmentOptions([]));
   }, []);
-
-  useEffect(() => {
-    void loadFilterOptionRows();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

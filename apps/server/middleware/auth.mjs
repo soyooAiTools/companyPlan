@@ -2,6 +2,9 @@ import { sessionCookieName, sessionTtlDays } from "../config/runtime.mjs";
 import { prisma } from "../ops/prisma.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const SESSION_CACHE_MS = 5000;
+const sessionCache = new Map();
+const sessionLoaders = new Map();
 
 function mapAuthPerson(row) {
   return {
@@ -25,19 +28,25 @@ export function createAuthMiddleware() {
 
     if (!sessionId) return;
 
-    const session = await prisma.sessions.findFirst({
-      where: {
-        id: sessionId,
-        revoked_at: null,
-        expires_at: { gt: new Date().toISOString() },
-        people: { disabled_at: null },
-      },
-      include: { people: true },
-    });
+    const cached = sessionCache.get(sessionId);
+    const nowMs = Date.now();
+    if (cached && cached.expiresAtMs > nowMs && nowMs - cached.cachedAtMs < SESSION_CACHE_MS) {
+      request.user = cached.user;
+      return;
+    }
+
+    const session = await loadSessionRow(sessionId);
 
     if (session) {
       request.user = mapAuthPerson(session.people);
+      sessionCache.set(sessionId, {
+        user: request.user,
+        expiresAtMs: new Date(session.expires_at).getTime(),
+        cachedAtMs: nowMs,
+      });
       await refreshSessionExpiry(session, response);
+    } else {
+      sessionCache.delete(sessionId);
     }
   }
 
@@ -105,6 +114,32 @@ export function setSessionCookie(response, sessionId, expiresAt) {
 
 export function clearSessionCookie(response) {
   response.clearCookie(sessionCookieName, { httpOnly: true, sameSite: cookieSameSite, secure: cookieSecure, path: "/" });
+}
+
+export function clearSessionCache(sessionId) {
+  if (sessionId) sessionCache.delete(sessionId);
+  if (sessionId) sessionLoaders.delete(sessionId);
+}
+
+async function loadSessionRow(sessionId) {
+  const pending = sessionLoaders.get(sessionId);
+  if (pending) return pending;
+
+  const loader = prisma.sessions
+    .findFirst({
+      where: {
+        id: sessionId,
+        revoked_at: null,
+        expires_at: { gt: new Date().toISOString() },
+        people: { disabled_at: null },
+      },
+      include: { people: true },
+    })
+    .finally(() => {
+      sessionLoaders.delete(sessionId);
+    });
+  sessionLoaders.set(sessionId, loader);
+  return loader;
 }
 
 function parseCookies(header) {
