@@ -73,6 +73,34 @@ export async function getProjectWithMembers(projectId) {
   return { project, members };
 }
 
+function withVersionProjectId(projectId, versionId) {
+  const rawProjectId = String(projectId || "");
+  if (!rawProjectId || rawProjectId.includes("::version-")) return rawProjectId;
+  return versionId ? `${rawProjectId}::version-${versionId}` : rawProjectId;
+}
+
+function defaultVersionId(project) {
+  const versions = Array.isArray(project?.versions) ? project.versions : [];
+  const version = versions.find((item) => item?.is_default || item?.isDefault || String(item?.code || "").toLowerCase() === "v1") || versions[0];
+  return version?.id ? String(version.id) : "";
+}
+
+// 工单改派候选成员:新工单带 versionId 直接查版本;旧工单没 versionId 时默认查 v1。
+export async function getTicketProjectMembers(projectId, versionId = "") {
+  const rawProjectId = String(projectId || "");
+  if (!rawProjectId || rawProjectId.includes("::version-") || versionId) {
+    return getProjectWithMembers(withVersionProjectId(rawProjectId, versionId));
+  }
+  try {
+    const project = await soyooClient.project(rawProjectId);
+    const fallbackVersionId = defaultVersionId(project);
+    if (fallbackVersionId) return getProjectWithMembers(withVersionProjectId(rawProjectId, fallbackVersionId));
+  } catch {
+    // 旧项目或临时连接失败时回退项目级成员,让上层保持原错误处理。
+  }
+  return getProjectWithMembers(rawProjectId);
+}
+
 // 单个用户(提单人快照 / 刷快照)
 export async function getUser(userId) {
   const u = await soyooClient.user(userId);

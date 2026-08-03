@@ -83,7 +83,11 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const selectedVersion = selectedProject?.versions?.find((version) => String(version.id) === String(selectedVersionId));
 	const defaultVersionId = (project?: OpsProject) =>
 		(project?.versions || []).find((version) => version.isDefault || String(version.code || "").toLowerCase() === "v1")?.id || project?.versions?.[0]?.id;
-	const versionProjectId = (projectId?: string, versionId?: string) => (projectId && versionId ? `${projectId}::version-${versionId}` : projectId || "");
+	const versionProjectId = (projectId?: string, versionId?: string) => {
+		if (!projectId) return "";
+		if (projectId.includes("::version-")) return projectId;
+		return versionId ? `${projectId}::version-${versionId}` : projectId;
+	};
 
 	const loadTickets = async () => {
 		setLoading(true);
@@ -256,7 +260,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		setAssignOwnerId("");
 		setAssignOpen(true);
 		try {
-			const r = await opsApi.projectMembers(detail.projectId);
+			const r = await opsApi.projectMembers(versionProjectId(detail.projectId, detail.projectVersionId));
 			setAssignCandidates(r.members.filter((m) => m.status !== "disabled"));
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "加载项目成员失败");

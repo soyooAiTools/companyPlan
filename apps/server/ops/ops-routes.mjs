@@ -7,7 +7,7 @@ import { createDirectUploadUrl, isOssConfigured, uploadObject } from "./oss.mjs"
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
-import { listMyProjects, listAllProjects, getProjectWithMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
+import { listMyProjects, listAllProjects, getTicketProjectMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
 import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
 import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
@@ -556,7 +556,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // 项目成员(指派候选 / 选负责人):实时查 soyoo
   app.get("/api/ops/projects/:id/members", requireAuth, async (req, res) => {
     try {
-      const { members } = await getProjectWithMembers(soyooId(req.params.id));
+      const { members } = await getTicketProjectMembers(soyooId(req.params.id), req.query?.version_id);
       const segments = await loadSegments();
       const enriched = members.map((m) => {
         const tagIds = new Set((m.tags || []).map((t) => String(t.id)));
@@ -582,7 +582,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "只有管理员、当前负责人或当前提单人可指派" });
     let member;
     try {
-      const { members } = await getProjectWithMembers(t.project_id);
+      const { members } = await getTicketProjectMembers(t.project_id, t.project_version_id);
       member = members.find((m) => m.id === newOwnerId);
     } catch (e) {
       return soyooErrorResponse(res, e);
