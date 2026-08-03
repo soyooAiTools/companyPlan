@@ -17,7 +17,9 @@ import SegmentTicketDetailDrawer from "./components/dialogs/SegmentTicketDetailD
 import SegmentTicketsModal from "./components/dialogs/SegmentTicketsModal";
 import StageDeadlineModal from "./components/dialogs/StageDeadlineModal";
 import ProjectPoolExportButton from "./components/export/ProjectPoolExportButton";
+import ProjectPoolColumnConfigButton from "./components/toolbar/ProjectPoolColumnConfigButton";
 import { useProjectPoolColumns } from "./hooks/useProjectPoolColumns";
+import { useProjectPoolColumnVisibility } from "./hooks/useProjectPoolColumnVisibility";
 import { useProjectPoolData } from "./hooks/useProjectPoolData";
 import { useProjectPoolModals } from "./hooks/useProjectPoolModals";
 import { useProjectPoolSheet } from "./hooks/useProjectPoolSheet";
@@ -190,6 +192,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
 	const [createTicketProject, setCreateTicketProject] = useState<OpsProjectPoolRow | null>(null);
 	const [createTicketMember, setCreateTicketMember] = useState<OpsProjectPoolMember | null>(null);
+	const { hiddenColumnKeys, hiddenColumnKeySet, setHiddenColumnKeys, columnOrderKeys, setColumnOrderKeys, resetColumnConfig, lockedColumnKeys } = useProjectPoolColumnVisibility();
 
 	// 表格内部滚动高度:实测「表格区域」高度 − 表头/分页固定占位,做到分页精准贴底(自适应工具栏换行/各种屏高)
 	const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -435,19 +438,60 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			sortOrder: sortOrder === "asc" ? "ascend" : sortOrder === "desc" ? "descend" : null,
 		},
 	);
+	const orderedColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
+		const orderIndex = new Map(columnOrderKeys.map((key, index) => [key, index]));
+		return [...columns].sort((left, right) => {
+			const leftKey = String(left.key || ("dataIndex" in left ? left.dataIndex : "") || "");
+			const rightKey = String(right.key || ("dataIndex" in right ? right.dataIndex : "") || "");
+			const leftLocked = lockedColumnKeys.has(leftKey);
+			const rightLocked = lockedColumnKeys.has(rightKey);
+			if (leftLocked !== rightLocked) return leftLocked ? -1 : 1;
+			const leftIndex = orderIndex.get(leftKey);
+			const rightIndex = orderIndex.get(rightKey);
+			if (leftIndex != null && rightIndex != null) return leftIndex - rightIndex;
+			if (leftIndex != null) return -1;
+			if (rightIndex != null) return 1;
+			return 0;
+		});
+	}, [columnOrderKeys, columns, lockedColumnKeys]);
 	const displayColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
-		const baseColumns = mine ? columns.filter((column) => !["stage", "stageDeadlines", "remark", "tickets"].includes(String(column.key))) : columns;
-		return baseColumns;
-	}, [columns, mine]);
+		const baseColumns = mine ? orderedColumns.filter((column) => !["stage", "stageDeadlines", "remark", "tickets"].includes(String(column.key))) : orderedColumns;
+		return baseColumns.filter((column) => {
+			const key = String(column.key || ("dataIndex" in column ? column.dataIndex : "") || "");
+			return !key || lockedColumnKeys.has(key) || !hiddenColumnKeySet.has(key);
+		});
+	}, [hiddenColumnKeySet, lockedColumnKeys, mine, orderedColumns]);
+
+	const columnConfigButton = (
+		<ProjectPoolColumnConfigButton
+			columns={orderedColumns}
+			hiddenColumnKeys={hiddenColumnKeys}
+			columnOrderKeys={columnOrderKeys}
+			lockedColumnKeys={lockedColumnKeys}
+			onHiddenChange={setHiddenColumnKeys}
+			onOrderChange={setColumnOrderKeys}
+			onReset={resetColumnConfig}
+		/>
+	);
 
 	return (
-		<div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 32px)" }}>
+		<div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 16px)" }}>
 			{mine ? (
 				<div style={{ height: 40, display: "flex", alignItems: "center", padding: "0 12px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>
 					<span style={{ color: "#0f172a", fontSize: 15, fontWeight: 700 }}>我的项目</span>
+					<div style={{ marginLeft: "auto" }}>{columnConfigButton}</div>
 				</div>
 			) : (
-				<ProjectPoolSheetTabs value={sheet} onChange={changeSheet} extra={isAdmin ? <ProjectPoolExportButton /> : null} />
+				<ProjectPoolSheetTabs
+					value={sheet}
+					onChange={changeSheet}
+					extra={
+						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+							{columnConfigButton}
+							{isAdmin ? <ProjectPoolExportButton /> : null}
+						</div>
+					}
+				/>
 			)}
 
 			{/* 表格区域:flex 填满剩余高度,内部滚动(表头固定、分页贴底) */}

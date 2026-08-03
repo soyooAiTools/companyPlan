@@ -28,6 +28,13 @@ type ProjectGroupTableRow =
 const GROUP_ROW_HEIGHT = 40;
 const PROJECT_ROW_HEIGHT = 66;
 
+function columnWidthSum(columns: ColumnsType<ProjectGroupTableRow>) {
+	return columns.reduce((sum, column) => {
+		const width = typeof column.width === "number" ? column.width : Number.parseInt(String(column.width || ""), 10);
+		return sum + (Number.isFinite(width) ? width : 120);
+	}, 0);
+}
+
 const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProjectPoolRow) => {
 	const dataIndex = column.dataIndex;
 	if (typeof dataIndex === "string") return row[dataIndex as keyof OpsProjectPoolRow];
@@ -204,6 +211,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 			}),
 		[activeSort, collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
 	);
+	const scrollX = columnWidthSum(groupedColumns);
 
 	return (
 		<>
@@ -360,7 +368,8 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					columns={groupedColumns}
 					size="small"
 					virtual
-					scroll={{ x: 1900, y: scrollY }}
+					tableLayout="fixed"
+					scroll={{ x: scrollX, y: scrollY }}
 					pagination={false}
 					onChange={(_pagination, _filters, sorter) => {
 						const active = Array.isArray(sorter) ? sorter[0] : sorter;

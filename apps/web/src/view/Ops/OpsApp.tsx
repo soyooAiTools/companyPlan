@@ -161,7 +161,7 @@ export default function OpsApp() {
               </div>
             </Sider>
             <Layout style={{ marginLeft: siderWidth, transition: "margin-left 0.18s ease" }}>
-              <Content style={{ padding: 16, background: "#f0f2f5" }}>
+              <Content style={{ padding: 8, background: "#f0f2f5" }}>
                 <Routes>
                   <Route path="tickets" element={<TicketsPage isAdmin={isAdmin} />} />
                   <Route path="overview" element={<OverviewPage />} />

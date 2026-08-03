@@ -20,6 +20,13 @@ type ProjectPoolTableProps = {
   onOpenLogs?: (row: OpsProjectPoolRow) => void;
 };
 
+function columnWidthSum(columns: ColumnsType<OpsProjectPoolRow>) {
+  return columns.reduce((sum, column) => {
+    const width = typeof column.width === "number" ? column.width : Number.parseInt(String(column.width || ""), 10);
+    return sum + (Number.isFinite(width) ? width : 120);
+  }, 0);
+}
+
 export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs }: ProjectPoolTableProps) {
   const hasTreeRows = rows.some((row) => Array.isArray(row.children) && row.children.length > 0);
   const displayColumns = columns.map((column, index) => ({
@@ -31,6 +38,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
       return column.render ? column.render(value, row, rowIndex) : (value as ReactNode);
     },
   }));
+  const scrollX = columnWidthSum(displayColumns);
   const tablePagination =
     pagination === false || !onPageChange || page == null || pageSize == null || total == null
       ? false
@@ -71,6 +79,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         .ops-pool-table .ant-table-tbody > tr > td:first-child {
           position: sticky !important;
           left: 0 !important;
+          max-width: 330px;
           z-index: 4;
           background: #fff;
           box-shadow: 6px 0 8px -8px rgba(15, 23, 42, 0.22);
@@ -138,7 +147,8 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         virtual={!hasTreeRows}
         childrenColumnName="children"
         expandable={hasTreeRows ? { defaultExpandAllRows: true } : undefined}
-        scroll={scrollY ? { x: 1480, y: scrollY } : { x: 1480 }}
+        tableLayout="fixed"
+        scroll={scrollY ? { x: scrollX, y: scrollY } : { x: scrollX }}
         pagination={tablePagination}
         onChange={(_pagination, _filters, sorter, extra) => {
           if (extra.action !== "sort") return;

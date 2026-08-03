@@ -222,7 +222,7 @@ export function useProjectPoolColumns(
 				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
 				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
 				return (
-					<div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, height: "100%" }}>
+					<div style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
 						<span
 							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
 							{isVersion ? "" : rowNumberOffset + index + 1}
@@ -484,6 +484,7 @@ export function useProjectPoolColumns(
 		},
 		{
 			title: "人员列表",
+			key: "memberCount",
 			dataIndex: "memberCount",
 			width: 76,
 			align: "center",

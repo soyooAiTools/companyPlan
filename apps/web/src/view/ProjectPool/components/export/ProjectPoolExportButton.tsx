@@ -207,9 +207,9 @@ export default function ProjectPoolExportButton() {
 
 	return (
 		<>
-			<Button icon={<DownloadOutlined />} onClick={openModal}>
-				导出报表
-			</Button>
+			<Tooltip title="导出报表">
+				<Button size="small" icon={<DownloadOutlined />} onClick={openModal} aria-label="导出报表" />
+			</Tooltip>
 			<Modal
 				title="导出项目报表"
 				open={open}

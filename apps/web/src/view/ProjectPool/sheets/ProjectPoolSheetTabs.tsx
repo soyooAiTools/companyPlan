@@ -38,25 +38,30 @@ export default function ProjectPoolSheetTabs({ value, onChange, extra }: Project
 					display: flex;
 					align-items: flex-end;
 					justify-content: space-between;
-					height: 40px;
-					padding: 0;
+					height: 36px;
+					padding: 0 10px 0 0;
 					border-bottom: 1px solid #e5e7eb;
+					background: transparent;
 					flex-shrink: 0;
 				}
 				.ops-pool-sheet-tabs-group {
 					display: flex;
 					align-items: flex-end;
 					gap: 0;
+					padding: 0;
+					border: 0;
+					border-radius: 0;
+					background: transparent;
 				}
 				.ops-pool-sheet-tabs-right {
 					display: flex;
-					align-items: flex-end;
-					gap: 10px;
+					align-items: center;
+					gap: 8px;
 				}
 				.ops-pool-sheet-tab-wrap {
 					display: flex;
 					align-items: flex-end;
-					height: 40px;
+					height: 36px;
 				}
 				.ops-pool-sheet-tab,
 				.ops-pool-sheet-tab:hover,
@@ -64,14 +69,14 @@ export default function ProjectPoolSheetTabs({ value, onChange, extra }: Project
 				.ops-pool-sheet-tab:active {
 					display: inline-flex;
 					align-items: center;
-					height: 40px;
-					padding: 0 14px;
+					height: 30px;
+					padding: 0 12px;
 					border: 1px solid #e5e7eb;
 					border-bottom-color: #e5e7eb;
-					border-radius: 9px 9px 0 0;
-					background: #f1f5f9;
+					border-radius: 8px 8px 0 0;
+					background: transparent;
 					color: #64748b;
-					font-size: 14px;
+					font-size: 13px;
 					font-weight: 400;
 					font-family: inherit;
 					cursor: pointer;
@@ -85,16 +90,17 @@ export default function ProjectPoolSheetTabs({ value, onChange, extra }: Project
 				.ops-pool-sheet-tab-active:focus,
 				.ops-pool-sheet-tab-active:active {
 					background: #fff;
-					border-color: #d9dee7;
+					border-color: #d8e0ea;
 					border-bottom-color: #fff;
-					color: #334155;
+					color: #0f172a;
 					font-weight: 600;
+					box-shadow: none !important;
 				}
 			`}</style>
 			<div className="ops-pool-sheet-tabs">
 				<div className="ops-pool-sheet-tabs-group">{leftOptions.map(renderTab)}</div>
 				<div className="ops-pool-sheet-tabs-right">
-					{extra ? <div style={{ display: "flex", alignItems: "center", height: 40 }}>{extra}</div> : null}
+					{extra ? <div style={{ display: "flex", alignItems: "center", height: 32 }}>{extra}</div> : null}
 					<div className="ops-pool-sheet-tabs-group">{rightOptions.map(renderTab)}</div>
 				</div>
 			</div>
