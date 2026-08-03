@@ -1,6 +1,6 @@
 // 项目池路由:只注册 + 调 service(分层)。挂 /api/ops/*。可见=策划(制片)或管理员。
 import * as pool from "./services/ops-project-pool.mjs";
-import { isAdmin, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
+import { isAdmin, isPlanner, meId, soyooErrorResponse } from "./ops-helpers.mjs";
 
 const PROJECT_POOL_MAX_PAGE_SIZE = 500;
 
@@ -239,10 +239,14 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 项目协作成员(协作列点击查看)
-  app.get("/api/ops/project-pool/:id/members", requireAuth, requirePlanner, async (req, res) => {
+  // 项目协作成员(协作列点击查看)。项目池视角仅策划/管理员可进；我的项目里普通成员也允许查看自己参与项目/版本的成员。
+  app.get("/api/ops/project-pool/:id/members", requireAuth, async (req, res) => {
     try {
-      res.json({ members: await pool.getProjectMembers(req.params.id) });
+      const members = await pool.getProjectMembers(req.params.id);
+      if (!isAdmin(req.user) && !(await isPlanner(req.user)) && !members.some((member) => String(member.id) === String(meId(req.user)))) {
+        return res.status(403).json({ error: "无权查看该项目成员" });
+      }
+      res.json({ members });
     } catch (e) {
       soyooErrorResponse(res, e);
     }
