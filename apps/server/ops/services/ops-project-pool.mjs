@@ -10,6 +10,7 @@ import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
+import { logger } from "../../core/logger.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 export { lookupProjectPoolStages } from "./project-pool/snapshot-store.mjs";
@@ -295,7 +296,7 @@ export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "",
 // ---- 项目协作成员(协作列点击查看)----
 function mapProjectMember(member) {
   return {
-    id: String(member?.id ?? member?.user_id ?? member?.userId ?? ""),
+    id: String(member?.user_id ?? member?.userId ?? member?.id ?? ""),
     name: member?.name ?? member?.nickname ?? member?.username ?? "",
     avatar: member?.avatar ?? member?.wechat_avatar_url ?? member?.wechatAvatar ?? "",
     wechatName: member?.wechatName ?? member?.wechat_name ?? "",
@@ -306,6 +307,16 @@ function mapProjectMember(member) {
       .map((name) => String(name || "").trim())
       .filter(Boolean),
   };
+}
+
+function memberHasTag(member, tagName) {
+  return (Array.isArray(member?.tags) ? member.tags : []).some((tag) => (typeof tag === "string" ? tag : tag?.name) === tagName);
+}
+
+function canMutateProjectByPlanner(user, members) {
+  if (isAdmin(user)) return true;
+  const m = (Array.isArray(members) ? members : []).find((x) => x.id === meId(user));
+  return !!m && memberHasTag(m, PLANNER_TAG);
 }
 
 async function projectMembersFromSnapshot(projectId) {
@@ -334,7 +345,9 @@ export async function getProjectMembers(projectId) {
 async function getProjectAndMembersForOps(projectId) {
   const baseProjectId = soyooProjectId(projectId);
   const versionId = soyooVersionId(projectId);
-  const [project, members] = await Promise.all([soyooClient.project(baseProjectId), soyooClient.projectMembers(projectId)]);
+  const [project, memberResponse] = await Promise.all([soyooClient.project(baseProjectId), soyooClient.projectMembers(projectId)]);
+  const rawMembers = Array.isArray(memberResponse?.members) ? memberResponse.members : Array.isArray(memberResponse) ? memberResponse : [];
+  const members = rawMembers.map(mapProjectMember).filter((member) => member.id);
   if (!project?.id) return { project: null, members: [] };
   const version = versionId ? (project.versions || []).find((item) => String(item.id) === String(versionId)) : null;
   if (!version) return { project, members, baseProjectId, versionId: "" };
@@ -393,7 +406,7 @@ async function ensureSystemRequester() {
 
 function lastPlannerMember(members) {
   const planners = members
-    .filter((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tag.name === PLANNER_TAG))
+    .filter((member) => member.status !== "disabled" && memberHasTag(member, PLANNER_TAG))
     .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")) || Number(a.id) - Number(b.id));
   return planners.at(-1) || null;
 }
@@ -563,10 +576,7 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   if (!status) return { error: "缺少状态", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const from = project.status;
   // 相同状态默认拦截(避免 UI 误点把 status_changed_at 清零);force=true 放行(维护用:把停留计时刷新为当前时间)
   if (!force && from === status) return { error: "状态未变化,无需修改", code: 400 };
@@ -588,7 +598,9 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   if (autoTicket) {
     await autoCreateProjectStatusTicket({ project: { ...project, status }, members, projectId, title: autoTicket.title, eventNote: autoTicket.note });
   }
-  await refreshProjectPoolSnapshot(baseProjectId);
+  await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
+    logger.warn("project-pool snapshot refresh failed after status change", { projectId: baseProjectId, error });
+  });
   return { ok: true, status };
 }
 
@@ -598,10 +610,7 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   if (!PROJECT_STAGES.includes(stage)) return { error: "无效的阶段", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const pid = String(projectId);
   const cur = await prisma.ops_project_ext.findUnique({ where: { project_id: pid }, select: { stage: true } });
   const from = cur?.stage || null; // 没设置过阶段 → from 为空,日志只显示「→ X」
@@ -637,10 +646,7 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
 export async function changeProjectStageDeadlines({ user, projectId, stageBaseDate, stageDeadlines }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const body = {};
   if (stageBaseDate) body.stage_base_date = String(stageBaseDate);
   if (Array.isArray(stageDeadlines) && stageDeadlines.length) body.stage_deadlines = stageDeadlines;
@@ -672,10 +678,7 @@ export async function changeProjectStageDeadlines({ user, projectId, stageBaseDa
 export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const oldContact = String(project.customer_contact ?? "");
   const oldDoc = String(project.requirement_doc ?? "");
   const nextContact = String(customerContact ?? "").trim();
@@ -708,10 +711,7 @@ export async function changeProjectMeta({ user, projectId, customerContact, requ
 export async function changeProjectRemark({ user, projectId, remark }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const pid = String(projectId);
   const now = nowIso();
   const html = isBlankRich(remark) ? "" : sanitizeRichHtml(remark); // 富文本白名单清洗;允许清空

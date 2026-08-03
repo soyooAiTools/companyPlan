@@ -51,14 +51,25 @@ async function callRaw(path, opts = {}) {
     }
     const res = await fetch(`${BASE}${path}`, init);
     if (!res.ok) {
-      const body = await res.json().catch(() => ({})); // soyoo 错误体形如 {"error":"项目不存在"}
-      const err = new Error(body?.error || `soyoo ${path} -> ${res.status}`);
+      const rawText = await res.text().catch(() => "");
+      let body = {};
+      try {
+        body = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        body = {};
+      }
+      const detail = body?.error || rawText.trim().slice(0, 300);
+      const err = new Error(detail || `soyoo ${path} -> ${res.status}`);
       err.status = res.status; // soyoo 的状态码(如 404)
       err.soyooError = typeof body?.error === "string" ? body.error : ""; // soyoo 的原始错误文案,供透传
+      err.soyooPath = path;
+      err.soyooBody = rawText.trim().slice(0, 300);
       throw err;
     }
     return await res.json().catch(() => ({}));
   } catch (e) {
+    if (!e.soyooPath) e.soyooPath = path;
+    if (!e.soyooBody) e.soyooBody = e?.message || "";
     // 集中记录所有 soyoo 调用失败的真实原因(超时/网络/非2xx);下游 catch 会吞成"无法连接 soyoo",这里先打日志
     logger.error(e, { scope: "soyoo", path, timeoutMs, timeout: e?.name === "AbortError" });
     throw e;

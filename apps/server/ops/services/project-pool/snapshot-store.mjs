@@ -92,6 +92,45 @@ function filterRowForMember(row, userId) {
   return { ...row, children: matchedChildren };
 }
 
+function myProjectVersionIds(project) {
+  const versions = Array.isArray(project?.versions) ? project.versions : [];
+  return versions
+    .map((version) => version?.id ?? version?.version_id ?? version?.project_version_id ?? version?.projectVersionId)
+    .map((id) => String(id || "").trim())
+    .filter(Boolean);
+}
+
+async function loadMyProjectRefs(user) {
+  try {
+    const data = await soyooClient.myProjects(user?.id);
+    const projects = Array.isArray(data?.projects) ? data.projects : [];
+    const projectIds = new Set();
+    const versionIdsByProjectId = new Map();
+    for (const project of projects) {
+      const projectId = String(project?.project_id ?? project?.id ?? "").trim();
+      if (!projectId) continue;
+      const lifecycle = String(project?.project_lifecycle_status || project?.lifecycle_status || "").trim();
+      if (lifecycle && lifecycle !== "进行中" && lifecycle !== "正常") continue;
+      projectIds.add(projectId);
+      const versionIds = myProjectVersionIds(project);
+      if (versionIds.length) versionIdsByProjectId.set(projectId, new Set(versionIds));
+    }
+    return { projectIds, versionIdsByProjectId };
+  } catch {
+    return { projectIds: new Set(), versionIdsByProjectId: new Map() };
+  }
+}
+
+function filterRowForMyProjectRefs(row, refs) {
+  const projectId = String(row?.projectId || row?.id || "").trim();
+  if (!projectId || !refs.projectIds.has(projectId)) return null;
+  const children = Array.isArray(row?.children) ? row.children : [];
+  const versionIds = refs.versionIdsByProjectId.get(projectId);
+  if (!children.length || !versionIds?.size) return row;
+  const matchedChildren = children.filter((child) => versionIds.has(String(child?.versionId || "").trim()) || versionIds.has(String(child?.id || "").replace(/^.*::version-/, "")));
+  return matchedChildren.length ? { ...row, children: matchedChildren } : row;
+}
+
 async function loadMembersForProjectVersions(project, parentMembersFallback = []) {
 	const pid = String(project?.id || "");
 	const membersByProjectId = new Map([[pid, parentMembersFallback]]);
@@ -347,13 +386,17 @@ export async function loadMySnapshotRows({ user, statusNames = [] }) {
   const dbRows = await readProjectPoolSnapshotDbRows(statusNames);
   const uid = meId(user);
   const rows = [];
+  const fallbackRows = [];
   for (const dbRow of dbRows) {
     const row = snapshotDbRowToPoolRow(dbRow);
     if (!row || isExcludedTenantName(row.tenantName)) continue;
     if (!isProjectLifecycleActive(row)) continue;
-    if (!snapshotMemberIds(dbRow).map(soyooId).includes(uid)) continue;
+    fallbackRows.push(row);
     const scopedRow = filterRowForMember(row, uid);
     if (scopedRow) rows.push(scopedRow);
   }
-  return rows;
+  if (rows.length) return rows;
+  const refs = await loadMyProjectRefs(user);
+  if (!refs.projectIds.size) return [];
+  return fallbackRows.map((row) => filterRowForMyProjectRefs(row, refs)).filter(Boolean);
 }
