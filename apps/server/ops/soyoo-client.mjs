@@ -140,4 +140,20 @@ export const soyooClient = {
   setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/stage-deadlines`, { method: "POST", body: withVersionBody(projectId, body) }),
   setProjectMeta: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/meta`, { method: "POST", body: withVersionBody(projectId, body) }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
+  audioEditSessions: (opts = {}) => {
+    const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
+    if (opts.keyword) q.set("keyword", String(opts.keyword));
+    if (opts.status) q.set("status", String(opts.status));
+    return callRaw(`/integration/audio-edit/sessions?${q.toString()}`);
+  },
+  updateAudioEditPriority: (id, priority) =>
+    callRaw(`/integration/audio-edit/sessions/${encodeURIComponent(id)}/priority`, {
+      method: "PATCH",
+      body: { priority },
+    }),
+  updateAudioEditRemark: (id, remark) =>
+    callRaw(`/integration/audio-edit/sessions/${encodeURIComponent(id)}/remark`, {
+      method: "PATCH",
+      body: { remark },
+    }),
 };

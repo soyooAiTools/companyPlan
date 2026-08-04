@@ -28,6 +28,7 @@ import { registerOpsRoutes } from "./ops/ops-routes.mjs";
 import { registerProjectPoolRoutes } from "./ops/project-pool-routes.mjs";
 import { registerPeopleProgressRoutes } from "./ops/people-progress-routes.mjs";
 import { registerNotificationRoutes } from "./ops/notification-routes.mjs";
+import { registerAudioEditRoutes } from "./ops/audio-edit-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
@@ -74,6 +75,7 @@ registerOpsRoutes(app, { requireAuth, requireAdmin });
 registerProjectPoolRoutes(app, { requireAuth, requireAdmin });
 registerPeopleProgressRoutes(app, { requireAuth, requireAdmin });
 registerNotificationRoutes(app, { requireAuth, requireAdmin });
+registerAudioEditRoutes(app, { requireAuth, requireAdmin });
 
 const distDir = join(repoRoot, "apps", "web", "dist");
 if (existsSync(distDir)) {

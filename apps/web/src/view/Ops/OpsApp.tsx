@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { App as AntApp, Avatar, Button, ConfigProvider, Layout, Menu, Spin, Tooltip } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined, CustomerServiceOutlined } from "@ant-design/icons";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { logoutApi } from "../../api/modules/companyPlan";
 import { opsApi, type OpsMe } from "../../api/modules/ops";
@@ -15,6 +15,7 @@ import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
 import NotificationCenter from "./components/NotificationCenter";
 import UpdateLogFloat from "../../components/UpdateLogFloat";
+import AudioEditManagementPage from "../AudioEditManagement/AudioEditManagementPage";
 
 const { Sider, Content } = Layout;
 const OPS_SIDER_COLLAPSED_KEY = "ops.sider.collapsed";
@@ -69,6 +70,7 @@ export default function OpsApp() {
     { key: "my-projects", icon: <FolderOpenOutlined />, label: "我的项目", show: true },
     { key: "projects", icon: <ProjectOutlined />, label: "项目池", show: canPool },
     { key: "people", icon: <TeamOutlined />, label: "人员进度", show: isAdmin },
+    { key: "audio-edit", icon: <CustomerServiceOutlined />, label: "音效配置", show: true },
     { key: "tickets", icon: <FileTextOutlined />, label: "需求提单", show: true },
     { key: "settings", icon: <SettingOutlined />, label: "设置", show: isAdmin },
   ];
@@ -168,6 +170,7 @@ export default function OpsApp() {
                   <Route path="my-projects" element={<ProjectPoolPage key="my-projects" mine />} />
                   <Route path="projects" element={canPool ? <ProjectPoolPage key="projects" isAdmin={isAdmin} /> : <Navigate to="/tickets" replace />} />
                   <Route path="people" element={<PeoplePage />} />
+                  <Route path="audio-edit" element={<AudioEditManagementPage />} />
                   <Route path="settings" element={isAdmin ? <OpsSettingsPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="*" element={<Navigate to="/tickets" replace />} />
                 </Routes>

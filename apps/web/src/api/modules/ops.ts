@@ -145,6 +145,26 @@ export interface OpsMe {
 	notifyStart?: string; // 通知时段开始 HH:mm(此窗口外前端不弹桌面)
 	notifyEnd?: string; // 通知时段结束 HH:mm
 }
+
+export interface OpsAudioEditSession {
+	id: string;
+	projectName: string;
+	tenantName: string;
+	uploader: string;
+	uploadedAt: string | null;
+	priority: number | null;
+	debugUrl: string;
+	audioCount: number;
+	replacedCount: number;
+	status: string;
+	completedAt: string | null;
+	exportZipUrl: string;
+	plannerName: string;
+	plannerAvatar: string;
+	planners: { name: string; avatar: string }[];
+	systemRemark: string;
+}
+
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
@@ -575,4 +595,23 @@ export const opsApi = {
 	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
 	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number; notifyStart: string; notifyEnd: string }) =>
 		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
+	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status) qs.set("status", params.status);
+		const s = qs.toString();
+		return requestJson<{ rows: OpsAudioEditSession[]; total: number; page: number; pageSize: number }>(`/api/ops/audio-edit/sessions${s ? `?${s}` : ""}`);
+	},
+	updateAudioEditPriority: (id: string, priority: number | null) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/priority`, {
+			method: "PATCH",
+			body: JSON.stringify({ priority }),
+		}),
+	updateAudioEditRemark: (id: string, remark: string) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/remark`, {
+			method: "PATCH",
+			body: JSON.stringify({ remark }),
+		}),
 };
