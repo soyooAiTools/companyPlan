@@ -578,8 +578,6 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   if (!project) return { error: "项目不存在", code: 404 };
   if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const from = project.status;
-  // 相同状态默认拦截(避免 UI 误点把 status_changed_at 清零);force=true 放行(维护用:把停留计时刷新为当前时间)
-  if (!force && from === status) return { error: "状态未变化,无需修改", code: 400 };
   await soyooClient.setProjectStatus(projectId, status); // 抛错 → 路由转 502,不写日志(保证一致)
   await prisma.ops_project_status_logs.create({
     data: {
