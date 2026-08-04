@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import dayjs from "dayjs";
 import { Avatar, Button, Input, InputNumber, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import type { ColumnsType, TableProps } from "antd/es/table";
 import { EditOutlined, DownloadOutlined, LinkOutlined } from "@ant-design/icons";
 import type { OpsAudioEditSession } from "../../../api/modules/ops";
 import "../audioEditManagement.css";
@@ -13,7 +13,10 @@ type AudioEditTableProps = {
 	page: number;
 	pageSize: number;
 	loading: boolean;
+	sortBy: string;
+	sortOrder: "ascend" | "descend" | "";
 	onPageChange: (page: number, pageSize: number) => void;
+	onSortChange: (sortBy: string, sortOrder: "ascend" | "descend" | "") => void;
 	onPrioritySave: (row: OpsAudioEditSession, priority: number | null) => Promise<void>;
 	onRemarkSave: (row: OpsAudioEditSession, remark: string) => Promise<void>;
 };
@@ -156,7 +159,7 @@ function RemarkCell({ row, saving, onSave }: { row: OpsAudioEditSession; saving:
 	);
 }
 
-export default function AudioEditTable({ rows, total, page, pageSize, loading, onPageChange, onPrioritySave, onRemarkSave }: AudioEditTableProps) {
+export default function AudioEditTable({ rows, total, page, pageSize, loading, sortBy, sortOrder, onPageChange, onSortChange, onPrioritySave, onRemarkSave }: AudioEditTableProps) {
 	const [savingId, setSavingId] = useState<string>("");
 	const [savingRemarkId, setSavingRemarkId] = useState<string>("");
 
@@ -184,7 +187,8 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, o
 				title: "上传时间",
 				dataIndex: "uploadedAt",
 				width: 150,
-				sorter: (a, b) => dayjs(a.uploadedAt || 0).valueOf() - dayjs(b.uploadedAt || 0).valueOf(),
+				sorter: true,
+				sortOrder: sortBy === "last_upload_at" ? sortOrder || null : null,
 				render: formatTime,
 			},
 			{
@@ -216,7 +220,14 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, o
 			{ title: "原音效数量", dataIndex: "audioCount", width: 110, align: "right" },
 			{ title: "已替换数量", dataIndex: "replacedCount", width: 110, align: "right" },
 			{ title: "状态", dataIndex: "status", width: 100, render: statusTag },
-			{ title: "被标注完成时间", dataIndex: "completedAt", width: 160, render: formatTime },
+			{
+				title: "被标注完成时间",
+				dataIndex: "completedAt",
+				width: 160,
+				sorter: true,
+				sortOrder: sortBy === "completed_at" ? sortOrder || null : null,
+				render: formatTime,
+			},
 			{
 				title: "导出包",
 				dataIndex: "exportZipUrl",
@@ -243,8 +254,26 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, o
 				),
 			},
 		],
-		[onPrioritySave, onRemarkSave, page, pageSize, savingId, savingRemarkId],
+		[onPrioritySave, onRemarkSave, page, pageSize, savingId, savingRemarkId, sortBy, sortOrder],
 	);
+
+	const handleTableChange: TableProps<OpsAudioEditSession>["onChange"] = (_pagination, _filters, sorter) => {
+		const currentSorter = Array.isArray(sorter) ? sorter[0] : sorter;
+		const field = currentSorter?.field;
+		const order = (currentSorter?.order as "ascend" | "descend" | undefined) || "";
+
+		if (!order) {
+			if (sortBy) onSortChange("", "");
+			return;
+		}
+
+		if (field === "uploadedAt" || field === "completedAt") {
+			onSortChange(field === "uploadedAt" ? "last_upload_at" : "completed_at", order);
+			return;
+		}
+
+		if (sortBy) onSortChange("", "");
+	};
 
 	return (
 		<Table
@@ -255,6 +284,7 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, o
 			columns={columns}
 			size="middle"
 			scroll={{ x: 1720, y: "calc(100vh - 220px)" }}
+			onChange={handleTableChange}
 			pagination={{
 				current: page,
 				pageSize,

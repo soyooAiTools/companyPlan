@@ -11,6 +11,8 @@ export function registerAudioEditRoutes(app, { requireAuth }) {
         pageSize,
         q: String(req.query.q ?? ""),
         status: String(req.query.status ?? ""),
+        sortBy: String(req.query.sortBy ?? ""),
+        sortOrder: String(req.query.sortOrder ?? ""),
       });
       res.json(data);
     } catch (e) {

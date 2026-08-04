@@ -12,12 +12,16 @@ export default function AudioEditManagementPage() {
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 	const [status, setStatus] = useState("待替换");
+	const [keyword, setKeyword] = useState("");
+	const [debouncedKeyword, setDebouncedKeyword] = useState("");
+	const [sortBy, setSortBy] = useState("");
+	const [sortOrder, setSortOrder] = useState<"ascend" | "descend" | "">("");
 	const [loading, setLoading] = useState(false);
 	const requestSeqRef = useRef(0);
 
 	const query = useMemo(
-		() => ({ page, pageSize, status }),
-		[page, pageSize, status],
+		() => ({ page, pageSize, status, q: debouncedKeyword.trim(), sortBy, sortOrder }),
+		[page, pageSize, status, debouncedKeyword, sortBy, sortOrder],
 	);
 
 	const load = useCallback(async () => {
@@ -45,6 +49,14 @@ export default function AudioEditManagementPage() {
 		const timer = window.setTimeout(load, 220);
 		return () => window.clearTimeout(timer);
 	}, [load]);
+
+	useEffect(() => {
+		const timer = window.setTimeout(() => {
+			setDebouncedKeyword(keyword);
+			setPage(1);
+		}, 400);
+		return () => window.clearTimeout(timer);
+	}, [keyword]);
 
 	useEffect(() => {
 		const onVisible = () => {
@@ -88,11 +100,15 @@ export default function AudioEditManagementPage() {
 					</Typography.Title>
 					<AudioEditToolbar
 						status={status}
+						keyword={keyword}
 						loading={loading}
 						onStatusChange={(value) => {
 							setLoading(true);
 							setStatus(value);
 							setPage(1);
+						}}
+						onKeywordChange={(value) => {
+							setKeyword(value);
 						}}
 						onRefresh={load}
 					/>
@@ -106,6 +122,14 @@ export default function AudioEditManagementPage() {
 					onPageChange={(nextPage, nextPageSize) => {
 						setPage(nextPage);
 						setPageSize(nextPageSize);
+					}}
+					sortBy={sortBy}
+					sortOrder={sortOrder}
+					onSortChange={(nextSortBy, nextSortOrder) => {
+						setLoading(true);
+						setSortBy(nextSortBy);
+						setSortOrder(nextSortOrder);
+						setPage(1);
 					}}
 					onPrioritySave={savePriority}
 					onRemarkSave={saveRemark}

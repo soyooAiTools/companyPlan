@@ -600,12 +600,14 @@ export const opsApi = {
 	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
 	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number; notifyStart: string; notifyEnd: string }) =>
 		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
-	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string } = {}) => {
+	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string; sortBy?: string; sortOrder?: "ascend" | "descend" | "" } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
 		if (params.status) qs.set("status", params.status);
+		if (params.sortBy) qs.set("sortBy", params.sortBy);
+		if (params.sortOrder) qs.set("sortOrder", params.sortOrder);
 		const s = qs.toString();
 		return requestJson<{ rows: OpsAudioEditSession[]; total: number; page: number; pageSize: number }>(`/api/ops/audio-edit/sessions${s ? `?${s}` : ""}`);
 	},

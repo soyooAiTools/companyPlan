@@ -32,6 +32,8 @@ export async function listAudioEditSessions(params = {}) {
     limit: params.pageSize,
     keyword: params.q,
     status: params.status,
+    sortBy: params.sortBy,
+    sortOrder: params.sortOrder,
   });
   const rows = Array.isArray(body?.data) ? body.data.map(mapAudioEditSession) : [];
   return {

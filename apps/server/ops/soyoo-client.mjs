@@ -144,6 +144,8 @@ export const soyooClient = {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
     if (opts.keyword) q.set("keyword", String(opts.keyword));
     if (opts.status) q.set("status", String(opts.status));
+    if (opts.sortBy) q.set("sort_by", String(opts.sortBy));
+    if (opts.sortOrder) q.set("sort_order", String(opts.sortOrder));
     return callRaw(`/integration/audio-edit/sessions?${q.toString()}`);
   },
   updateAudioEditPriority: (id, priority) =>
