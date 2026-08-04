@@ -172,6 +172,7 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, o
 						<span className="audio-project-index">{(page - 1) * pageSize + index + 1}</span>
 						<Typography.Text strong>
 							{text || "-"}
+							{row.hasProjectVersions && row.projectVersionName ? ` - ${row.projectVersionName}` : ""}
 							{row.tenantName ? ` - ${row.tenantName}` : ""}
 						</Typography.Text>
 					</div>

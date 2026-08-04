@@ -150,6 +150,11 @@ export interface OpsAudioEditSession {
 	id: string;
 	projectName: string;
 	tenantName: string;
+	projectVersionId: string;
+	projectVersionCode: string;
+	projectVersionName: string;
+	isDefaultVersion: boolean;
+	hasProjectVersions: boolean;
 	uploader: string;
 	uploadedAt: string | null;
 	priority: number | null;
