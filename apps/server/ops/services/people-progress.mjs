@@ -223,8 +223,7 @@ function snapshotMemberIdSet(row, snapshot) {
   for (const projectRow of progressProjectRows(snapshot)) {
     for (const member of Array.isArray(projectRow?.members) ? projectRow.members : []) {
       if (!memberIsActive(member)) continue;
-      const key = normalizePersonId(member?.id);
-      if (key) ids.add(key);
+      for (const key of memberIdentityKeys(member)) ids.add(key);
     }
   }
   return ids;
@@ -237,8 +236,8 @@ function snapshotHasMember(row, snapshot, targetId) {
 function memberIdentityKeys(member) {
   return [
     normalizePersonId(member?.userId),
-    normalizePersonId(member?.id),
     normalizePersonId(member?.user_id),
+    // member.id 在旧快照里可能是 project_version_members.id，不能作为用户身份匹配。
     String(member?.username || "").trim(),
     String(member?.name || "").trim(),
     String(member?.wechatName || member?.wechat_name || "").trim(),
