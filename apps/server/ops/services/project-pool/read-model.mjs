@@ -77,16 +77,23 @@ export function normalizeProjectForPoolRow(project, members = []) {
     member_count: Array.isArray(members) ? members.length : Number(project.member_count ?? 0),
     members: Array.isArray(members)
       ? members
-          .map((m) => ({
-            id: String(m.id ?? m.user_id ?? ""),
-            username: m.username ?? "",
-            name: m.nickname || m.name || m.wechat_name || m.username || "",
-            avatar: m.avatar ?? m.wechat_avatar_url ?? m.wechat_avatar ?? "",
-            wechatName: m.wechatName ?? m.wechat_name ?? "",
-            hireDate: m.hireDate ?? m.hire_date ?? "",
-            status: m.status ?? m.user_status ?? "",
-            tags: (m.tags || []).map((t) => (typeof t === "string" ? t : t?.name ?? "")).filter(Boolean),
-          }))
+          .map((m) => {
+            // 用户 ID：用于人员进度、项目池权限过滤、负责人匹配。
+            const userId = String(m.user_id ?? m.userId ?? m.id ?? "");
+            return {
+              // 兼容旧前端字段，id 必须保持为用户 ID，不能放成员关系 ID。
+              id: userId,
+              // 显式用户 ID，新代码优先读这个字段。
+              userId,
+              username: m.username ?? "",
+              name: m.nickname || m.name || m.wechat_name || m.username || "",
+              avatar: m.avatar ?? m.wechat_avatar_url ?? m.wechat_avatar ?? "",
+              wechatName: m.wechatName ?? m.wechat_name ?? "",
+              hireDate: m.hireDate ?? m.hire_date ?? "",
+              status: m.status ?? m.user_status ?? "",
+              tags: (m.tags || []).map((t) => (typeof t === "string" ? t : t?.name ?? "")).filter(Boolean),
+            };
+          })
       : [],
   };
 }

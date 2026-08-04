@@ -236,6 +236,7 @@ function snapshotHasMember(row, snapshot, targetId) {
 
 function memberIdentityKeys(member) {
   return [
+    normalizePersonId(member?.userId),
     normalizePersonId(member?.id),
     normalizePersonId(member?.user_id),
     String(member?.username || "").trim(),

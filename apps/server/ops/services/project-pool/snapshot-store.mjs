@@ -74,10 +74,15 @@ function membersFromResponse(response) {
   return Array.isArray(response?.members) ? response.members : Array.isArray(response) ? response : [];
 }
 
+// member_ids_json 用于按登录用户过滤项目池，必须保存用户 ID，不能保存项目成员关系 ID。
+function memberUserId(member) {
+  return String(member?.user_id ?? member?.userId ?? member?.id ?? "").trim();
+}
+
 function memberMatchesUser(member, userId) {
   const uid = soyooId(userId);
   if (!uid) return false;
-  return soyooId(member?.id) === uid || soyooId(member?.user_id) === uid || soyooId(member?.userId) === uid;
+  return soyooId(memberUserId(member)) === uid;
 }
 
 function rowHasMember(row, userId) {
@@ -134,7 +139,7 @@ function filterRowForMyProjectRefs(row, refs) {
 async function loadMembersForProjectVersions(project, parentMembersFallback = []) {
 	const pid = String(project?.id || "");
 	const membersByProjectId = new Map([[pid, parentMembersFallback]]);
-	const memberIds = new Set(parentMembersFallback.map((m) => String(m.id)).filter(Boolean));
+	const memberIds = new Set(parentMembersFallback.map(memberUserId).filter(Boolean));
 	const versions = projectVersions(project);
 	const versionMembers = await mapConcurrent(versions, REBUILD_CONCURRENCY, async (version) => {
 		const rowId = versionRowId(pid, version.id);
@@ -148,7 +153,8 @@ async function loadMembersForProjectVersions(project, parentMembersFallback = []
 		const members = item.members || [];
 		membersByProjectId.set(item.rowId, members);
 		for (const member of members) {
-			if (member?.id) memberIds.add(String(member.id));
+			const userId = memberUserId(member);
+			if (userId) memberIds.add(userId);
 		}
 	}
 	return { membersByProjectId, memberIds: [...memberIds] };
