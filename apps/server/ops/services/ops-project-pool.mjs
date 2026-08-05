@@ -313,12 +313,6 @@ function memberHasTag(member, tagName) {
   return (Array.isArray(member?.tags) ? member.tags : []).some((tag) => (typeof tag === "string" ? tag : tag?.name) === tagName);
 }
 
-function canMutateProjectByPlanner(user, members) {
-  if (isAdmin(user)) return true;
-  const m = (Array.isArray(members) ? members : []).find((x) => x.id === meId(user));
-  return !!m && memberHasTag(m, PLANNER_TAG);
-}
-
 async function projectMembersFromSnapshot(projectId) {
   const baseProjectId = soyooProjectId(projectId);
   const versionId = soyooVersionId(projectId);
@@ -571,12 +565,11 @@ const STATUS_AUTO_TICKET = {
   打包中: { title: "催打包", note: "项目状态改为打包中后自动生成" },
 };
 
-// ---- 改状态:先调 soyoo(落库+飞书+outbox)成功,才写 ops 流转记录 ----
+// ---- 改状态:路由已限制策划/管理员;这里不再按版本成员二次拦截,避免多版本成员不同步导致误判 ----
 export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false }) {
   if (!status) return { error: "缺少状态", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const from = project.status;
   await soyooClient.setProjectStatus(projectId, status); // 抛错 → 路由转 502,不写日志(保证一致)
   await prisma.ops_project_status_logs.create({
@@ -602,13 +595,12 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   return { ok: true, status };
 }
 
-// ---- 改阶段(纯 ops:校验权限 → upsert ops_project_ext → 写日志 kind=stage,不调 soyoo)----
+// ---- 改阶段(纯 ops:路由权限 → upsert ops_project_ext → 写日志 kind=stage,不调 soyoo)----
 export async function changeProjectStage({ user, projectId, stage, commentHtml }) {
   if (!stage) return { error: "缺少阶段", code: 400 };
   if (!PROJECT_STAGES.includes(stage)) return { error: "无效的阶段", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const pid = String(projectId);
   const cur = await prisma.ops_project_ext.findUnique({ where: { project_id: pid }, select: { stage: true } });
   const from = cur?.stage || null; // 没设置过阶段 → from 为空,日志只显示「→ X」
@@ -640,11 +632,10 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
   return { ok: true, stage };
 }
 
-// ---- 改下版交付时间(临时校准入口):校验权限 → 写 soyoo projects.stage_deadlines → 写项目流转日志 ----
+// ---- 改下版交付时间(临时校准入口):路由权限 → 写 soyoo projects.stage_deadlines → 写项目流转日志 ----
 export async function changeProjectStageDeadlines({ user, projectId, stageBaseDate, stageDeadlines }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const body = {};
   if (stageBaseDate) body.stage_base_date = String(stageBaseDate);
   if (Array.isArray(stageDeadlines) && stageDeadlines.length) body.stage_deadlines = stageDeadlines;
@@ -676,7 +667,6 @@ export async function changeProjectStageDeadlines({ user, projectId, stageBaseDa
 export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const oldContact = String(project.customer_contact ?? "");
   const oldDoc = String(project.requirement_doc ?? "");
   const nextContact = String(customerContact ?? "").trim();
@@ -705,11 +695,10 @@ export async function changeProjectMeta({ user, projectId, customerContact, requ
   return { ok: true, customerContact: r?.data?.customer_contact ?? nextContact, requirementDoc: r?.data?.requirement_doc ?? nextDoc };
 }
 
-// ---- 改备注(纯 ops:富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
+// ---- 改备注(纯 ops:路由权限 → 富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
 export async function changeProjectRemark({ user, projectId, remark }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!canMutateProjectByPlanner(user, members)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
   const pid = String(projectId);
   const now = nowIso();
   const html = isBlankRich(remark) ? "" : sanitizeRichHtml(remark); // 富文本白名单清洗;允许清空
