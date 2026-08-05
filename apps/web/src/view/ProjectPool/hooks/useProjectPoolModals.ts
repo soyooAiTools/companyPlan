@@ -18,6 +18,12 @@ type SegmentTicketWithSource = OpsSegmentTicket & {
 
 const waitForPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
+function versionScopedProjectId(row: OpsProjectPoolRow) {
+  const baseId = String(row.projectId || row.parentId || row.id || "");
+  if (!baseId || baseId.includes("::version-")) return baseId;
+  return row.versionId ? `${baseId}::version-${row.versionId}` : baseId;
+}
+
 export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>) {
   const [chOpen, setChOpen] = useState(false);
   const [chField, setChField] = useState<"status" | "stage">("status");
@@ -164,7 +170,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setMembers([]);
     setMemLoading(true);
     try {
-      const result = await opsApi.projectPoolMembers(row.id);
+      const result = await opsApi.projectPoolMembers(versionScopedProjectId(row));
       setMembers(result.members);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载协作成员失败");

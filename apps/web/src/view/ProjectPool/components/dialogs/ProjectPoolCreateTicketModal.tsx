@@ -15,6 +15,12 @@ type ProjectPoolCreateTicketModalProps = {
 	onCancel: () => void;
 };
 
+function versionScopedProjectId(project?: OpsProjectPoolRow | null) {
+	const baseId = String(project?.projectId || project?.parentId || project?.id || "");
+	if (!baseId || baseId.includes("::version-")) return baseId;
+	return project?.versionId ? `${baseId}::version-${project.versionId}` : baseId;
+}
+
 export default function ProjectPoolCreateTicketModal({ open, project, member, messageApi, onCreated, onCancel }: ProjectPoolCreateTicketModalProps) {
 	const [form] = Form.useForm();
 	const [submitting, setSubmitting] = useState(false);
@@ -90,7 +96,7 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			};
 			setProjects([fallbackProject]);
 			form.setFieldsValue({ tenantId: project.tenantId || undefined, projectId: project.id, priority: "普通", tickets: [{}] });
-			void loadResponsibles(project.id);
+			void loadResponsibles(versionScopedProjectId(project));
 			const allProjects = await opsApi.projects(project.tenantId).catch(() => null);
 			if (!active || !allProjects) return;
 			const current = allProjects.projects.find((item) => String(item.id) === String(project.id));
@@ -155,7 +161,7 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 		const ticketsToCreate = rawTickets
 			.filter(isComplete)
 			.map((ticket) => ({
-				projectId: v.projectId,
+				projectId: String(v.projectId) === String(project?.id) ? versionScopedProjectId(project) : v.projectId,
 				projectVersionId: String(v.projectId) === String(project?.id) ? clickedVersion?.id || "" : "",
 				projectVersionCode: String(v.projectId) === String(project?.id) ? clickedVersion?.code || "" : "",
 				projectVersionName: String(v.projectId) === String(project?.id) ? clickedVersion?.name || "" : "",
