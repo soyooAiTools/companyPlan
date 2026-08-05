@@ -19,6 +19,7 @@ type AudioEditTableProps = {
 	onSortChange: (sortBy: string, sortOrder: "ascend" | "descend" | "") => void;
 	onPrioritySave: (row: OpsAudioEditSession, priority: number | null) => Promise<void>;
 	onRemarkSave: (row: OpsAudioEditSession, remark: string) => Promise<void>;
+	onStatusSave: (row: OpsAudioEditSession, status: string, remark: string) => Promise<void>;
 };
 
 function formatTime(value?: string | null) {
@@ -117,16 +118,16 @@ function PriorityCell({ row, saving, onSave }: { row: OpsAudioEditSession; savin
 
 function RemarkCell({ row, saving, onSave }: { row: OpsAudioEditSession; saving: boolean; onSave: (row: OpsAudioEditSession, remark: string) => Promise<void> }) {
 	const [open, setOpen] = useState(false);
-	const [draft, setDraft] = useState(row.systemRemark || "");
+	const [draft, setDraft] = useState("");
 	const text = row.systemRemark || "";
 	const tooLong = draft.length > 300;
-	const changed = draft !== text;
+	const canSave = draft.trim().length > 0 && !tooLong;
 	return (
 		<>
 			<div
 				className="audio-remark-cell"
 				onClick={() => {
-					setDraft(text);
+					setDraft("");
 					setOpen(true);
 				}}>
 				{text ? (
@@ -146,22 +147,91 @@ function RemarkCell({ row, saving, onSave }: { row: OpsAudioEditSession; saving:
 				width={620}
 				okText="保存"
 				cancelText="取消"
-				okButtonProps={{ disabled: !changed || tooLong, loading: saving }}
+				okButtonProps={{ disabled: !canSave, loading: saving }}
 				onCancel={() => setOpen(false)}
 				onOk={async () => {
-					await onSave(row, draft);
+					const nextRemark = `${dayjs().format("MM-DD HH:mm")} ${draft.trim()}${text ? `\n${text}` : ""}`;
+					await onSave(row, nextRemark);
 					setOpen(false);
 				}}>
-				<Input.TextArea rows={6} maxLength={300} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="填写备注" />
+				<Input.TextArea rows={4} maxLength={300} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="填写本次备注" />
 				<div className={tooLong ? "audio-remark-count audio-remark-count-error" : "audio-remark-count"}>{draft.length} / 300</div>
+				{ text ? (
+					<div className="audio-remark-history">
+						<div className="audio-remark-history-title">历史备注</div>
+						<div className="audio-remark-history-content">{text}</div>
+					</div>
+				) : null}
 			</Modal>
 		</>
 	);
 }
 
-export default function AudioEditTable({ rows, total, page, pageSize, loading, sortBy, sortOrder, onPageChange, onSortChange, onPrioritySave, onRemarkSave }: AudioEditTableProps) {
+function StatusCell({
+	row,
+	saving,
+	onSave,
+}: {
+	row: OpsAudioEditSession;
+	saving: boolean;
+	onSave: (row: OpsAudioEditSession, status: string, remark: string) => Promise<void>;
+}) {
+	const [open, setOpen] = useState(false);
+	const nextStatus = "已完成";
+	const [remark, setRemark] = useState("");
+	const tooLong = remark.length > 300;
+	const canSave = nextStatus !== row.status && remark.trim().length > 0 && !tooLong;
+
+	useEffect(() => {
+		setRemark("");
+		setOpen(false);
+	}, [row.id, row.status]);
+
+	if (row.status === "已完成") {
+		return statusTag(row.status);
+	}
+
+	return (
+		<>
+			<button
+				type="button"
+				className="audio-status-button"
+				disabled={saving}
+				title="标记已完成"
+				onClick={() => {
+					setRemark("");
+					setOpen(true);
+				}}>
+				{statusTag(row.status)}
+				<EditOutlined className="audio-status-edit-icon" />
+			</button>
+			<Modal
+				title={`标记已完成 - ${row.projectName || "-"}`}
+				open={open}
+				width={560}
+				okText="保存"
+				cancelText="取消"
+				okButtonProps={{ disabled: !canSave, loading: saving }}
+				onCancel={() => setOpen(false)}
+				onOk={async () => {
+					await onSave(row, nextStatus, remark.trim());
+					setOpen(false);
+				}}>
+				<Space direction="vertical" size={12} style={{ width: "100%" }}>
+					<div className="audio-status-current">当前状态：{statusTag(row.status)}</div>
+					<div className="audio-status-current">修改为：{statusTag(nextStatus)}</div>
+					<Input.TextArea rows={4} maxLength={300} value={remark} onChange={(event) => setRemark(event.target.value)} placeholder="填写本次状态变更备注" />
+					<div className={tooLong ? "audio-remark-count audio-remark-count-error" : "audio-remark-count"}>{remark.length} / 300</div>
+				</Space>
+			</Modal>
+		</>
+	);
+}
+
+export default function AudioEditTable({ rows, total, page, pageSize, loading, sortBy, sortOrder, onPageChange, onSortChange, onPrioritySave, onRemarkSave, onStatusSave }: AudioEditTableProps) {
 	const [savingId, setSavingId] = useState<string>("");
 	const [savingRemarkId, setSavingRemarkId] = useState<string>("");
+	const [savingStatusId, setSavingStatusId] = useState<string>("");
 
 	const columns = useMemo<ColumnsType<OpsAudioEditSession>>(
 		() => [
@@ -219,7 +289,25 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, s
 			},
 			{ title: "原音效数量", dataIndex: "audioCount", width: 110, align: "right" },
 			{ title: "已替换数量", dataIndex: "replacedCount", width: 110, align: "right" },
-			{ title: "状态", dataIndex: "status", width: 100, render: statusTag },
+			{
+				title: "状态",
+				dataIndex: "status",
+				width: 120,
+				render: (_value, row) => (
+					<StatusCell
+						row={row}
+						saving={savingStatusId === row.id}
+						onSave={async (target, nextStatus, remark) => {
+							setSavingStatusId(target.id);
+							try {
+								await onStatusSave(target, nextStatus, remark);
+							} finally {
+								setSavingStatusId("");
+							}
+						}}
+					/>
+				),
+			},
 			{
 				title: "被标注完成时间",
 				dataIndex: "completedAt",
@@ -254,7 +342,7 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, s
 				),
 			},
 		],
-		[onPrioritySave, onRemarkSave, page, pageSize, savingId, savingRemarkId, sortBy, sortOrder],
+		[onPrioritySave, onRemarkSave, onStatusSave, page, pageSize, savingId, savingRemarkId, savingStatusId, sortBy, sortOrder],
 	);
 
 	const handleTableChange: TableProps<OpsAudioEditSession>["onChange"] = (_pagination, _filters, sorter) => {

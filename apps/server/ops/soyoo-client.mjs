@@ -158,4 +158,9 @@ export const soyooClient = {
       method: "PATCH",
       body: { remark },
     }),
+  updateAudioEditStatus: (id, status, remark) =>
+    callRaw(`/integration/audio-edit/sessions/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      body: { status, remark },
+    }),
 };

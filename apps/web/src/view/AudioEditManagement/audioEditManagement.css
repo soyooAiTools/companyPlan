@@ -124,6 +124,45 @@
 	background: #475569;
 }
 
+.audio-status-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.audio-status-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.65;
+}
+
+.audio-status-button .audio-status-tag {
+	margin-inline-end: 0;
+}
+
+.audio-status-edit-icon {
+	color: #94a3b8;
+	font-size: 12px;
+	opacity: 0;
+	transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.audio-status-button:hover .audio-status-edit-icon,
+.audio-edit-table .ant-table-row:hover .audio-status-edit-icon {
+	opacity: 1;
+	color: #0f766e;
+}
+
+.audio-status-current {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: #64748b;
+}
+
 .audio-remark-cell {
 	position: relative;
 	display: flex;
@@ -160,6 +199,30 @@
 
 .audio-remark-count-error {
 	color: #dc2626;
+}
+
+.audio-remark-history {
+	margin-top: 12px;
+	padding: 10px 12px;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: #f8fafc;
+}
+
+.audio-remark-history-title {
+	margin-bottom: 6px;
+	color: #475569;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.audio-remark-history-content {
+	max-height: 120px;
+	overflow: auto;
+	white-space: pre-wrap;
+	color: #334155;
+	font-size: 13px;
+	line-height: 1.6;
 }
 
 @media (max-width: 760px) {

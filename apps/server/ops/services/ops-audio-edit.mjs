@@ -60,3 +60,25 @@ export async function updateAudioEditRemark(id, remark) {
   const body = await soyooClient.updateAudioEditRemark(id, value);
   return { session: mapAudioEditSession(body?.data) };
 }
+
+export async function updateAudioEditStatus(id, status, remark) {
+  const nextStatus = status == null ? "" : String(status).trim();
+  const note = remark == null ? "" : String(remark).trim();
+  if (nextStatus !== "已完成") {
+    const err = new Error("待替换只能修改为已完成");
+    err.status = 400;
+    throw err;
+  }
+  if (!note) {
+    const err = new Error("修改状态需要填写备注");
+    err.status = 400;
+    throw err;
+  }
+  if ([...note].length > 300) {
+    const err = new Error("备注不能超过 300 个字符");
+    err.status = 400;
+    throw err;
+  }
+  const body = await soyooClient.updateAudioEditStatus(id, nextStatus, note);
+  return { session: mapAudioEditSession(body?.data) };
+}

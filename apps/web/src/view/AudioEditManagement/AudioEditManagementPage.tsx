@@ -20,7 +20,17 @@ export default function AudioEditManagementPage() {
 	const requestSeqRef = useRef(0);
 
 	const query = useMemo(
-		() => ({ page, pageSize, status, q: debouncedKeyword.trim(), sortBy, sortOrder }),
+		() => {
+			const effectiveSortOrder: "ascend" | "descend" | "" = sortOrder || (status === "已完成" ? "descend" : "");
+			return {
+				page,
+				pageSize,
+				status,
+				q: debouncedKeyword.trim(),
+				sortBy: sortBy || (status === "已完成" ? "completed_at" : ""),
+				sortOrder: effectiveSortOrder,
+			};
+		},
 		[page, pageSize, status, debouncedKeyword, sortBy, sortOrder],
 	);
 
@@ -88,6 +98,18 @@ export default function AudioEditManagementPage() {
 		}
 	};
 
+	const saveStatus = async (row: OpsAudioEditSession, nextStatus: string, remark: string) => {
+		try {
+			const result = await opsApi.updateAudioEditStatus(row.id, nextStatus, remark);
+			setRows((prev) => prev.map((item) => (item.id === row.id ? result.session : item)));
+			message.success("状态已保存");
+			load();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "状态保存失败");
+			throw error;
+		}
+	};
+
 	return (
 		<div className="audio-edit-page">
 			<Card
@@ -105,6 +127,13 @@ export default function AudioEditManagementPage() {
 						onStatusChange={(value) => {
 							setLoading(true);
 							setStatus(value);
+							if (value === "已完成") {
+								setSortBy("completed_at");
+								setSortOrder("descend");
+							} else if (sortBy === "completed_at") {
+								setSortBy("");
+								setSortOrder("");
+							}
 							setPage(1);
 						}}
 						onKeywordChange={(value) => {
@@ -133,6 +162,7 @@ export default function AudioEditManagementPage() {
 					}}
 					onPrioritySave={savePriority}
 					onRemarkSave={saveRemark}
+					onStatusSave={saveStatus}
 				/>
 			</Card>
 		</div>

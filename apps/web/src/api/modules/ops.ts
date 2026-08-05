@@ -621,4 +621,9 @@ export const opsApi = {
 			method: "PATCH",
 			body: JSON.stringify({ remark }),
 		}),
+	updateAudioEditStatus: (id: string, status: string, remark: string) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/status`, {
+			method: "PATCH",
+			body: JSON.stringify({ status, remark }),
+		}),
 };
