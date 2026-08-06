@@ -22,7 +22,7 @@ export async function listBusinessUnits() {
   const rows = await soyooClient.businessUnits();
   return (Array.isArray(rows) ? rows : [])
     .map((row) => ({
-      id: String(row.id ?? ""),
+      id: String(row.id ?? row.ID ?? ""),
       name: String(row.name ?? "").trim(),
       code: String(row.code ?? "").trim(),
     }))
