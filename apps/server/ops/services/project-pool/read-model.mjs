@@ -19,6 +19,23 @@ function ensureTicketAgg(map, pid) {
   return (map[pid] ||= { groups: {}, total: 0, atRisk: 0, overdue: 0, segCounts: {} });
 }
 
+function mergeTicketAgg(...items) {
+  const out = { groups: {}, total: 0, atRisk: 0, overdue: 0, segCounts: {} };
+  for (const item of items) {
+    if (!item) continue;
+    out.total += Number(item.total || 0);
+    out.atRisk += Number(item.atRisk || 0);
+    out.overdue += Number(item.overdue || 0);
+    for (const [status, count] of Object.entries(item.groups || {})) {
+      out.groups[status] = (out.groups[status] || 0) + Number(count || 0);
+    }
+    for (const [segmentId, count] of Object.entries(item.segCounts || {})) {
+      out.segCounts[segmentId] = (out.segCounts[segmentId] || 0) + Number(count || 0);
+    }
+  }
+  return out;
+}
+
 // 每项目聚合:未完成按状态分组数 / 逾期 / 临期 / 各环节未完成工单数。
 export async function aggregateProjectTickets(projectIds) {
   const out = {};
@@ -141,7 +158,7 @@ function defaultStageFromDeadlines(items) {
 export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, extMap, options = {}) {
   const rowId = String(options.rowId || project.id);
   const version = options.version || (!options.hasVersionChildren ? null : defaultVersion(project));
-  const agg = ticketAgg[rowId] || {};
+  const agg = options.ticketAggOverride || ticketAgg[rowId] || {};
   const ext = extMap?.[rowId] || {};
   const status = version ? versionValue(version, project, "status") : project.status;
   const stageDeadlines = normalizeStageDeadlinesValue(version ? versionValue(version, project, "stage_deadlines", "stage_deadlines") : (project.stage_deadlines ?? project.stageDeadlines));
@@ -178,11 +195,11 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
     statusChangedAt: statusChangedAt ?? null,
     memberCount,
     members: Array.isArray(project.members) ? project.members : [],
-    segments: options.isVersionRow ? [] : orderSegments(agg.segCounts || {}, segMap),
-    ticketGroups: options.isVersionRow ? {} : agg.groups || {},
-    ticketTotal: options.isVersionRow ? 0 : agg.total || 0,
-    atRisk: options.isVersionRow ? 0 : agg.atRisk || 0,
-    overdue: options.isVersionRow ? 0 : agg.overdue || 0,
+    segments: orderSegments(agg.segCounts || {}, segMap),
+    ticketGroups: agg.groups || {},
+    ticketTotal: agg.total || 0,
+    atRisk: agg.atRisk || 0,
+    overdue: agg.overdue || 0,
     stuckHours,
     staleHours,
     overByHours: isStale ? stuckHours - staleHours : null,
@@ -210,7 +227,9 @@ export async function buildProjectPoolRows(projects, membersByProjectId = new Ma
     if (versions.length <= 1) {
       const version = versions[0] || null;
       const members = version ? membersByProjectId.get(versionRowId(project.id, version.id)) || parentMembers : parentMembers;
-      return buildProjectPoolRow(normalizeProjectForPoolRow(project, members), ticketAgg, segMap, statusSettings, extMap, { version });
+      const versionId = version?.id ? versionRowId(project.id, version.id) : "";
+      const ticketAggOverride = versionId ? mergeTicketAgg(ticketAgg[String(project.id)], ticketAgg[versionId]) : undefined;
+      return buildProjectPoolRow(normalizeProjectForPoolRow(project, members), ticketAgg, segMap, statusSettings, extMap, { version, ticketAggOverride });
     }
     const parentRow = buildProjectPoolRow(normalizedParent, ticketAgg, segMap, statusSettings, extMap, { hasVersionChildren: true });
     parentRow.children = versions.map((version) => {

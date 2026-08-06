@@ -2,18 +2,47 @@ import { prisma } from "../../prisma.mjs";
 import { getProjectWithMembers } from "../../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../../ops-helpers.mjs";
 import { remainingBusinessHours } from "../../business-hours.mjs";
-import { loadSegmentOrderMap } from "./read-model.mjs";
+import { loadSegmentOrderMap, versionRowId } from "./read-model.mjs";
+
+function parseJson(value, fallback) {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function expandSingleVersionTicketProjectIds(projectIds) {
+  const ids = [...new Set((projectIds ?? []).map(String).filter(Boolean))];
+  const baseIds = ids.filter((id) => !id.includes("::version-"));
+  if (!baseIds.length) return ids;
+  const rows = await prisma.ops_project_pool_snapshot.findMany({
+    where: { project_id: { in: baseIds } },
+    select: { project_id: true, row_json: true },
+  });
+  const expanded = new Set(ids);
+  for (const row of rows) {
+    const snapshot = parseJson(row.row_json, null);
+    // 单版本项目的列表行仍使用项目 ID，但新工单已写入默认版本 ID，需要合并查询。
+    if (snapshot && !snapshot.hasVersionChildren && snapshot.versionId) {
+      expanded.add(versionRowId(row.project_id, snapshot.versionId));
+    }
+  }
+  return [...expanded];
+}
 
 export async function listSegmentTickets(projectId, segmentId) {
   const sid = Number(segmentId);
   if (!projectId || !Number.isFinite(sid)) return [];
   const now = nowIso();
+  const projectIds = await expandSingleVersionTicketProjectIds([projectId]);
   const rows = await prisma.tickets.findMany({
-    where: { project_id: String(projectId), segment_id: sid, status: { not: "已完成" } },
+    where: { project_id: { in: projectIds }, segment_id: sid, status: { not: "已完成" } },
     orderBy: [{ due_at: "asc" }],
     select: {
       id: true,
       title: true,
+      project_id: true,
       status: true,
       priority: true,
       requester_name: true,
@@ -27,6 +56,7 @@ export async function listSegmentTickets(projectId, segmentId) {
   return rows.map((t) => ({
     id: t.id,
     title: t.title,
+    projectId: t.project_id,
     status: t.status,
     priority: t.priority,
     requesterName: t.requester_name || "",
@@ -41,7 +71,7 @@ export async function listSegmentTickets(projectId, segmentId) {
 }
 
 export async function listProjectPoolTickets({ projectIds = [], mode = "unfinished", segmentIds = [], ownerName = "" }) {
-  const ids = [...new Set((projectIds ?? []).map(String).filter(Boolean))];
+  const ids = await expandSingleVersionTicketProjectIds(projectIds);
   if (!ids.length) return [];
   const now = nowIso();
   const segmentFilter = (segmentIds ?? []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
@@ -141,8 +171,9 @@ export async function getSegmentTicketDetail({ user, projectId, segmentId, ticke
     const uid = meId(user);
     if (!members.some((m) => String(m.id) === uid)) return { error: "无权查看该项目工单", code: 403 };
   }
+  const projectIds = await expandSingleVersionTicketProjectIds([projectId]);
   const [ticket, segment, events] = await Promise.all([
-    prisma.tickets.findFirst({ where: { id: String(ticketId), project_id: String(projectId), segment_id: sid } }),
+    prisma.tickets.findFirst({ where: { id: String(ticketId), project_id: { in: projectIds }, segment_id: sid } }),
     prisma.ops_segments.findUnique({ where: { id: sid }, select: { name: true } }),
     prisma.ticket_events.findMany({ where: { ticket_id: String(ticketId) }, orderBy: [{ created_at: "desc" }, { id: "desc" }] }),
   ]);
