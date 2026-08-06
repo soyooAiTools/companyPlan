@@ -424,8 +424,8 @@ export const opsApi = {
 		const s = qs.toString();
 		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
 	},
-	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
-	createTickets: (body: CreateTicketBatchBody) => requestJson<{ tickets: OpsTicket[] }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket; projectRow?: OpsProjectPoolRow | null }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	createTickets: (body: CreateTicketBatchBody) => requestJson<{ tickets: OpsTicket[]; projectRows?: OpsProjectPoolRow[] }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
 	ticket: (id: string) => requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`),
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)

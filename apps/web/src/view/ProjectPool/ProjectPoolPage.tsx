@@ -177,8 +177,13 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		allRowsSourceKey,
 		load,
 		loadAllRows,
+		replaceProjectRows,
 	} = useProjectPoolData(message, { mine, pagedEnabled: mine || !groupMode });
-	const reloadAfterProjectChange = async () => {
+	const reloadAfterProjectChange = async (updatedRows: OpsProjectPoolRow[] = []) => {
+		if (updatedRows.length) {
+			replaceProjectRows(updatedRows);
+			return;
+		}
 		if (mine || !groupMode) await load();
 		if (!mine && tab === "all") await loadAllRows(true);
 	};

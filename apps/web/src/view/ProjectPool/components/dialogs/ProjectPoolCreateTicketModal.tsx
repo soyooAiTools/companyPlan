@@ -11,7 +11,7 @@ type ProjectPoolCreateTicketModalProps = {
 	project: OpsProjectPoolRow | null;
 	member?: OpsProjectPoolMember | null;
 	messageApi: MessageInstance;
-	onCreated: () => Promise<void> | void;
+	onCreated: (rows?: OpsProjectPoolRow[]) => Promise<void> | void;
 	onCancel: () => void;
 };
 
@@ -204,10 +204,10 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 		}
 		setSubmitting(true);
 		try {
-			await opsApi.createTickets({ projectId: versionProjectId(v.projectId, selectedVersion?.id), priority: v.priority, tickets: ticketsToCreate });
+			const result = await opsApi.createTickets({ projectId: versionProjectId(v.projectId, selectedVersion?.id), priority: v.priority, tickets: ticketsToCreate });
 			messageApi.success(ticketsToCreate.length > 1 ? `已创建 ${ticketsToCreate.length} 条工单` : "提单已创建");
 			onCancel();
-			await onCreated();
+			await onCreated(result.projectRows || []);
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "建单失败");
 		} finally {

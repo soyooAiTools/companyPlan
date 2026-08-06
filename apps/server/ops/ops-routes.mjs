@@ -535,10 +535,12 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       for (const created of createdRows) {
         await notif.notifyTicketAssigned(created, meId(user));
       }
+      const projectRows = [];
       for (const projectId of new Set(createdRows.map((ticket) => ticket.project_id))) {
-        void refreshProjectPoolSnapshot(projectId).catch(() => {});
+        const row = await refreshProjectPoolSnapshot(projectId).catch(() => null);
+        if (row) projectRows.push(row);
       }
-      return res.status(201).json({ tickets: await decorateTickets(createdRows, user, await loadSegNameMap()) });
+      return res.status(201).json({ tickets: await decorateTickets(createdRows, user, await loadSegNameMap()), projectRows });
     }
 
     const prepared = await prepareTicketCreate({ user, body: b });
@@ -549,8 +551,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
     await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
-    void refreshProjectPoolSnapshot(created.project_id).catch(() => {});
-    res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()) });
+    const projectRow = await refreshProjectPoolSnapshot(created.project_id).catch(() => null);
+    res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()), projectRow });
   });
 
   // 项目成员(指派候选 / 选负责人):实时查 soyoo

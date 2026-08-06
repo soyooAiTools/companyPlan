@@ -6,6 +6,29 @@ import { emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue 
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
+function replaceProjectPoolRows(rows: OpsProjectPoolRow[], updates: OpsProjectPoolRow[]): OpsProjectPoolRow[] {
+  if (!updates.length) return rows;
+  const byId = new Map(updates.map((row) => [String(row.id), row]));
+  const byProjectId = new Map(updates.map((row) => [String(row.projectId || row.id), row]));
+  let changed = false;
+  const nextRows: OpsProjectPoolRow[] = rows.map((row) => {
+    const replacement = byId.get(String(row.id)) || (!row.isVersionRow && !row.parentId ? byProjectId.get(String(row.projectId || row.id)) : undefined);
+    if (replacement) {
+      changed = true;
+      return replacement;
+    }
+    if (row.children?.length) {
+      const children: OpsProjectPoolRow[] = replaceProjectPoolRows(row.children, updates);
+      if (children !== row.children) {
+        changed = true;
+        return { ...row, children };
+      }
+    }
+    return row;
+  });
+  return changed ? nextRows : rows;
+}
+
 export function useProjectPoolData(message: MessageApi, options: { mine?: boolean; pagedEnabled?: boolean } = {}) {
   const mine = !!options.mine;
   const pagedEnabled = options.pagedEnabled ?? true;
@@ -117,6 +140,16 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
   };
 
+  const replaceProjectRows = (updates: OpsProjectPoolRow[] = []) => {
+    const normalizedUpdates = updates.filter(Boolean);
+    if (!normalizedUpdates.length) return;
+    // 提单/改字段后后端会返回受影响的项目行。这里只替换当前缓存中的对应行,
+    // 避免重拉整张项目池导致当前筛选、分页、分组视图被重置。
+    setRows((old) => replaceProjectPoolRows(old, normalizedUpdates));
+    setAllRows((old) => replaceProjectPoolRows(old, normalizedUpdates));
+    setFilterOptionRows((old) => replaceProjectPoolRows(old, normalizedUpdates));
+  };
+
   useEffect(() => {
     setTab("all");
     setRows([]);
@@ -197,5 +230,6 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     allRowsSourceKey,
     load,
     loadAllRows,
+    replaceProjectRows,
   };
 }
