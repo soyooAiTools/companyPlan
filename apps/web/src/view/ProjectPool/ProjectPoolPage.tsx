@@ -6,7 +6,7 @@ import "dayjs/locale/zh-cn";
 import { App, Button, Checkbox, Input, Radio, Select, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
+import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
 import MembersModal from "./components/dialogs/MembersModal";
@@ -192,6 +192,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [ownerRoleKey, setOwnerRoleKey] = useState<(typeof OWNER_ROLE_OPTIONS)[number]["key"]>("program");
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
+	const [ownerBusinessUnits, setOwnerBusinessUnits] = useState<OpsBusinessUnit[]>([]);
+	const [ownerBusinessUnitsLoading, setOwnerBusinessUnitsLoading] = useState(false);
 	const [ownerSearch, setOwnerSearch] = useState("");
 	const [ownerBusinessScopeFilter, setOwnerBusinessScopeFilter] = useState<string[]>([]);
 	const [ownerBusinessScopeSearch, setOwnerBusinessScopeSearch] = useState("");
@@ -287,6 +289,26 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	);
 
 	useEffect(() => {
+		if (sheet !== "owner" || ownerBusinessUnits.length) return;
+		let cancelled = false;
+		setOwnerBusinessUnitsLoading(true);
+		opsApi
+			.businessUnits()
+			.then((res) => {
+				if (!cancelled) setOwnerBusinessUnits(Array.isArray(res.units) ? res.units : []);
+			})
+			.catch((e) => {
+				if (!cancelled) message.error(e instanceof Error ? e.message : "业务范围加载失败");
+			})
+			.finally(() => {
+				if (!cancelled) setOwnerBusinessUnitsLoading(false);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [message, ownerBusinessUnits.length, sheet]);
+
+	useEffect(() => {
 		if (sheet !== "owner" || tab !== "all") {
 			setOwnerGroups([]);
 			setOwnerGroupsLoading(false);
@@ -367,6 +389,11 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 
 	const ownerBusinessScopeOptions = useMemo(() => {
 		const scopeMap = new Map<string, string>();
+		for (const unit of ownerBusinessUnits) {
+			const value = String(unit.id || unit.name || "").trim();
+			const label = String(unit.name || "").trim();
+			if (value && label) scopeMap.set(value, label);
+		}
 		for (const group of ownerGroups) {
 			for (const scope of group.businessScopes || []) {
 				const value = String(scope.id || scope.name || "").trim();
@@ -377,7 +404,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		return [...scopeMap.entries()]
 			.map(([value, label]) => ({ value, label }))
 			.sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
-	}, [ownerGroups]);
+	}, [ownerBusinessUnits, ownerGroups]);
 
 	const filteredOwnerBusinessScopeOptions = useMemo(() => {
 		const keyword = ownerBusinessScopeSearch.trim().toLowerCase();
@@ -391,7 +418,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		return ownerGroups.filter((group) => {
 			if (ownerOnlyNew && !group.isNewHire) return false;
 			if (keyword && !group.title.toLowerCase().includes(keyword)) return false;
-			if (selectedScopes.size && !group.businessScopes?.some((scope) => selectedScopes.has(String(scope.id || scope.name)))) return false;
+			if (selectedScopes.size && !group.businessScopes?.some((scope) => selectedScopes.has(String(scope.id || scope.name)) || selectedScopes.has(String(scope.name || "")))) return false;
 			return true;
 		});
 	}, [ownerBusinessScopeFilter, ownerGroups, ownerOnlyNew, ownerSearch]);
@@ -593,6 +620,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						placeholder="负责业务"
 						value={ownerBusinessScopeFilter}
 						options={filteredOwnerBusinessScopeOptions}
+						loading={ownerBusinessUnitsLoading}
 						open={ownerBusinessScopeOpen}
 						popupMatchSelectWidth={232}
 						onChange={setOwnerBusinessScopeFilter}

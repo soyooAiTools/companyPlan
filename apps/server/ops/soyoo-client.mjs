@@ -109,6 +109,7 @@ async function cached(key, fn) {
 export const soyooClient = {
   myProjects: (userId) => call(`/integration/users/${encodeURIComponent(soyooId(userId))}/projects`),
   users: () => callAllPages(`/ops/users`),
+  businessUnits: () => cached("business-units", () => call(`/ops/business-units`)),
   allProjects: () => cached("ops-all-projects", () => callAllPages(`/integration/projects?exclude=${encodeURIComponent(ACTIVE_PROJECT_EXCLUDE)}`)), // 管理员建单:只取项目级进行中项目(短缓存)
   projectMembers: (projectId) => call(projectMembersPath(projectId)),
   project: (projectId) => call(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}`),

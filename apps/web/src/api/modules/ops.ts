@@ -387,6 +387,7 @@ export interface OpsNotifSettings {
 export const opsApi = {
 	tags: () => requestJson<{ tags: OpsTag[] }>("/api/ops/tags"),
 	tenants: () => requestJson<{ tenants: OpsTenant[] }>("/api/ops/tenants"),
+	businessUnits: () => requestJson<{ units: OpsBusinessUnit[] }>("/api/ops/business-units"),
 	projects: (tenantId?: string) => requestJson<{ projects: OpsProject[] }>(`/api/ops/projects${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`),
 	segments: () => requestJson<{ segments: OpsSegment[] }>("/api/ops/segments"),
 	createSegment: (name: string) => requestJson<{ segment: OpsSegment }>("/api/ops/segments", { method: "POST", body: JSON.stringify({ name }) }),

@@ -106,6 +106,15 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 业务范围筛选项：取完整配置，不依赖当前页/当前负责人分组里实际出现的范围
+  app.get("/api/ops/business-units", requireAuth, requirePlanner, async (_req, res) => {
+    try {
+      res.json({ units: await pool.listBusinessUnits() });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 手动重建项目池快照(管理员):部署后可先跑一次预热,后续由 outbox/ops 修改增量刷新
   app.post("/api/ops/project-pool/rebuild-snapshot", requireAuth, requireAdmin, async (_req, res) => {
     try {

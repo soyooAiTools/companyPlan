@@ -18,6 +18,17 @@ export { refreshProjectPoolSnapshotsByMember } from "./project-pool/snapshot-sto
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
 export { listOwnerMembersByTags } from "./project-pool/owners.mjs";
 
+export async function listBusinessUnits() {
+  const rows = await soyooClient.businessUnits();
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      id: String(row.id ?? ""),
+      name: String(row.name ?? "").trim(),
+      code: String(row.code ?? "").trim(),
+    }))
+    .filter((row) => row.id && row.name);
+}
+
 const ADVANCED_FILTER_OPERATORS = new Set(["eq", "neq", "contains", "not_contains", "empty", "not_empty"]);
 const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", "remark", "versionCode", "versionName"]);
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
