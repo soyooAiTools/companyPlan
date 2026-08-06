@@ -85,6 +85,18 @@ function normalizePlanners(p) {
   return [];
 }
 
+function normalizeBusinessScopes(scopes) {
+  return Array.isArray(scopes)
+    ? scopes
+        .filter((scope) => scope?.id || scope?.ID)
+        .map((scope) => ({
+          id: String(scope.id ?? scope.ID),
+          name: scope.name || "",
+          code: scope.code || "",
+        }))
+    : [];
+}
+
 export function normalizeProjectForPoolRow(project, members = []) {
   return {
     ...project,
@@ -109,6 +121,7 @@ export function normalizeProjectForPoolRow(project, members = []) {
               hireDate: m.hireDate ?? m.hire_date ?? "",
               status: m.status ?? m.user_status ?? "",
               tags: (m.tags || []).map((t) => (typeof t === "string" ? t : t?.name ?? "")).filter(Boolean),
+              businessScopes: normalizeBusinessScopes(m.business_scopes ?? m.businessScopes),
             };
           })
       : [],

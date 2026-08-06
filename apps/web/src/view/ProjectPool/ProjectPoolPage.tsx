@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
-import { App, Button, Input, Radio, Spin, Switch } from "antd";
+import { App, Button, Checkbox, Input, Radio, Select, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
 import { opsApi, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
@@ -192,6 +193,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
 	const [ownerSearch, setOwnerSearch] = useState("");
+	const [ownerBusinessScopeFilter, setOwnerBusinessScopeFilter] = useState<string[]>([]);
+	const [ownerBusinessScopeSearch, setOwnerBusinessScopeSearch] = useState("");
+	const [ownerBusinessScopeOpen, setOwnerBusinessScopeOpen] = useState(false);
 	const [ownerOnlyNew, setOwnerOnlyNew] = useState(false);
 	const [ownerCollapseAction, setOwnerCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
 	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
@@ -232,6 +236,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setSegmentFilter([]);
 		setAdvancedFilter({ match: "any", rules: [] });
 		setOwnerSearch("");
+		setOwnerBusinessScopeFilter([]);
+		setOwnerBusinessScopeSearch("");
+		setOwnerBusinessScopeOpen(false);
 		setOwnerOnlyNew(false);
 		setOwnerCollapsed(false);
 		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
@@ -284,6 +291,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setOwnerGroups([]);
 			setOwnerGroupsLoading(false);
 			setOwnerSearch("");
+			setOwnerBusinessScopeFilter([]);
+			setOwnerBusinessScopeSearch("");
+			setOwnerBusinessScopeOpen(false);
 			setOwnerOnlyNew(false);
 			setOwnerCollapsed(false);
 			return;
@@ -355,20 +365,72 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		};
 	}, [allRowsLoading, filteredGroupRows, message, ownerRoleKey, sheet, tab]);
 
+	const ownerBusinessScopeOptions = useMemo(() => {
+		const scopeMap = new Map<string, string>();
+		for (const group of ownerGroups) {
+			for (const scope of group.businessScopes || []) {
+				const value = String(scope.id || scope.name || "").trim();
+				const label = String(scope.name || "").trim();
+				if (value && label) scopeMap.set(value, label);
+			}
+		}
+		return [...scopeMap.entries()]
+			.map(([value, label]) => ({ value, label }))
+			.sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
+	}, [ownerGroups]);
+
+	const filteredOwnerBusinessScopeOptions = useMemo(() => {
+		const keyword = ownerBusinessScopeSearch.trim().toLowerCase();
+		if (!keyword) return ownerBusinessScopeOptions;
+		return ownerBusinessScopeOptions.filter((option) => option.label.toLowerCase().includes(keyword));
+	}, [ownerBusinessScopeOptions, ownerBusinessScopeSearch]);
+
 	const visibleOwnerGroups = useMemo(() => {
 		const keyword = ownerSearch.trim().toLowerCase();
+		const selectedScopes = new Set(ownerBusinessScopeFilter);
 		return ownerGroups.filter((group) => {
 			if (ownerOnlyNew && !group.isNewHire) return false;
 			if (keyword && !group.title.toLowerCase().includes(keyword)) return false;
+			if (selectedScopes.size && !group.businessScopes?.some((scope) => selectedScopes.has(String(scope.id || scope.name)))) return false;
 			return true;
 		});
-	}, [ownerGroups, ownerOnlyNew, ownerSearch]);
+	}, [ownerBusinessScopeFilter, ownerGroups, ownerOnlyNew, ownerSearch]);
 
 	const toggleOwnerCollapse = () => {
 		const nextCollapsed = !ownerCollapsed;
 		setOwnerCollapsed(nextCollapsed);
 		setOwnerCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
 	};
+
+	const ownerBusinessScopeDropdown = (menu: ReactNode) => (
+		<div style={{ width: 216 }}>
+			<Input
+				allowClear
+				size="small"
+				prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+				placeholder="在筛选项中搜索"
+				value={ownerBusinessScopeSearch}
+				onChange={(event) => setOwnerBusinessScopeSearch(event.target.value)}
+				onMouseDown={(event) => event.stopPropagation()}
+				style={{ marginBottom: 6 }}
+			/>
+			<div style={{ maxHeight: 128, overflowY: "auto", padding: "0 0 4px" }}>
+				{menu}
+			</div>
+			<div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", borderTop: "1px solid #f1f5f9", paddingTop: 6 }}>
+				<Button
+					type="link"
+					size="small"
+					disabled={!ownerBusinessScopeFilter.length}
+					onClick={() => {
+						setOwnerBusinessScopeFilter([]);
+						setOwnerBusinessScopeSearch("");
+					}}>
+					重置
+				</Button>
+			</div>
+		</div>
+	);
 
 	// 通知深链:URL 带 ?project=<id> 时,在已加载的项目里找到它并打开流转抽屉(找到即打开并清掉参数)
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -521,6 +583,34 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						value={ownerSearch}
 						onChange={(event) => setOwnerSearch(event.target.value)}
 						style={{ width: 180, marginLeft: 8 }}
+					/>
+					<Select
+						allowClear
+						mode="multiple"
+						maxTagCount="responsive"
+						size="small"
+						showSearch={false}
+						placeholder="负责业务"
+						value={ownerBusinessScopeFilter}
+						options={filteredOwnerBusinessScopeOptions}
+						open={ownerBusinessScopeOpen}
+						popupMatchSelectWidth={232}
+						onChange={setOwnerBusinessScopeFilter}
+						onClear={() => {
+							setOwnerBusinessScopeFilter([]);
+						}}
+						optionRender={(option) => (
+							<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+								<Checkbox checked={ownerBusinessScopeFilter.includes(String(option.value))} />
+								<span>{option.label}</span>
+							</div>
+						)}
+						popupRender={ownerBusinessScopeDropdown}
+						onOpenChange={(open) => {
+							setOwnerBusinessScopeOpen(open);
+							setOwnerBusinessScopeSearch("");
+						}}
+						style={{ width: 150 }}
 					/>
 					<Switch
 						size="small"

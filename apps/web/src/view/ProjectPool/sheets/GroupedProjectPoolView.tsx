@@ -79,6 +79,11 @@ const groupLabel = (
 					已禁用
 				</Tag>
 			) : null}
+			{group.businessScopes?.length ? (
+				<Tag color="cyan" style={{ margin: 0, fontWeight: 600 }}>
+					{group.businessScopes.map((scope) => scope.name).join(" / ")}
+				</Tag>
+			) : null}
 			<Tag color="blue" style={{ margin: 0 }}>
 				{group.stats.projectCount} 个项目
 			</Tag>

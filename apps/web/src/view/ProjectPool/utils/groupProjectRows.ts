@@ -16,6 +16,7 @@ export type ProjectPoolGroup = {
   hireDate?: string;
   isNewHire?: boolean;
   disabled?: boolean;
+  businessScopes?: NonNullable<OpsProjectPoolMember["businessScopes"]>;
   segmentIds?: number[];
   ownerName?: string;
   rows: ProjectPoolOwnerRow[];
@@ -212,6 +213,7 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[], sourceRo
       avatar?: string;
       hireDate?: string;
       disabled?: boolean;
+      businessScopes?: NonNullable<OpsProjectPoolMember["businessScopes"]>;
       rows: Map<string, ProjectPoolOwnerRow & { ownerTagNames: Set<string> }>;
     }
   >();
@@ -219,9 +221,18 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[], sourceRo
   for (const member of members) {
     const title = member.name?.trim() || member.wechatName?.trim() || member.username?.trim() || member.id?.trim() || "未指定负责人";
     const key = member.username?.trim() || member.id?.trim() || title || "__no_owner";
-    const group = groups.get(key) || { title, avatar: member.avatar || undefined, hireDate: member.hireDate || undefined, disabled: member.status === "disabled", rows: new Map() };
+    const group =
+      groups.get(key) || {
+        title,
+        avatar: member.avatar || undefined,
+        hireDate: member.hireDate || undefined,
+        disabled: member.status === "disabled",
+        businessScopes: [] as NonNullable<OpsProjectPoolMember["businessScopes"]>,
+        rows: new Map(),
+      };
     if (!group.avatar && member.avatar) group.avatar = member.avatar;
     if (!group.hireDate && member.hireDate) group.hireDate = member.hireDate;
+    if (!group.businessScopes?.length && member.businessScopes?.length) group.businessScopes = member.businessScopes;
     if (member.status === "disabled") group.disabled = true;
     const row = group.rows.get(member.project.id) || ({ ...member.project, ownerTagNames: new Set<string>() } as ProjectPoolOwnerRow & { ownerTagNames: Set<string> });
     for (const tag of member.matchedTags) row.ownerTagNames.add(tag);
@@ -244,6 +255,7 @@ export const groupProjectsByOwner = (members: ProjectPoolOwnerMember[], sourceRo
         hireDate: group.hireDate,
         isNewHire: isNewHireDate(group.hireDate),
         disabled: group.disabled,
+        businessScopes: group.businessScopes || [],
         ownerName: group.title,
         rows: displayRows,
         stats: groupStats(displayRows),

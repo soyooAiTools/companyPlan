@@ -170,6 +170,12 @@ export interface OpsAudioEditSession {
 	systemRemark: string;
 }
 
+export interface OpsBusinessUnit {
+	id: string;
+	name: string;
+	code?: string;
+}
+
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
@@ -242,6 +248,7 @@ export interface OpsProjectPoolMember {
 	hireDate?: string; // 入职日期 YYYY-MM-DD,用于新人标识
 	status?: string; // active / disabled
 	tags: string[]; // 角色标签名(如 制片/美术)
+	businessScopes?: OpsBusinessUnit[]; // 用户熟悉的内部业务主体/子公司
 }
 export interface OpsProjectPoolOwnerMember extends OpsProjectPoolMember {
 	projectId: string;
@@ -341,6 +348,7 @@ export interface OpsPeopleProgressRow {
 	isNewcomer: boolean;
 	disabled: boolean;
 	roles: string[];
+	businessScopes?: OpsBusinessUnit[];
 	unfinished: number;
 	doing: number;
 	queued: number;

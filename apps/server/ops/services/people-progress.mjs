@@ -359,6 +359,18 @@ function soyooUserTags(user) {
   ];
 }
 
+function soyooBusinessScopes(user) {
+  return Array.isArray(user?.business_scopes)
+    ? user.business_scopes
+        .filter((scope) => scope?.id || scope?.ID)
+        .map((scope) => ({
+          id: String(scope.id ?? scope.ID),
+          name: scope.name || "",
+          code: scope.code || "",
+        }))
+    : [];
+}
+
 async function loadSoyooPeopleGroups(roleKey = "all") {
   const peopleRows = await soyooClient.users();
   const groups = new Map();
@@ -381,6 +393,7 @@ async function loadSoyooPeopleGroups(roleKey = "all") {
       isNewcomer: isNewcomer(hireDate),
       disabled: false,
       roles: new Set(labels),
+      businessScopes: soyooBusinessScopes(person),
       projectIds: new Set(),
       unfinished: 0,
       doing: 0,
@@ -441,6 +454,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
         isNewcomer: isNewcomer(hireDate),
         disabled: Boolean(person?.disabled_at),
         roles: new Set(),
+        businessScopes: [],
         projectIds: new Set(),
         unfinished: 0,
         doing: 0,
@@ -473,6 +487,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
       isNewcomer: group.isNewcomer,
       disabled: group.disabled,
       roles: [...group.roles],
+      businessScopes: group.businessScopes || [],
       unfinished: group.unfinished,
       doing: group.doing,
       queued: group.queued,

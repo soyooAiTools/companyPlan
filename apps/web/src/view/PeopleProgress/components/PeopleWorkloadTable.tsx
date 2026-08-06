@@ -1,5 +1,6 @@
+import { useMemo } from "react";
 import { Avatar, Button, Input, Space, Table, Tag } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { FilterFilled, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { PeopleProgressRow } from "../types";
 
@@ -28,6 +29,20 @@ const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || 
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
 
 export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+	const businessScopeOptions = useMemo(() => {
+		const scopeMap = new Map<string, string>();
+		rows.forEach((row) => {
+			row.businessScopes?.forEach((scope) => {
+				const id = String(scope.id || scope.name || "").trim();
+				const name = String(scope.name || "").trim();
+				if (id && name) scopeMap.set(id, name);
+			});
+		});
+		return [...scopeMap.entries()]
+			.map(([value, text]) => ({ text, value }))
+			.sort((a, b) => a.text.localeCompare(b.text, "zh-Hans-CN"));
+	}, [rows]);
+
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
 			title: "序号",
@@ -118,6 +133,25 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 					<span style={{ color: "#94a3b8" }}>-</span>
 				);
 			},
+		},
+		{
+			title: "业务范围",
+			dataIndex: "businessScopes",
+			width: 170,
+			filters: businessScopeOptions,
+			filterMultiple: true,
+			filterSearch: true,
+			filterIcon: (filtered) => <FilterFilled style={{ color: filtered ? "#2563eb" : "#94a3b8" }} />,
+			onFilter: (value, row) => {
+				const selected = String(value);
+				return Boolean(row.businessScopes?.some((scope) => String(scope.id || scope.name) === selected));
+			},
+			render: (_, row) =>
+				row.businessScopes?.length ? (
+					<span style={{ color: "#475569", fontWeight: 600 }}>{row.businessScopes.map((scope) => scope.name).join(" / ")}</span>
+				) : (
+					<span style={{ color: "#94a3b8" }}>-</span>
+				),
 		},
 		...(role === "program"
 			? [

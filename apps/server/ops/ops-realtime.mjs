@@ -16,6 +16,18 @@ function mapProjectVersions(project) {
     : [];
 }
 
+function mapBusinessScopes(scopes) {
+  return Array.isArray(scopes)
+    ? scopes
+        .filter((scope) => scope?.id || scope?.ID)
+        .map((scope) => ({
+          id: String(scope.id ?? scope.ID),
+          name: scope.name || "",
+          code: scope.code || "",
+        }))
+    : [];
+}
+
 // 我参与的项目(提单选项目下拉)
 export async function listMyProjects(user) {
   const data = await soyooClient.myProjects(user.id);
@@ -69,6 +81,7 @@ export async function getProjectWithMembers(projectId) {
     status: m.user_status ?? "",
     assignedAt: m.assigned_at ?? "",
     tags: (m.tags ?? []).map((t) => ({ id: String(t.id), name: t.name ?? "" })),
+    businessScopes: mapBusinessScopes(m.business_scopes),
   }));
   return { project, members };
 }
@@ -115,6 +128,7 @@ export async function getUser(userId) {
     isAdmin: !!u.is_admin,
     status: u.status ?? "",
     tags: Array.isArray(u.tags) ? u.tags : [], // 角色标签名(判定是否「制片/策划」用)
+    businessScopes: mapBusinessScopes(u.business_scopes),
   };
 }
 
