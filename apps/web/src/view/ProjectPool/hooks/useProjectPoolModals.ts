@@ -30,6 +30,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
   const [chTarget, setChTarget] = useState<OpsProjectPoolRow | null>(null);
   const [chValue, setChValue] = useState("");
   const [chComment, setChComment] = useState("");
+  const [chRecycleHandoffUsername, setChRecycleHandoffUsername] = useState("");
   const [chSaving, setChSaving] = useState(false);
 
   const [logsOpen, setLogsOpen] = useState(false);
@@ -84,6 +85,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setChField(field);
     setChValue(field === "status" ? row.status : row.stage);
     setChComment("");
+    setChRecycleHandoffUsername("");
     setChOpen(true);
   };
 
@@ -114,7 +116,10 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (chValue === (chField === "status" ? chTarget.status : chTarget.stage)) return;
     setChSaving(true);
     try {
-      if (chField === "status") await opsApi.changeProjectStatus(chTarget.id, chValue, chComment || undefined);
+      if (chField === "status")
+        await opsApi.changeProjectStatus(chTarget.id, chValue, chComment || undefined, {
+          recycleHandoffUsername: chValue === "回收中" ? chRecycleHandoffUsername || undefined : undefined,
+        });
       else await opsApi.changeProjectStage(chTarget.id, chValue, chComment || undefined);
       message.success(chField === "status" ? "状态已更新" : "阶段已更新");
       setChOpen(false);
@@ -358,9 +363,14 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       target: chTarget,
       value: chValue,
       comment: chComment,
+      recycleHandoffUsername: chRecycleHandoffUsername,
       saving: chSaving,
-      setValue: setChValue,
+      setValue: (next: string) => {
+        setChValue(next);
+        if (next !== "回收中") setChRecycleHandoffUsername("");
+      },
       setComment: setChComment,
+      setRecycleHandoffUsername: setChRecycleHandoffUsername,
       confirm: confirmChange,
       close: () => setChOpen(false),
     },

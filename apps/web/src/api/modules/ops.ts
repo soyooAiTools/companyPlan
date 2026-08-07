@@ -176,6 +176,13 @@ export interface OpsBusinessUnit {
 	code?: string;
 }
 
+export interface OpsRecycleHandoffUser {
+	id: string;
+	username: string;
+	name: string;
+	avatar: string;
+}
+
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
@@ -388,6 +395,7 @@ export const opsApi = {
 	tags: () => requestJson<{ tags: OpsTag[] }>("/api/ops/tags"),
 	tenants: () => requestJson<{ tenants: OpsTenant[] }>("/api/ops/tenants"),
 	businessUnits: () => requestJson<{ units: OpsBusinessUnit[] }>("/api/ops/business-units"),
+	recycleHandoffUsers: () => requestJson<{ users: OpsRecycleHandoffUser[] }>("/api/ops/recycle-handoff-users"),
 	projects: (tenantId?: string) => requestJson<{ projects: OpsProject[] }>(`/api/ops/projects${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`),
 	segments: () => requestJson<{ segments: OpsSegment[] }>("/api/ops/segments"),
 	createSegment: (name: string) => requestJson<{ segment: OpsSegment }>("/api/ops/segments", { method: "POST", body: JSON.stringify({ name }) }),
@@ -565,10 +573,10 @@ export const opsApi = {
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
 	},
 	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
-	changeProjectStatus: (projectId: string, status: string, commentHtml?: string) =>
+	changeProjectStatus: (projectId: string, status: string, commentHtml?: string, options?: { recycleHandoffUsername?: string }) =>
 		requestJson<{ ok: boolean; status: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status`, {
 			method: "POST",
-			body: JSON.stringify({ status, commentHtml }),
+			body: JSON.stringify({ status, commentHtml, recycleHandoffUsername: options?.recycleHandoffUsername }),
 		}),
 	changeProjectStage: (projectId: string, stage: string, commentHtml?: string) =>
 		requestJson<{ ok: boolean; stage: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage`, {

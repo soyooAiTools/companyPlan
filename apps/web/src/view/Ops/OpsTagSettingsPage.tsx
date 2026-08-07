@@ -217,7 +217,7 @@ export default function OpsTagSettingsPage() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, marginBottom: 12 }}>
-        <Space direction="vertical" size={4}>
+        <Space orientation="vertical" size={4}>
           <Typography.Title level={4} style={{ margin: 0 }}>
             环节配置 / 标签绑定
           </Typography.Title>

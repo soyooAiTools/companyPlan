@@ -62,12 +62,19 @@ function projectVersions(project) {
 
 function isProjectLifecycleHidden(project) {
   const lifecycle = String(project?.project_lifecycle_status || project?.lifecycle_status || "").trim();
-  return lifecycle === "已完成" || lifecycle === "回收中" || lifecycle === "已回收" || lifecycle === "客户暂停";
+  return lifecycle === "已完成" || lifecycle === "已回收" || lifecycle === "客户暂停";
 }
 
 function isProjectLifecycleActive(row) {
   const lifecycle = String(row?.projectLifecycleStatus || row?.project_lifecycle_status || row?.lifecycle_status || "").trim();
   return lifecycle === "进行中" || lifecycle === "正常";
+}
+
+function rowMatchesAnyStatus(row, statusNames = []) {
+  const statuses = new Set((statusNames || []).map((name) => String(name || "").trim()).filter(Boolean));
+  if (!statuses.size) return false;
+  if (statuses.has(String(row?.status || "").trim())) return true;
+  return Array.isArray(row?.children) && row.children.some((child) => statuses.has(String(child?.status || "").trim()));
 }
 
 function membersFromResponse(response) {
@@ -248,7 +255,7 @@ export async function refreshProjectPoolSnapshotsByMember(userId) {
 async function fetchAllSoyooProjectsForSnapshot() {
   const out = [];
   for (let page = 1; page <= 100; page += 1) {
-    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "已完成,回收中,已回收,客户暂停" });
+    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "已完成,已回收,客户暂停" });
     const projects = Array.isArray(r?.data) ? r.data : [];
     out.push(...projects);
     const total = Number(r?.total ?? out.length);
@@ -376,7 +383,7 @@ export async function loadVisibleSnapshotRows({ user, statusNames = [] }) {
   for (const dbRow of dbRows) {
     const row = snapshotDbRowToPoolRow(dbRow);
     if (!row || isExcludedTenantName(row.tenantName)) continue;
-    if (!isProjectLifecycleActive(row)) continue;
+    if (!isProjectLifecycleActive(row) && !rowMatchesAnyStatus(row, statusNames)) continue;
     if (!isAdmin(user)) {
       if (!snapshotMemberIds(dbRow).map(soyooId).includes(uid)) continue;
       const scopedRow = filterRowForMember(row, uid);
@@ -396,7 +403,7 @@ export async function loadMySnapshotRows({ user, statusNames = [] }) {
   for (const dbRow of dbRows) {
     const row = snapshotDbRowToPoolRow(dbRow);
     if (!row || isExcludedTenantName(row.tenantName)) continue;
-    if (!isProjectLifecycleActive(row)) continue;
+    if (!isProjectLifecycleActive(row) && !rowMatchesAnyStatus(row, statusNames)) continue;
     fallbackRows.push(row);
     const scopedRow = filterRowForMember(row, uid);
     if (scopedRow) rows.push(scopedRow);

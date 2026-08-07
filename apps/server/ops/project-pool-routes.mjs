@@ -115,6 +115,15 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 回收项目交接人：从 soyoo 用户数据取固定交接账号的名称和头像，避免前端写死展示信息。
+  app.get("/api/ops/recycle-handoff-users", requireAuth, requirePlanner, async (_req, res) => {
+    try {
+      res.json({ users: await pool.listRecycleHandoffUsers() });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 手动重建项目池快照(管理员):部署后可先跑一次预热,后续由 outbox/ops 修改增量刷新
   app.post("/api/ops/project-pool/rebuild-snapshot", requireAuth, requireAdmin, async (_req, res) => {
     try {
@@ -171,7 +180,14 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/status", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectStatus({ user: req.user, projectId: req.params.id, status: String(req.body?.status ?? ""), commentHtml: req.body?.commentHtml, force: req.body?.force === true });
+      r = await pool.changeProjectStatus({
+        user: req.user,
+        projectId: req.params.id,
+        status: String(req.body?.status ?? ""),
+        commentHtml: req.body?.commentHtml,
+        force: req.body?.force === true,
+        recycleHandoffUsername: req.body?.recycleHandoffUsername,
+      });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }

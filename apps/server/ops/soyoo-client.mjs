@@ -137,7 +137,11 @@ export const soyooClient = {
     if (Array.isArray(opts.projectIds) && opts.projectIds.length) q.set("ids", opts.projectIds.join(","));
     return callRaw(`/integration/projects?${q.toString()}`, { timeoutMs: PROJECT_LIST_TIMEOUT });
   },
-  setProjectStatus: (projectId, status) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/status`, { method: "POST", body: withVersionBody(projectId, { status }) }),
+  setProjectStatus: (projectId, status, options = {}) =>
+    callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/status`, {
+      method: "POST",
+      body: withVersionBody(projectId, { status, ...options }),
+    }),
   setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/stage-deadlines`, { method: "POST", body: withVersionBody(projectId, body) }),
   setProjectMeta: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/meta`, { method: "POST", body: withVersionBody(projectId, body) }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),

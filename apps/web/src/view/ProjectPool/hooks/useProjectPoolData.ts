@@ -83,17 +83,34 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     if (allRowsRequestRef.current) return allRowsRequestRef.current;
     const request = (async () => {
       const pageSizeForAll = 500;
-      const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll });
-      const nextRows = [...first.rows];
-      const pageCount = Math.ceil(first.total / pageSizeForAll);
-      if (pageCount > 1) {
-        const rest = await Promise.all(
-          Array.from({ length: pageCount - 1 }, (_, index) => {
-            const nextPage = index + 2;
-            return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll });
-          }),
-        );
-        for (const result of rest) nextRows.push(...result.rows);
+      const fetchPages = async (extra: { status?: string[] } = {}) => {
+        const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...extra }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...extra });
+        const nextRows = [...first.rows];
+        const pageCount = Math.ceil(first.total / pageSizeForAll);
+        if (pageCount > 1) {
+          const rest = await Promise.all(
+            Array.from({ length: pageCount - 1 }, (_, index) => {
+              const nextPage = index + 2;
+              return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...extra }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...extra });
+            }),
+          );
+          for (const result of rest) nextRows.push(...result.rows);
+        }
+        return nextRows;
+      };
+      const [defaultRows, recycledVersionRows] = await Promise.all([
+        fetchPages(),
+        // 分组视图/筛选候选项以「版本状态」为准。项目生命周期变成回收中后，
+        // 默认项目池会隐藏该项目，但按策划/状态筛选仍需要能看到回收版本和交接策划。
+        fetchPages({ status: ["回收中"] }),
+      ]);
+      const nextRows: OpsProjectPoolRow[] = [];
+      const seen = new Set<string>();
+      for (const row of [...defaultRows, ...recycledVersionRows]) {
+        const key = String(row.id);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        nextRows.push(row);
       }
       return nextRows;
     })();

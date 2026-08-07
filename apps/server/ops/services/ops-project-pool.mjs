@@ -29,6 +29,23 @@ export async function listBusinessUnits() {
     .filter((row) => row.id && row.name);
 }
 
+const RECYCLE_HANDOFF_USERNAMES = ["miaochuan", "jingkun"];
+
+export async function listRecycleHandoffUsers() {
+  const rows = await soyooClient.users();
+  const usernameSet = new Set(RECYCLE_HANDOFF_USERNAMES);
+  const users = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      id: String(row.id ?? row.ID ?? ""),
+      username: String(row.username ?? "").trim(),
+      name: String(row.nickname ?? row.name ?? row.wechat_name ?? row.username ?? "").trim(),
+      avatar: String(row.wechat_avatar_url ?? row.wechat_avatar ?? row.avatar ?? "").trim(),
+    }))
+    .filter((row) => usernameSet.has(row.username));
+  const byUsername = new Map(users.map((user) => [user.username, user]));
+  return RECYCLE_HANDOFF_USERNAMES.map((username) => byUsername.get(username) || { id: "", username, name: username, avatar: "" });
+}
+
 const ADVANCED_FILTER_OPERATORS = new Set(["eq", "neq", "contains", "not_contains", "empty", "not_empty"]);
 const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", "remark", "versionCode", "versionName"]);
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
@@ -577,12 +594,17 @@ const STATUS_AUTO_TICKET = {
 };
 
 // ---- 改状态:路由已限制策划/管理员;这里不再按版本成员二次拦截,避免多版本成员不同步导致误判 ----
-export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false }) {
+export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false, recycleHandoffUsername }) {
   if (!status) return { error: "缺少状态", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
   const from = project.status;
-  await soyooClient.setProjectStatus(projectId, status); // 抛错 → 路由转 502,不写日志(保证一致)
+  // OPS 只负责发起状态变更；operator_id 供 helper 写回流转/转交日志，
+  // recycle_handoff_username 仅在「回收中」时透传，用于 helper 校验所有版本回收后统一转交策划。
+  await soyooClient.setProjectStatus(projectId, status, {
+    operator_id: Number(meId(user)) || undefined,
+    recycle_handoff_username: status === "回收中" ? recycleHandoffUsername || undefined : undefined,
+  }); // 抛错 → 路由转 502,不写日志(保证一致)
   await prisma.ops_project_status_logs.create({
     data: {
       project_id: String(projectId),

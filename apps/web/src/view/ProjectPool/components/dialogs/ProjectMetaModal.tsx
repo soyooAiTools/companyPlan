@@ -24,7 +24,7 @@ export default function ProjectMetaModal({
 }) {
 	return (
 		<Modal title={`客户信息 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={560} destroyOnHidden>
-			<Space direction="vertical" size={14} style={{ width: "100%" }}>
+			<Space orientation="vertical" size={14} style={{ width: "100%" }}>
 				<div>
 					<div style={{ marginBottom: 6, color: "#334155", fontWeight: 600 }}>客户对接人</div>
 					<Input allowClear value={customerContact} placeholder="填写客户侧对接人，例如 zyy-奇美" maxLength={120} onChange={(e) => onCustomerContactChange(e.target.value)} />

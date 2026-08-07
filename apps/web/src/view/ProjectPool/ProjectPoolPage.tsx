@@ -701,11 +701,14 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 				open={dialogs.change.open}
 				field={dialogs.change.field}
 				target={dialogs.change.target}
+				projectRows={filterOptionRows.length ? filterOptionRows : [...rows, ...allRows]}
 				value={dialogs.change.value}
 				comment={dialogs.change.comment}
+				recycleHandoffUsername={dialogs.change.recycleHandoffUsername}
 				saving={dialogs.change.saving}
 				onValueChange={dialogs.change.setValue}
 				onCommentChange={dialogs.change.setComment}
+				onRecycleHandoffUserChange={dialogs.change.setRecycleHandoffUsername}
 				onConfirm={dialogs.change.confirm}
 				onCancel={dialogs.change.close}
 			/>

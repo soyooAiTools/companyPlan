@@ -45,7 +45,7 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
   const rangeText = dateRangeDaysText(rows, skipWeekend);
   return (
     <Modal title={`计划交付日期 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
-      <Space direction="vertical" size={12} style={{ width: "100%" }}>
+      <Space orientation="vertical" size={12} style={{ width: "100%" }}>
         {auto ? (
           <div style={{ color: "#cf1322", fontSize: 15, fontWeight: 700 }}>
             填写 <span style={{ fontWeight: 800 }}>【资产确认】</span> 时间后自动推算后续交付时间

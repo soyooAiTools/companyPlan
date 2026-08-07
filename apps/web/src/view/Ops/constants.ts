@@ -27,8 +27,8 @@ export const OPS_TICKETS_DEFAULT_VIEW: OpsTicketsView = "table";
 /** 项目状态(与 soyoo 项目状态枚举一致) */
 export const PROJECT_STATUSES = ["未启动", "推进中", "已完成", "已反馈", "待反馈", "打包中", "回收中", "客户暂停"];
 
-/** ops 端可手动流转的项目状态；回收只能在管理端操作 */
-export const OPS_EDITABLE_PROJECT_STATUSES = PROJECT_STATUSES.filter((status) => status !== "回收中");
+/** ops 端可手动流转的项目状态 */
+export const OPS_EDITABLE_PROJECT_STATUSES = PROJECT_STATUSES;
 
 /** 制作阶段(ops 自有,固定顺序即流程)。新增阶段就往这里加(注意与后端 ops/project-pool-constants.mjs 同步) */
 export const PROJECT_STAGES = ["资产确认", "场景单帧版本", "可交互初版", "功能完整版", "最终交付版"];
