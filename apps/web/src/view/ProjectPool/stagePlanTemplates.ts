@@ -13,10 +13,15 @@ export const STAGE_PLAN_TEMPLATES: StagePlanTemplate[] = [
 		key: "1w",
 		label: "1周",
 		workdayIndexes: {
+			// 资产确认
 			asset_confirm: 1,
+			// 单帧版本
 			scene_still: 2,
+			// 可交互版本
 			interactive_alpha: 2,
+			// 功能完整版本
 			feature_complete: 4,
+			// 最终交付版本
 			final_delivery: 5,
 		},
 	},
@@ -36,7 +41,7 @@ export const STAGE_PLAN_TEMPLATES: StagePlanTemplate[] = [
 		label: "3周",
 		workdayIndexes: {
 			asset_confirm: 1,
-			scene_still: 3,
+			scene_still: 4,
 			interactive_alpha: 3,
 			feature_complete: 6,
 			final_delivery: 15,
@@ -47,10 +52,10 @@ export const STAGE_PLAN_TEMPLATES: StagePlanTemplate[] = [
 		label: "4周",
 		workdayIndexes: {
 			asset_confirm: 1,
-			scene_still: 3,
+			scene_still: 4,
 			interactive_alpha: 4,
 			feature_complete: 7,
-			final_delivery: 23,
+			final_delivery: 24,
 		},
 	},
 ];
