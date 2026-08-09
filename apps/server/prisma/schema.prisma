@@ -53,6 +53,7 @@ model people {
   wechat_name                          String?               @db.VarChar(191)
   wechat_avatar                        String?               @db.VarChar(1024)
   hire_date                            String?               @db.VarChar(40)
+  rating                               String                @default("") @db.VarChar(20)
   project_member_tags                  project_member_tags[]
   project_team                         project_team[]
   projects                             projects[]

@@ -349,6 +349,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						avatar: meta?.avatar || member.avatar,
 						wechatName: meta?.wechatName || member.wechatName,
 						hireDate: meta?.hireDate || member.hireDate,
+						rating: meta?.rating || member.rating,
 						status: meta?.status || member.status,
 					};
 				});
@@ -366,6 +367,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						avatar: meta?.avatar || member.avatar,
 						wechatName: meta?.wechatName || member.wechatName,
 						hireDate: meta?.hireDate || member.hireDate,
+						rating: meta?.rating || member.rating,
 						status: meta?.status || member.status,
 						project,
 						matchedTags: member.tags,

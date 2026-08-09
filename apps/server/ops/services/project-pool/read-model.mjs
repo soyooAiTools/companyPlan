@@ -119,6 +119,7 @@ export function normalizeProjectForPoolRow(project, members = []) {
               avatar: m.avatar ?? m.wechat_avatar_url ?? m.wechat_avatar ?? "",
               wechatName: m.wechatName ?? m.wechat_name ?? "",
               hireDate: m.hireDate ?? m.hire_date ?? "",
+              rating: String(m.rating ?? m.user_rating ?? "").trim(),
               status: m.status ?? m.user_status ?? "",
               tags: (m.tags || []).map((t) => (typeof t === "string" ? t : t?.name ?? "")).filter(Boolean),
               businessScopes: normalizeBusinessScopes(m.business_scopes ?? m.businessScopes),

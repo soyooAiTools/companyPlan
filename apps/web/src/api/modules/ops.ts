@@ -253,6 +253,7 @@ export interface OpsProjectPoolMember {
 	wechatName: string;
 	username: string;
 	hireDate?: string; // 入职日期 YYYY-MM-DD,用于新人标识
+	rating?: string; // 人员评级,例如 A/B/C/D
 	status?: string; // active / disabled
 	tags: string[]; // 角色标签名(如 制片/美术)
 	businessScopes?: OpsBusinessUnit[]; // 用户熟悉的内部业务主体/子公司
@@ -352,6 +353,7 @@ export interface OpsPeopleProgressRow {
 	avatar: string;
 	wechatName: string;
 	hireDate: string;
+	rating?: string;
 	isNewcomer: boolean;
 	disabled: boolean;
 	roles: string[];

@@ -403,6 +403,7 @@ async function migrateSchema() {
   await ensureColumn("people", "wechat_name", "VARCHAR(191)");
   await ensureColumn("people", "wechat_avatar", "VARCHAR(1024)");
   await ensureColumn("people", "hire_date", "VARCHAR(40)");
+  await ensureColumn("people", "rating", "VARCHAR(20) NOT NULL DEFAULT ''");
   await ensureSystemPerson();
   // 弃用字段加注释(保留不删):
   await ensureColumnComment("tickets", "discipline", "VARCHAR(80) NOT NULL", "弃用:改用 tag_id;新单仍写标签名兼容历史");

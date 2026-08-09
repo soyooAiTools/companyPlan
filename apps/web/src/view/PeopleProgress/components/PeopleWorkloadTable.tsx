@@ -153,6 +153,17 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 					<span style={{ color: "#94a3b8" }}>-</span>
 				),
 		},
+		{
+			title: "评级",
+			dataIndex: "rating",
+			width: 80,
+			render: (value?: string) =>
+				value ? (
+					<span style={{ color: "#92400e", fontWeight: 800 }}>{value}</span>
+				) : (
+					<span style={{ color: "#94a3b8" }}>-</span>
+				),
+		},
 		...(role === "program"
 			? [
 					{

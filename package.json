@@ -18,9 +18,15 @@
     "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql"
   },
   "devDependencies": {
-    "ali-oss": "^6.23.0"
+    "ali-oss": "^6.23.0",
+    "prisma": "^6.19.3"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "@prisma/client", "@prisma/engines", "prisma"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma"
+    ]
   }
 }

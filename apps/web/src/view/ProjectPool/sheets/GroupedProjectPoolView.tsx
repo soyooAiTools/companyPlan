@@ -79,6 +79,11 @@ const groupLabel = (
 					已禁用
 				</Tag>
 			) : null}
+			{group.rating ? (
+				<Tag color="gold" style={{ margin: 0, fontWeight: 700 }}>
+					评级 {group.rating}
+				</Tag>
+			) : null}
 			{group.businessScopes?.length ? (
 				<Tag color="cyan" style={{ margin: 0, fontWeight: 600 }}>
 					{group.businessScopes.map((scope) => scope.name).join(" / ")}

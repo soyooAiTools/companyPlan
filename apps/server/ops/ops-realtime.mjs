@@ -78,6 +78,7 @@ export async function getProjectWithMembers(projectId) {
     avatar: m.wechat_avatar_url ?? "",
     wechatName: m.wechat_name ?? "",
     hireDate: m.hire_date ?? "",
+    rating: m.rating ?? "",
     status: m.user_status ?? "",
     assignedAt: m.assigned_at ?? "",
     tags: (m.tags ?? []).map((t) => ({ id: String(t.id), name: t.name ?? "" })),
@@ -125,6 +126,7 @@ export async function getUser(userId) {
     avatar: u.wechat_avatar_url ?? "",
     wechatName: u.wechat_name ?? "",
     hireDate: u.hire_date ?? "",
+    rating: u.rating ?? "",
     isAdmin: !!u.is_admin,
     status: u.status ?? "",
     tags: Array.isArray(u.tags) ? u.tags : [], // 角色标签名(判定是否「制片/策划」用)

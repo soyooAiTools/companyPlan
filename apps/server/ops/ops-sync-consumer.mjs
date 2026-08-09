@@ -42,6 +42,7 @@ async function refreshUser(userId) {
       wechat_name: u.wechatName,
       wechat_avatar: u.avatar,
       hire_date: u.hireDate || null,
+      rating: u.rating || "",
       role_key: u.isAdmin ? "admin" : "member",
       disabled_at: u.status === "disabled" ? new Date().toISOString() : null,
     },

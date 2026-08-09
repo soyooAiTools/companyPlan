@@ -50,6 +50,10 @@ function ticketRoleLabels(ticket) {
   return [...new Set(labels)];
 }
 
+function soyooRating(user) {
+  return String(user?.rating ?? user?.user_rating ?? "").trim();
+}
+
 function isActiveTicket(ticket) {
   return ticket.status !== DONE_STATUS && ACTIVE_STATUSES.has(ticket.status);
 }
@@ -177,7 +181,7 @@ async function loadPeopleByIds(ids) {
   if (!cleanIds.length) return new Map();
   const rows = await prisma.people.findMany({
     where: { id: { in: cleanIds } },
-    select: { id: true, name: true, username: true, wechat_name: true, wechat_avatar: true, hire_date: true, disabled_at: true },
+    select: { id: true, name: true, username: true, wechat_name: true, wechat_avatar: true, hire_date: true, rating: true, disabled_at: true },
   });
   const peopleById = new Map();
   for (const row of rows) {
@@ -390,6 +394,7 @@ async function loadSoyooPeopleGroups(roleKey = "all") {
       avatar: person.wechat_avatar_url || person.wechat_avatar || "",
       wechatName: person.wechat_name || "",
       hireDate,
+      rating: soyooRating(person),
       isNewcomer: isNewcomer(hireDate),
       disabled: false,
       roles: new Set(labels),
@@ -451,6 +456,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
         avatar: person?.wechat_avatar || ticket.owner_avatar || "",
         wechatName: person?.wechat_name || "",
         hireDate,
+        rating: String(person?.rating ?? "").trim(),
         isNewcomer: isNewcomer(hireDate),
         disabled: Boolean(person?.disabled_at),
         roles: new Set(),
@@ -484,6 +490,7 @@ export async function listPeopleProgress({ role = "all", q = "", overdueOnly = f
       avatar: group.avatar,
       wechatName: group.wechatName,
       hireDate: group.hireDate,
+      rating: group.rating || "",
       isNewcomer: group.isNewcomer,
       disabled: group.disabled,
       roles: [...group.roles],
