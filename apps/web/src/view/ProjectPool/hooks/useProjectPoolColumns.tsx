@@ -181,8 +181,9 @@ export function useProjectPoolColumns(
 	actions: ProjectPoolColumnActions,
 	rowNumberOffset = 0,
 	filters?: ProjectPoolColumnFilters,
-	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder } = {},
+	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder; isAdmin?: boolean } = {},
 ): ColumnsType<OpsProjectPoolRow> {
+	const statusFilterOptions = PROJECT_STATUSES.filter((status) => status !== "结算完成").map((status) => ({ label: status, value: status }));
 	const plannerFilterOptions = (filters?.plannerOptions || []).map((planner) => ({
 		value: planner.name,
 		searchText: planner.name,
@@ -387,7 +388,7 @@ export function useProjectPoolColumns(
 				? ({ close }) => (
 						<HeaderMultiDropdown
 							value={filters.statusFilter}
-							options={PROJECT_STATUSES.map((status) => ({ label: status, value: status }))}
+							options={statusFilterOptions}
 							onApply={filters.onStatusFilterChange}
 							close={close}
 						/>

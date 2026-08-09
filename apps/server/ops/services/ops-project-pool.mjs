@@ -593,12 +593,35 @@ const STATUS_AUTO_TICKET = {
   打包中: { title: "催打包", note: "项目状态改为打包中后自动生成" },
 };
 
+const SETTLEMENT_DONE_STATUS = "结算完成";
+
 // ---- 改状态:路由已限制策划/管理员;这里不再按版本成员二次拦截,避免多版本成员不同步导致误判 ----
 export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false, recycleHandoffUsername }) {
   if (!status) return { error: "缺少状态", code: 400 };
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
   const from = project.status;
+  if (status === SETTLEMENT_DONE_STATUS) {
+    if (!isAdmin(user)) return { error: "仅管理员可结算完成项目", code: 403 };
+    await soyooClient.setProjectStatus(baseProjectId, SETTLEMENT_DONE_STATUS, { operator_id: Number(meId(user)) || undefined });
+    await prisma.ops_project_status_logs.create({
+      data: {
+        project_id: String(baseProjectId),
+        project_name: project.name,
+        kind: "status",
+        from_status: from === "回收中" ? from : "回收中",
+        to_status: SETTLEMENT_DONE_STATUS,
+        actor_id: meId(user),
+        actor_name: user?.name || user?.username || "",
+        comment_html: commentHtml && !isBlankRich(commentHtml) ? sanitizeRichHtml(commentHtml) : "<p>结算完成，项目状态同步为已完成。</p>",
+        created_at: nowIso(),
+      },
+    });
+    await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
+      logger.warn("project-pool snapshot refresh failed after settlement done", { projectId: baseProjectId, error });
+    });
+    return { ok: true, status: SETTLEMENT_DONE_STATUS };
+  }
   // OPS 只负责发起状态变更；operator_id 供 helper 写回流转/转交日志，
   // recycle_handoff_username 仅在「回收中」时透传，用于 helper 校验所有版本回收后统一转交策划。
   await soyooClient.setProjectStatus(projectId, status, {

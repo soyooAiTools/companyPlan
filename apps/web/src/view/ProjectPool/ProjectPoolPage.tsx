@@ -263,6 +263,12 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	}, []);
 
 	useEffect(() => {
+		if (!statusFilter.includes("结算完成")) return;
+		setStatusFilter(statusFilter.filter((status) => status !== "结算完成"));
+		setPage(1);
+	}, [setPage, setStatusFilter, statusFilter]);
+
+	useEffect(() => {
 		const nextTab = isStaleSheet ? "stale" : "all";
 		if (tab !== nextTab) {
 			setTab(nextTab);
@@ -529,6 +535,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		},
 		{
 			readonly: mine,
+			isAdmin,
 			serverSort: !groupMode,
 			sortBy,
 			sortOrder: sortOrder === "asc" ? "ascend" : sortOrder === "desc" ? "descend" : null,
@@ -704,6 +711,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 				field={dialogs.change.field}
 				target={dialogs.change.target}
 				projectRows={filterOptionRows.length ? filterOptionRows : [...rows, ...allRows]}
+				isAdmin={isAdmin}
 				value={dialogs.change.value}
 				comment={dialogs.change.comment}
 				recycleHandoffUsername={dialogs.change.recycleHandoffUsername}

@@ -11,6 +11,7 @@ type ChangeProjectFieldModalProps = {
   field: "status" | "stage";
   target: OpsProjectPoolRow | null;
   projectRows?: OpsProjectPoolRow[];
+  isAdmin?: boolean;
   value: string;
   comment: string;
   recycleHandoffUsername: string;
@@ -26,6 +27,8 @@ const RECYCLE_HANDOFF_USERS = [
   { username: "miaochuan", name: "苗川", avatar: "" },
   { username: "jingkun", name: "井昆", avatar: "" },
 ];
+
+const SETTLEMENT_DONE_STATUS = "结算完成";
 
 function flattenRows(rows: OpsProjectPoolRow[] = []) {
   const result: OpsProjectPoolRow[] = [];
@@ -54,16 +57,29 @@ function isSameVersion(a: OpsProjectPoolRow, b: OpsProjectPoolRow) {
 
 function willAllVisibleVersionsRecycle(target: OpsProjectPoolRow | null, nextStatus: string, projectRows: OpsProjectPoolRow[] = []) {
   if (!target || nextStatus !== "回收中") return true;
-  const targetProjectId = baseProjectId(target);
-  const directChildren = Array.isArray(target.children) ? target.children : [];
-  const versionRows = flattenRows(projectRows).filter((row) => baseProjectId(row) === targetProjectId && isVersionRow(row));
-  const versions = versionRows.length ? versionRows : directChildren;
+  const versions = visibleProjectVersions(target, projectRows);
   if (versions.length <= 1) return true;
   return versions.every((row) => isSameVersion(row, target) || row.status === "回收中");
 }
 
+function visibleProjectVersions(target: OpsProjectPoolRow | null, projectRows: OpsProjectPoolRow[] = []) {
+  if (!target) return [];
+  const targetProjectId = baseProjectId(target);
+  const directChildren = Array.isArray(target.children) ? target.children : [];
+  const versionRows = flattenRows(projectRows).filter((row) => baseProjectId(row) === targetProjectId && isVersionRow(row));
+  return versionRows.length ? versionRows : directChildren;
+}
+
 function StatusOptionLabel({ status, current }: { status: string; current?: string }) {
   const text = status === current ? `${status}(当前)` : status;
+  if (status === SETTLEMENT_DONE_STATUS) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#16a34a", fontWeight: 600 }}>
+        <span style={{ width: 7, height: 7, borderRadius: 999, background: "#22c55e", display: "inline-block" }} />
+        <span>{text}</span>
+      </span>
+    );
+  }
   if (status !== "回收中") return <span>{text}</span>;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#dc2626", fontWeight: 600 }}>
@@ -73,11 +89,45 @@ function StatusOptionLabel({ status, current }: { status: string; current?: stri
   );
 }
 
+function AttentionNotice({ children, tone = "danger" }: { children: string; tone?: "danger" | "success" }) {
+  const color = tone === "success" ? "#16a34a" : "#dc2626";
+  const borderColor = tone === "success" ? "#22c55e" : "#ff4d4f";
+  const background = tone === "success" ? "#f0fdf4" : "#fff";
+  return (
+    <>
+      <style>
+        {`
+          @keyframes project-pool-attention-glow {
+            0%, 100% { box-shadow: 0 0 0 0 ${borderColor}33; }
+            50% { box-shadow: 0 0 0 5px ${borderColor}1f; }
+          }
+        `}
+      </style>
+      <div
+        style={{
+          color,
+          background,
+          border: `3px solid ${borderColor}`,
+          borderLeftWidth: 4,
+          borderRadius: 2,
+          padding: "14px 18px",
+          fontSize: 18,
+          fontWeight: 700,
+          lineHeight: 1.5,
+          animation: "project-pool-attention-glow 1.6s ease-in-out infinite",
+        }}>
+        {children}
+      </div>
+    </>
+  );
+}
+
 export default function ChangeProjectFieldModal({
   open,
   field,
   target,
   projectRows = [],
+  isAdmin = false,
   value,
   comment,
   recycleHandoffUsername,
@@ -89,10 +139,13 @@ export default function ChangeProjectFieldModal({
   onCancel,
 }: ChangeProjectFieldModalProps) {
   const current = field === "status" ? target?.status : target?.stage;
+  const statusOptions = field === "status" && isAdmin && current === "回收中" ? [...OPS_EDITABLE_PROJECT_STATUSES, SETTLEMENT_DONE_STATUS] : OPS_EDITABLE_PROJECT_STATUSES;
   const currentStageIndex = field === "stage" ? PROJECT_STAGES.indexOf(current || "") : -1;
   const isRecyclingChange = field === "status" && current !== "回收中" && value === "回收中";
   const visibleVersionsReady = willAllVisibleVersionsRecycle(target, value, projectRows);
+  const isMultiVersionSettlement = field === "status" && value === SETTLEMENT_DONE_STATUS && visibleProjectVersions(target, projectRows).length > 1;
   const showRecycleHandoff = isRecyclingChange && visibleVersionsReady;
+  const confirmDisabled = !value || value === current || (showRecycleHandoff && !recycleHandoffUsername);
   const [recycleHandoffUsers, setRecycleHandoffUsers] = useState<OpsRecycleHandoffUser[]>([]);
 
   useEffect(() => {
@@ -124,7 +177,7 @@ export default function ChangeProjectFieldModal({
       onCancel={onCancel}
       okText="确认修改"
       cancelText="取消"
-      okButtonProps={{ disabled: !value || value === current }}
+      okButtonProps={{ disabled: confirmDisabled }}
       width={760}
       destroyOnHidden>
       <Space orientation="vertical" style={{ width: "100%" }} size={12}>
@@ -139,7 +192,7 @@ export default function ChangeProjectFieldModal({
             value={value || undefined}
             placeholder={field === "status" ? "选择状态" : "选择阶段"}
             style={{ width: field === "stage" ? 320 : 200 }}
-            options={(field === "status" ? OPS_EDITABLE_PROJECT_STATUSES : PROJECT_STAGES).map((s) => ({
+            options={(field === "status" ? statusOptions : PROJECT_STAGES).map((s) => ({
               value: s,
               label: field === "stage" ? `${stageRangeLabel(s)}${s === current ? "(当前)" : ""}` : <StatusOptionLabel status={s} current={current} />,
               disabled: field === "stage" ? PROJECT_STAGES.indexOf(s) <= currentStageIndex : s === current,
@@ -173,9 +226,14 @@ export default function ChangeProjectFieldModal({
           </div>
         ) : null}
         {isRecyclingChange ? (
-          <div style={{ color: "#dc2626", fontSize: 18, fontWeight: 700, lineHeight: 1.5 }}>
-            注意：这是版本回收操作，请确认该版本确实不再继续推进。
-          </div>
+          <AttentionNotice>注意：这是版本回收操作，请确认该版本确实不再继续推进。</AttentionNotice>
+        ) : null}
+        {field === "status" && value === SETTLEMENT_DONE_STATUS ? (
+          <AttentionNotice tone="success">
+            {isMultiVersionSettlement
+              ? "注意：这是多版本项目的项目级结算完成操作，确认后整个项目会同步为已完成，并从 OPS 项目池隐藏。请确认该项目所有版本均已回收。"
+              : "注意：这是结算完成操作，确认后项目会同步为已完成，并从 OPS 项目池隐藏。"}
+          </AttentionNotice>
         ) : null}
         <div>
           <div style={{ marginBottom: 6, color: "#64748b" }}>备注(可选,可附图):</div>
