@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Avatar, Button, Input, Space, Table, Tag } from "antd";
+import { useMemo, useState } from "react";
+import { Avatar, Button, Checkbox, Input, Space, Table, Tag } from "antd";
 import { FilterFilled, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { PeopleProgressRow } from "../types";
@@ -27,8 +27,31 @@ const hasTextSelection = () => window.getSelection()?.toString().trim();
 const hiddenRoleLabels = new Set(["管理员", "外包"]);
 const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
+const ratingRank = (rating?: string) => {
+	const value = String(rating || "").trim().toUpperCase();
+	if (!value) return 999;
+	const first = value.charCodeAt(0);
+	if (first >= 65 && first <= 90) return first - 65;
+	return 500 + value.charCodeAt(0);
+};
+const ratingStyle = (rating?: string) => {
+	switch (String(rating || "").trim().toUpperCase()) {
+		case "A":
+			return { color: "#047857", background: "#ecfdf5", borderColor: "#a7f3d0" };
+		case "B":
+			return { color: "#0369a1", background: "#f0f9ff", borderColor: "#bae6fd" };
+		case "C":
+			return { color: "#c2410c", background: "#fff7ed", borderColor: "#fed7aa" };
+		case "D":
+			return { color: "#6d28d9", background: "#f5f3ff", borderColor: "#ddd6fe" };
+		default:
+			return { color: "#475569", background: "#f8fafc", borderColor: "#e2e8f0" };
+	}
+};
 
 export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+	const [selectedRatings, setSelectedRatings] = useState<string[]>([]);
+
 	const businessScopeOptions = useMemo(() => {
 		const scopeMap = new Map<string, string>();
 		rows.forEach((row) => {
@@ -41,6 +64,17 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 		return [...scopeMap.entries()]
 			.map(([value, text]) => ({ text, value }))
 			.sort((a, b) => a.text.localeCompare(b.text, "zh-Hans-CN"));
+	}, [rows]);
+
+	const ratingOptions = useMemo(() => {
+		const ratings = new Set<string>();
+		rows.forEach((row) => {
+			const rating = String(row.rating || "").trim();
+			if (rating) ratings.add(rating);
+		});
+		return [...ratings]
+			.sort((a, b) => ratingRank(a) - ratingRank(b) || a.localeCompare(b, "zh-Hans-CN"))
+			.map((rating) => ({ text: rating, value: rating }));
 	}, [rows]);
 
 	const columns: ColumnsType<PeopleProgressRow> = [
@@ -157,9 +191,32 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			title: "评级",
 			dataIndex: "rating",
 			width: 80,
+			filteredValue: selectedRatings.length ? selectedRatings : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedRatings.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 110 }}>
+					<Checkbox.Group
+						value={selectedRatings}
+						onChange={(values) => setSelectedRatings(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+						{ratingOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedRatings.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedRatings([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
+			onFilter: (value, row) => String(row.rating || "").trim() === String(value),
+			sorter: (a, b) => ratingRank(a.rating) - ratingRank(b.rating) || a.name.localeCompare(b.name, "zh-Hans-CN"),
 			render: (value?: string) =>
 				value ? (
-					<span style={{ color: "#92400e", fontWeight: 800 }}>{value}</span>
+					<Tag style={{ margin: 0, minWidth: 28, textAlign: "center", fontWeight: 800, ...ratingStyle(value) }}>{value}</Tag>
 				) : (
 					<span style={{ color: "#94a3b8" }}>-</span>
 				),

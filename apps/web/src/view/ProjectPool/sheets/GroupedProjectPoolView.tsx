@@ -42,6 +42,21 @@ const projectCellValue = (column: ColumnType<OpsProjectPoolRow>, row: OpsProject
 	return undefined;
 };
 
+const ratingStyle = (rating?: string) => {
+	switch (String(rating || "").trim().toUpperCase()) {
+		case "A":
+			return { color: "#047857", background: "#ecfdf5", borderColor: "#a7f3d0" };
+		case "B":
+			return { color: "#0369a1", background: "#f0f9ff", borderColor: "#bae6fd" };
+		case "C":
+			return { color: "#c2410c", background: "#fff7ed", borderColor: "#fed7aa" };
+		case "D":
+			return { color: "#6d28d9", background: "#f5f3ff", borderColor: "#ddd6fe" };
+		default:
+			return { color: "#475569", background: "#f8fafc", borderColor: "#e2e8f0" };
+	}
+};
+
 const groupLabel = (
 	group: ProjectPoolGroup,
 	collapsed: boolean,
@@ -80,7 +95,7 @@ const groupLabel = (
 				</Tag>
 			) : null}
 			{group.rating ? (
-				<Tag color="gold" style={{ margin: 0, fontWeight: 700 }}>
+				<Tag style={{ margin: 0, fontWeight: 700, ...ratingStyle(group.rating) }}>
 					评级 {group.rating}
 				</Tag>
 			) : null}
