@@ -7,10 +7,20 @@ import { createDirectUploadUrl, isOssConfigured, uploadObject } from "./oss.mjs"
 import { ossConfig } from "../config/runtime.mjs";
 import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
-import { listMyProjects, listAllProjects, getTicketProjectMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot } from "./ops-realtime.mjs";
+import { listMyProjects, listAllProjects, getTicketProjectMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot, getUser } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
 import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
 import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
+import {
+  buildTicketCollaborationAccess,
+  canHandleTicket,
+  canViewTicket,
+  deleteCollaborationPermission,
+  listCollaborationPermissions,
+  listCollaborationUsers,
+  saveMutualCollaborationPermissions,
+  saveCollaborationPermissions,
+} from "./services/collaboration-permissions.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
@@ -64,10 +74,11 @@ function splitNumberQueryList(value) {
     .filter((value) => Number.isFinite(value));
 }
 
-// 权限标记:状态=负责人/管理员;需求说明=提单人/管理员;指派=负责人/提单人/管理员;优先级=管理员/策划
-function withCanEdit(t, user, segNameById, planner = false) {
-  const admin = isAdmin(user);
-  const userId = meId(user);
+// 权限标记:状态=负责人/协作处理人/管理员;需求说明=提单人/管理员;指派=负责人/协作处理人/提单人/管理员;优先级=管理员/策划
+function withCanEdit(t, user, segNameById, planner = false, access = null) {
+  const admin = access?.admin ?? isAdmin(user);
+  const userId = access?.userId ?? meId(user);
+  const canHandle = access ? canHandleTicket(access, t) : admin || t.owner_id === userId;
   const ticket = mapTicket(t, segNameById);
   if (!admin) {
     delete ticket.adminNote;
@@ -75,9 +86,9 @@ function withCanEdit(t, user, segNameById, planner = false) {
   }
   return {
     ...ticket,
-    canEdit: admin || t.owner_id === userId,
+    canEdit: canHandle,
     canEditContent: admin || t.requester_id === userId,
-    canAssign: admin || t.owner_id === userId || t.requester_id === userId,
+    canAssign: canHandle || t.requester_id === userId,
     canEditPriority: admin || planner,
     canEditAdminNote: admin,
   };
@@ -86,13 +97,14 @@ function withCanEdit(t, user, segNameById, planner = false) {
 // 给工单(单条或数组)打权限标记;planner(=改优先级权限)按用户算一次,避免逐条查 soyoo;admin 直接放行不查。
 async function decorateTickets(rowsOrRow, user, segNameById) {
   const planner = isAdmin(user) ? false : await isPlanner(user);
+  const access = await buildTicketCollaborationAccess(user);
   const asArray = Array.isArray(rowsOrRow);
   let rows = asArray ? rowsOrRow : [rowsOrRow];
   if (isAdmin(user)) {
     const noteMap = await loadTicketAdminNoteMap(rows.map((t) => t.id));
     rows = rows.map((t) => ({ ...t, ...(noteMap.get(String(t.id)) || {}) }));
   }
-  return asArray ? rows.map((t) => withCanEdit(t, user, segNameById, planner)) : withCanEdit(rows[0], user, segNameById, planner);
+  return asArray ? rows.map((t) => withCanEdit(t, user, segNameById, planner, access)) : withCanEdit(rows[0], user, segNameById, planner, access);
 }
 
 // 环节 id→当前名 映射:工单显示「环节」时按 segment_id 取当前名(改名即时反映,不依赖名字快照)
@@ -251,11 +263,67 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   // 当前登录用户(供前端按角色显示菜单)
   app.get("/api/ops/me", requireAuth, async (req, res) => {
     const u = req.user || {};
+    const freshUser = await getUser(u.id).catch(() => null);
+    if (freshUser) {
+      const roleKey = freshUser.isAdmin ? "admin" : "member";
+      await prisma.people
+        .updateMany({
+          where: { id: { in: [String(u.id), String(u.id).replace(/^ops-user-/, "")] } },
+          data: {
+            username: freshUser.username || u.username || "",
+            name: freshUser.name || u.name || "",
+            wechat_name: freshUser.wechatName || "",
+            wechat_avatar: freshUser.avatar || "",
+            role_key: roleKey,
+            disabled_at: freshUser.status === "disabled" ? nowIso() : null,
+          },
+        })
+        .catch(() => {});
+      u.username = freshUser.username || u.username || "";
+      u.name = freshUser.name || u.name || "";
+      u.roleKey = roleKey;
+    }
     const p = await prisma.people.findUnique({ where: { id: String(u.id) }, select: { wechat_avatar: true, wechat_name: true } }).catch(() => null);
     // isPlanner:soyoo 用户带「制片」标签 = 策划(决定「项目池」菜单可见 + 策划视角)
     const planner = await isPlanner(u);
     const notifyWindow = await notif.getNotifyWindow();
     res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", isPlanner: planner, avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "", notifyStart: notifyWindow.start, notifyEnd: notifyWindow.end } });
+  });
+
+  // 工单协作权限配置(管理员):viewer 可查看/处理 target 的工单。scope 预留给后续项目池/人员进度。
+  app.get("/api/ops/collaboration/users", requireAuth, requireAdmin, async (_req, res) => {
+    res.json({ users: await listCollaborationUsers() });
+  });
+
+  app.get("/api/ops/collaboration/permissions", requireAuth, requireAdmin, async (req, res) => {
+    res.json({ permissions: await listCollaborationPermissions({ scope: req.query?.scope }) });
+  });
+
+  app.put("/api/ops/collaboration/permissions", requireAuth, requireAdmin, async (req, res) => {
+    if (req.body?.mode === "mutual") {
+      const result = await saveMutualCollaborationPermissions({
+        userIds: Array.isArray(req.body?.userIds) ? req.body.userIds : [],
+        scope: req.body?.scope,
+        actorUser: req.user,
+      });
+      if (result.error) return res.status(400).json({ error: result.error });
+      return res.json({ permissions: result.permissions });
+    }
+    const result = await saveCollaborationPermissions({
+      viewerUserId: req.body?.viewerUserId,
+      targetUserIds: Array.isArray(req.body?.targetUserIds) ? req.body.targetUserIds : [],
+      permission: "handle",
+      scope: req.body?.scope,
+      actorUser: req.user,
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ permissions: result.permissions });
+  });
+
+  app.delete("/api/ops/collaboration/permissions/:id", requireAuth, requireAdmin, async (req, res) => {
+    const result = await deleteCollaborationPermission(req.params.id);
+    if (result.error) return res.status(404).json({ error: result.error });
+    res.json({ ok: true });
   });
 
   // 原始 soyoo 标签(供环节配置页绑定):实时查 soyoo
@@ -415,7 +483,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 提单列表 —— 需求提单是「个人数据」:始终只看与我相关(owner 或 requester),管理员也不例外。
+  // 提单列表 —— 普通用户看自己相关和授权协作的工单;管理员可看全部。
   // scope: all=我相关的全部 / owner=我负责的 / requester=我提单的
   app.get("/api/ops/tickets", requireAuth, async (req, res) => {
     const user = req.user;
@@ -428,12 +496,15 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const page = Math.max(1, Number(qy.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(qy.pageSize) || 20));
 
-    // 可见性 + scope:管理员 all=全部;owner/requester=对应自己;普通用户"全部"=自己相关
+    const access = await buildTicketCollaborationAccess(user);
+    const visibleOwnerIds = access.admin ? [] : [...access.viewOwnerIds];
+
+    // 可见性 + scope:管理员 all=全部;owner/requester=对应自己;普通用户"全部/我负责的"=自己 + 已授权协作的负责人
     let base;
-    if (scope === "owner") base = { owner_id: me };
+    if (scope === "owner") base = access.admin ? { owner_id: me } : { owner_id: { in: visibleOwnerIds } };
     else if (scope === "requester") base = { requester_id: me };
     else if (isAdmin(user)) base = {};
-    else base = { OR: [{ owner_id: me }, { requester_id: me }] };
+    else base = { OR: [{ owner_id: { in: visibleOwnerIds } }, { requester_id: me }] };
 
     // 除"状态"外的筛选(状态单独加,以便给状态 chip 计数)
     const filters = [];
@@ -573,7 +644,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 指派/改派:把工单转给该项目的另一个成员(管理员/当前负责人/当前提单人可操作)
+  // 指派/改派:把工单转给该项目的另一个成员(管理员/当前负责人/协作处理人/当前提单人可操作)
   app.post("/api/ops/tickets/:id/assign", requireAuth, async (req, res) => {
     const user = req.user;
     const id = String(req.params.id);
@@ -581,7 +652,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (!newOwnerId) return res.status(400).json({ error: "请选择负责人" });
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
-    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "只有管理员、当前负责人或当前提单人可指派" });
+    const access = await buildTicketCollaborationAccess(user);
+    if (!canHandleTicket(access, t) && t.requester_id !== meId(user)) return res.status(403).json({ error: "只有管理员、当前负责人、协作处理人或当前提单人可指派" });
     let member;
     try {
       const { members } = await getTicketProjectMembers(t.project_id, t.project_version_id);
@@ -606,7 +678,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
-  // 改状态(仅负责人或管理员;提单人不能改,不满意线下沟通)
+  // 改状态(仅负责人/协作处理人/管理员;提单人不能改,不满意线下沟通)
   app.patch("/api/ops/tickets/:id/status", requireAuth, async (req, res) => {
     const id = String(req.params.id);
     const status = String(req.body?.status ?? "");
@@ -614,7 +686,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.owner_id !== meId(user)) return res.status(403).json({ error: "无权修改(仅负责人或管理员)" });
+    const access = await buildTicketCollaborationAccess(user);
+    if (!canHandleTicket(access, t)) return res.status(403).json({ error: "无权修改(仅负责人、协作处理人或管理员)" });
     const now = nowIso();
     const reason = clip(req.body?.reason, 500) || null; // 完成/阻塞 的备注都记进流转记录
     const data = { status, updated_at: now, status_updated_at: now };
@@ -636,14 +709,14 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const user = req.user;
     const planner = isAdmin(user) ? false : await isPlanner(user);
     if (!isAdmin(user) && !planner) return res.status(403).json({ error: "无权修改(仅管理员或策划)" });
-    if (t.priority === priority) return res.json({ ticket: withCanEdit(t, user, await loadSegNameMap(), planner) });
+    if (t.priority === priority) return res.json({ ticket: await decorateTickets(t, user, await loadSegNameMap()) });
     const updated = await prisma.tickets.update({
       where: { id },
       data: { priority, updated_at: nowIso() },
     });
     await logTicketEvent({ ticketId: id, user, action: "修改优先级", note: `优先级「${t.priority}」→「${priority}」` });
     await notif.notifyPriorityChanged(updated, t.priority, priority, meId(user)); // 通知负责人(自己改自己不通知)
-    res.json({ ticket: withCanEdit(updated, user, await loadSegNameMap(), planner) });
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
   // 改需求说明(富文本;仅提单人或管理员)。建单后正文可改,其它字段不可改。
@@ -682,7 +755,12 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
 
   // 流转记录(时间线)
   app.get("/api/ops/tickets/:id/events", requireAuth, async (req, res) => {
-    const events = await prisma.ticket_events.findMany({ where: { ticket_id: String(req.params.id) }, orderBy: [{ created_at: "desc" }, { id: "desc" }] });
+    const ticketId = String(req.params.id);
+    const t = await prisma.tickets.findUnique({ where: { id: ticketId }, select: { owner_id: true, requester_id: true } });
+    if (!t) return res.status(404).json({ error: "提单不存在" });
+    const access = await buildTicketCollaborationAccess(req.user);
+    if (!canViewTicket(access, t)) return res.status(403).json({ error: "无权查看" });
+    const events = await prisma.ticket_events.findMany({ where: { ticket_id: ticketId }, orderBy: [{ created_at: "desc" }, { id: "desc" }] });
     res.json({
       events: events.map((e) => ({ id: e.id, actorName: e.actor_name ?? "", action: e.action, fromStatus: e.from_status ?? "", toStatus: e.to_status ?? "", note: e.note ?? "", createdAt: e.created_at })),
     });
@@ -694,16 +772,18 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const t = await prisma.tickets.findUnique({ where: { id }, select: { content_html: true, owner_id: true, requester_id: true } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权查看" });
+    const access = await buildTicketCollaborationAccess(user);
+    if (!canViewTicket(access, t)) return res.status(403).json({ error: "无权查看" });
     res.json({ contentHtml: t.content_html ?? "" });
   });
 
-  // 单工单(通知深链点击打开详情用):owner/requester/admin 可看
+  // 单工单(通知深链点击打开详情用):列表可见的人可看详情。
   app.get("/api/ops/tickets/:id", requireAuth, async (req, res) => {
     const t = await prisma.tickets.findUnique({ where: { id: String(req.params.id) } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
     const user = req.user;
-    if (!isAdmin(user) && t.owner_id !== meId(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权查看" });
+    const access = await buildTicketCollaborationAccess(user);
+    if (!canViewTicket(access, t)) return res.status(403).json({ error: "无权查看" });
     res.json({ ticket: await decorateTickets(t, user, await loadSegNameMap()) });
   });
 }

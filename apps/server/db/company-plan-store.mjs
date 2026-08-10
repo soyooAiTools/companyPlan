@@ -608,6 +608,27 @@ async function migrateSchema() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
     .run();
+
+  // 用户协作授权:当前用于“工单互通”;scope 预留 project_pool / people_progress 等后续场景。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_user_collaboration_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        viewer_user_id VARCHAR(64) NOT NULL,
+        target_user_id VARCHAR(64) NOT NULL,
+        scope VARCHAR(40) NOT NULL DEFAULT 'tickets',
+        permission VARCHAR(20) NOT NULL DEFAULT 'handle',
+        enabled TINYINT NOT NULL DEFAULT 1,
+        created_by VARCHAR(64),
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        deleted_at VARCHAR(40),
+        UNIQUE KEY uniq_oucp_viewer_target_scope (viewer_user_id, target_user_id, scope),
+        KEY idx_oucp_viewer_scope (viewer_user_id, scope, enabled),
+        KEY idx_oucp_target_scope (target_user_id, scope, enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
 }
 
 async function ensureColumn(tableName, columnName, definition) {

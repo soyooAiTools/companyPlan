@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { soyooLogin } from "../ops/soyoo-auth.mjs";
+import { getUser } from "../ops/ops-realtime.mjs";
 import { prisma } from "../ops/prisma.mjs";
 
 function ok(body, status = 200) {
@@ -46,13 +47,14 @@ export function createCompanyPlanService(deps) {
         return fail(500, "soyoo 未返回用户 id");
       }
 
+      const freshSoyooUser = await getUser(personId).catch(() => null);
       await upsertPersonFromSoyoo({
         id: personId,
-        username,
-        name: su.nickname || username,
-        roleKey: su.is_admin ? "admin" : "member",
-        wechatName: su.wechat_name ?? "",
-        wechatAvatar: su.wechat_avatar_url ?? "",
+        username: freshSoyooUser?.username || username,
+        name: freshSoyooUser?.name || su.nickname || username,
+        roleKey: freshSoyooUser ? (freshSoyooUser.isAdmin ? "admin" : "member") : su.is_admin ? "admin" : "member",
+        wechatName: freshSoyooUser?.wechatName || su.wechat_name || "",
+        wechatAvatar: freshSoyooUser?.avatar || su.wechat_avatar_url || "",
       });
 
       const user = await prisma.people.findFirst({ where: { username, disabled_at: null } });

@@ -112,6 +112,33 @@ export interface OpsTicketEvent {
 	note: string;
 	createdAt: string;
 }
+export interface OpsCollaborationUser {
+	id: string;
+	username: string;
+	name: string;
+	wechatName?: string;
+	avatar?: string;
+	tags?: Array<{ name: string; color?: string }>;
+	disabledAt?: string | null;
+}
+export interface OpsCollaborationPermission {
+	id: number;
+	viewerUserId: string;
+	viewerUsername: string;
+	viewerName: string;
+	viewerWechatName?: string;
+	viewerAvatar?: string;
+	targetUserId: string;
+	targetUsername: string;
+	targetName: string;
+	targetWechatName?: string;
+	targetAvatar?: string;
+	scope: string;
+	permission: "view" | "handle";
+	enabled: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
 export interface CreateTicketBody {
 	projectId: string;
 	projectVersionId?: string;
@@ -608,6 +635,19 @@ export const opsApi = {
 	projectStageSettings: () => requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings"),
 	saveProjectStageSettings: (settings: OpsProjectStageSetting[]) =>
 		requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+	collaborationUsers: () => requestJson<{ users: OpsCollaborationUser[] }>("/api/ops/collaboration/users"),
+	ticketCollaborationPermissions: () => requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions?scope=tickets"),
+	saveTicketCollaborationPermissions: (body: { viewerUserId: string; targetUserIds: string[]; permission?: "view" | "handle" }) =>
+		requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions", {
+			method: "PUT",
+			body: JSON.stringify({ ...body, scope: "tickets" }),
+		}),
+	saveMutualTicketCollaborationPermissions: (userIds: string[]) =>
+		requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions", {
+			method: "PUT",
+			body: JSON.stringify({ mode: "mutual", userIds, scope: "tickets" }),
+		}),
+	deleteCollaborationPermission: (id: number) => requestJson<{ ok: boolean }>(`/api/ops/collaboration/permissions/${encodeURIComponent(String(id))}`, { method: "DELETE" }),
 	// 通知(站内消息):列表/未读、已读、配置。SSE 流由 EventSource 直连,不走这里。
 	notifications: (status: "unread" | "all" = "all", page = 1, pageSize = 10) =>
 		requestJson<{ items: OpsNotification[]; total: number; unread: number }>(

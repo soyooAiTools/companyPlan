@@ -343,3 +343,22 @@ model ops_config {
   v          String @default("") @db.VarChar(255)
   updated_at String @db.VarChar(40)
 }
+
+// OPS 用户协作授权:viewer 可以在某个业务域(scope)查看/处理 target 的数据。
+// 当前只启用 scope=tickets,后续可扩展 project_pool / people_progress。
+model ops_user_collaboration_permissions {
+  id             Int     @id @default(autoincrement())
+  viewer_user_id String  @db.VarChar(64)
+  target_user_id String  @db.VarChar(64)
+  scope          String  @default("tickets") @db.VarChar(40)
+  permission     String  @default("handle") @db.VarChar(20)
+  enabled        Int     @default(1) @db.TinyInt
+  created_by     String? @db.VarChar(64)
+  created_at     String  @db.VarChar(40)
+  updated_at     String  @db.VarChar(40)
+  deleted_at     String? @db.VarChar(40)
+
+  @@unique([viewer_user_id, target_user_id, scope], map: "uniq_oucp_viewer_target_scope")
+  @@index([viewer_user_id, scope, enabled], map: "idx_oucp_viewer_scope")
+  @@index([target_user_id, scope, enabled], map: "idx_oucp_target_scope")
+}
