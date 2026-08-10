@@ -128,7 +128,13 @@ export const groupProjectsByPlanner = (rows: OpsProjectPoolRow[]): ProjectPoolGr
   }
 
   return [...groups.entries()]
-    .map(([key, group]) => ({ key, title: group.title, avatar: group.avatar, rows: group.rows, stats: groupStats(group.rows) }))
+    .map(([key, group]) => ({
+      key,
+      title: group.title,
+      avatar: group.avatar,
+      rows: group.rows,
+      stats: { ...groupStats(group.rows), projectCount: group.rows.length },
+    }))
     .sort(bySizeDesc);
 };
 
