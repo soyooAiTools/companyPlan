@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Avatar, Button, Checkbox, Input, Space, Table, Tag } from "antd";
 import { FilterFilled, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -34,6 +34,9 @@ const ratingRank = (rating?: string) => {
 	if (first >= 65 && first <= 90) return first - 65;
 	return 500 + value.charCodeAt(0);
 };
+const normalizeScopeValue = (value: unknown) => String(value || "").trim();
+const scopeFilterValues = (scope: { id?: string; name?: string; code?: string }) =>
+	[scope.id, scope.name, scope.code].map(normalizeScopeValue).filter(Boolean);
 const ratingStyle = (rating?: string) => {
 	switch (String(rating || "").trim().toUpperCase()) {
 		case "A":
@@ -50,14 +53,15 @@ const ratingStyle = (rating?: string) => {
 };
 
 export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+	const [selectedBusinessScopes, setSelectedBusinessScopes] = useState<string[]>([]);
 	const [selectedRatings, setSelectedRatings] = useState<string[]>([]);
 
 	const businessScopeOptions = useMemo(() => {
 		const scopeMap = new Map<string, string>();
 		rows.forEach((row) => {
 			row.businessScopes?.forEach((scope) => {
-				const id = String(scope.id || scope.name || "").trim();
-				const name = String(scope.name || "").trim();
+				const id = normalizeScopeValue(scope.id || scope.name);
+				const name = normalizeScopeValue(scope.name);
 				if (id && name) scopeMap.set(id, name);
 			});
 		});
@@ -65,6 +69,11 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			.map(([value, text]) => ({ text, value }))
 			.sort((a, b) => a.text.localeCompare(b.text, "zh-Hans-CN"));
 	}, [rows]);
+
+	useEffect(() => {
+		const availableValues = new Set(businessScopeOptions.map((option) => String(option.value)));
+		setSelectedBusinessScopes((values) => values.filter((value) => availableValues.has(value)));
+	}, [businessScopeOptions]);
 
 	const ratingOptions = useMemo(() => {
 		const ratings = new Set<string>();
@@ -91,6 +100,7 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			width: 260,
 			fixed: "left",
 			filtered: Boolean(query.trim()),
+			filteredValue: query.trim() ? [query.trim()] : null,
 			filterIcon: () => <SearchOutlined style={{ color: query.trim() ? "#2563eb" : "#94a3b8", fontSize: 15 }} />,
 			filterDropdown: ({ close }) => (
 				<div style={{ padding: 12, width: 300 }}>
@@ -172,13 +182,30 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			title: "业务范围",
 			dataIndex: "businessScopes",
 			width: 170,
-			filters: businessScopeOptions,
-			filterMultiple: true,
-			filterSearch: true,
-			filterIcon: (filtered) => <FilterFilled style={{ color: filtered ? "#2563eb" : "#94a3b8" }} />,
+			filteredValue: selectedBusinessScopes.length ? selectedBusinessScopes : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedBusinessScopes.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 140, maxWidth: 220 }}>
+					<Checkbox.Group
+						value={selectedBusinessScopes}
+						onChange={(values) => setSelectedBusinessScopes(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
+						{businessScopeOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedBusinessScopes.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedBusinessScopes([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
 			onFilter: (value, row) => {
-				const selected = String(value);
-				return Boolean(row.businessScopes?.some((scope) => String(scope.id || scope.name) === selected));
+				const selected = normalizeScopeValue(value);
+				return Boolean(row.businessScopes?.some((scope) => scopeFilterValues(scope).includes(selected)));
 			},
 			render: (_, row) =>
 				row.businessScopes?.length ? (
