@@ -53,8 +53,24 @@ const ratingStyle = (rating?: string) => {
 };
 
 export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+	const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
 	const [selectedBusinessScopes, setSelectedBusinessScopes] = useState<string[]>([]);
 	const [selectedRatings, setSelectedRatings] = useState<string[]>([]);
+
+	const roleOptions = useMemo(() => {
+		const labels = new Set<string>();
+		rows.forEach((row) => {
+			visibleRoleLabels(row.roles).forEach((label) => labels.add(label));
+		});
+		return [...labels]
+			.sort((a, b) => a.localeCompare(b, "zh-Hans-CN"))
+			.map((label) => ({ text: label, value: label }));
+	}, [rows]);
+
+	useEffect(() => {
+		const availableValues = new Set(roleOptions.map((option) => String(option.value)));
+		setSelectedRoles((values) => values.filter((value) => availableValues.has(value)));
+	}, [roleOptions]);
 
 	const businessScopeOptions = useMemo(() => {
 		const scopeMap = new Map<string, string>();
@@ -165,6 +181,28 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			title: "角色",
 			dataIndex: "roles",
 			width: 180,
+			filteredValue: selectedRoles.length ? selectedRoles : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedRoles.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 130, maxWidth: 220 }}>
+					<Checkbox.Group
+						value={selectedRoles}
+						onChange={(values) => setSelectedRoles(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
+						{roleOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedRoles.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedRoles([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
+			onFilter: (value, row) => visibleRoleLabels(row.roles).includes(String(value)),
 			render: (roles: string[]) => {
 				const labels = visibleRoleLabels(roles);
 				return labels.length ? (
