@@ -250,9 +250,10 @@ export function useProjectPoolColumns(
 				const isVersion = !!row.isVersionRow;
 				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
 				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
+				const showUrgentMark = row.isUrgent && !isParent;
 				return (
 					<div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
-						{row.isUrgent ? urgentCornerMark : null}
+						{showUrgentMark ? urgentCornerMark : null}
 						<span
 							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
 							{isVersion ? "" : rowNumberOffset + index + 1}

@@ -5,7 +5,7 @@ import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
 import { App, Button, Checkbox, Input, Radio, Select, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { SearchOutlined } from "@ant-design/icons";
+import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
@@ -134,6 +134,21 @@ function findOwnerMemberMeta(map: Map<string, OpsProjectPoolMember>, projectId: 
 	return null;
 }
 
+function filterUrgentProjectRows(rows: OpsProjectPoolRow[]): OpsProjectPoolRow[] {
+	const nextRows: OpsProjectPoolRow[] = [];
+	for (const row of rows) {
+		const urgentChildren = Array.isArray(row.children) ? filterUrgentProjectRows(row.children) : [];
+		if (urgentChildren.length) {
+			nextRows.push({ ...row, children: urgentChildren });
+		} else if (!row.hasVersionChildren && row.isUrgent) {
+			nextRows.push(row);
+		}
+	}
+	return nextRows;
+}
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
 type ProjectPoolPageProps = {
 	mine?: boolean;
 	isAdmin?: boolean;
@@ -210,8 +225,10 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [ownerBusinessScopeSearch, setOwnerBusinessScopeSearch] = useState("");
 	const [ownerBusinessScopeOpen, setOwnerBusinessScopeOpen] = useState(false);
 	const [ownerOnlyNew, setOwnerOnlyNew] = useState(false);
-	const [ownerCollapseAction, setOwnerCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
-	const [ownerCollapsed, setOwnerCollapsed] = useState(false);
+	const [onlyUrgent, setOnlyUrgent] = useState(false);
+	const [groupCollapseAction, setGroupCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
+	const [groupCollapsed, setGroupCollapsed] = useState(false);
+	const [refreshing, setRefreshing] = useState(false);
 	const [createTicketProject, setCreateTicketProject] = useState<OpsProjectPoolRow | null>(null);
 	const [createTicketMember, setCreateTicketMember] = useState<OpsProjectPoolMember | null>(null);
 	const { hiddenColumnKeys, hiddenColumnKeySet, setHiddenColumnKeys, columnOrderKeys, setColumnOrderKeys, resetColumnConfig, lockedColumnKeys } = useProjectPoolColumnVisibility();
@@ -231,6 +248,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		if (nextSheet === sheet) return;
 		if (switchFrameRef.current != null) cancelAnimationFrame(switchFrameRef.current);
 		setSheet(nextSheet);
+		setGroupCollapsed(false);
+		setGroupCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
 		setSheetContentReady(false);
 		switchFrameRef.current = requestAnimationFrame(() => {
 			switchFrameRef.current = requestAnimationFrame(() => {
@@ -253,8 +272,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setOwnerBusinessScopeSearch("");
 		setOwnerBusinessScopeOpen(false);
 		setOwnerOnlyNew(false);
-		setOwnerCollapsed(false);
-		setOwnerCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
+		setGroupCollapsed(false);
+		setGroupCollapseAction((old) => ({ type: "expand", version: old.version + 1 }));
 		setPage(1);
 	};
 
@@ -288,9 +307,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	}, [isStaleSheet, setPage, setTab, tab]);
 
 	useEffect(() => {
-		if (!mine && !isStaleSheet && sheet !== "project" && tab === "all") void loadAllRows();
+		if (!mine && !isStaleSheet && (sheet !== "project" || onlyUrgent) && tab === "all") void loadAllRows();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isStaleSheet, tab, sheet, allRowsSourceKey, mine]);
+	}, [isStaleSheet, tab, sheet, allRowsSourceKey, mine, onlyUrgent]);
 
 	const filteredGroupRows = useMemo(
 		() =>
@@ -304,6 +323,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			}),
 		[advancedFilter, allRows, plannerFilter, search, segmentFilter, stageFilter, statusFilter],
 	);
+	const visibleGroupRows = useMemo(() => (onlyUrgent ? filterUrgentProjectRows(filteredGroupRows) : filteredGroupRows), [filteredGroupRows, onlyUrgent]);
+	const visibleProjectRows = useMemo(() => (onlyUrgent ? filterUrgentProjectRows(allRows) : rows), [allRows, onlyUrgent, rows]);
 
 	useEffect(() => {
 		if (sheet !== "owner" || ownerBusinessUnits.length) return;
@@ -334,7 +355,6 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setOwnerBusinessScopeSearch("");
 			setOwnerBusinessScopeOpen(false);
 			setOwnerOnlyNew(false);
-			setOwnerCollapsed(false);
 			return;
 		}
 		if (allRowsLoading) {
@@ -348,9 +368,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setOwnerGroups([]);
 			try {
 				const role = OWNER_ROLE_OPTIONS.find((option) => option.key === ownerRoleKey) || OWNER_ROLE_OPTIONS[0];
-				const activeRows = flattenProjectPoolRows(filteredGroupRows);
+				const activeRows = flattenProjectPoolRows(visibleGroupRows);
 				if (role.source === "project_planners") {
-					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(filteredGroupRows), filteredGroupRows));
+					if (!cancelled) setOwnerGroups(groupProjectsByOwner(buildOwnerMembersFromProjectPlanners(visibleGroupRows), visibleGroupRows));
 					return;
 				}
 				const localMembers = buildOwnerMembersFromProjectMembers(activeRows, role.tags);
@@ -390,7 +410,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						matchedTags: member.tags,
 					});
 				}
-				if (!cancelled) setOwnerGroups(groupProjectsByOwner(members, filteredGroupRows));
+				if (!cancelled) setOwnerGroups(groupProjectsByOwner(members, visibleGroupRows));
 			} catch (e) {
 				if (!cancelled) {
 					message.error(e instanceof Error ? e.message : "加载负责人分组失败");
@@ -404,7 +424,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		return () => {
 			cancelled = true;
 		};
-	}, [allRowsLoading, filteredGroupRows, message, ownerRoleKey, sheet, tab]);
+	}, [allRowsLoading, message, ownerRoleKey, sheet, tab, visibleGroupRows]);
 
 	const ownerBusinessScopeOptions = useMemo(() => {
 		const scopeMap = new Map<string, string>();
@@ -442,10 +462,20 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		});
 	}, [ownerBusinessScopeFilter, ownerGroups, ownerOnlyNew, ownerSearch]);
 
-	const toggleOwnerCollapse = () => {
-		const nextCollapsed = !ownerCollapsed;
-		setOwnerCollapsed(nextCollapsed);
-		setOwnerCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
+	const toggleGroupCollapse = () => {
+		const nextCollapsed = !groupCollapsed;
+		setGroupCollapsed(nextCollapsed);
+		setGroupCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
+	};
+
+	const refreshCurrentSheet = async () => {
+		if (refreshing) return;
+		setRefreshing(true);
+		try {
+			await Promise.all([groupMode || onlyUrgent ? loadAllRows(true) : load(), wait(300)]);
+		} finally {
+			setRefreshing(false);
+		}
 	};
 
 	const ownerBusinessScopeDropdown = (menu: ReactNode) => (
@@ -601,6 +631,35 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					onChange={changeSheet}
 					extra={
 						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+							{!mine && !isStaleSheet ? (
+								<div
+									style={{
+										display: "inline-flex",
+										alignItems: "center",
+										height: 30,
+										padding: "0 4px 0 10px",
+										border: "1px solid #d9d9d9",
+										borderRadius: 6,
+										background: "#fff",
+									}}>
+									<label style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#334155", fontSize: 13, cursor: "pointer", userSelect: "none" }}>
+										<span>只看加急</span>
+										<Switch size="small" checked={onlyUrgent} onChange={setOnlyUrgent} />
+									</label>
+									{groupMode ? (
+										<>
+											<span style={{ width: 1, height: 16, margin: "0 4px 0 10px", background: "#e5e7eb" }} />
+											<Button type="text" size="small" onClick={toggleGroupCollapse}>
+												{groupCollapsed ? "展开全部" : "折叠全部"}
+											</Button>
+										</>
+									) : null}
+									<span style={{ width: 1, height: 16, margin: "0 4px", background: "#e5e7eb" }} />
+									<Button type="text" size="small" icon={<ReloadOutlined />} loading={refreshing || (groupMode || onlyUrgent ? allRowsLoading : loading)} onClick={() => void refreshCurrentSheet()}>
+										刷新
+									</Button>
+								</div>
+							) : null}
 							{columnConfigButton}
 							{isAdmin ? <ProjectPoolExportButton /> : null}
 						</div>
@@ -667,9 +726,6 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						checkedChildren="新人"
 						unCheckedChildren="新人"
 					/>
-					<Button size="small" onClick={toggleOwnerCollapse} style={{ marginLeft: "auto" }}>
-						{ownerCollapsed ? "展开全部" : "折叠全部"}
-					</Button>
 				</div>
 			) : null}
 
@@ -681,13 +737,13 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 				) : !isStaleSheet && groupMode ? (
 					<GroupedProjectSheet
 						mode={groupMode}
-						rows={filteredGroupRows}
+						rows={visibleGroupRows}
 						groupsOverride={sheet === "owner" ? visibleOwnerGroups : undefined}
 						columns={displayColumns}
 						loading={allRowsLoading || (sheet === "owner" && ownerGroupsLoading)}
 						scrollY={groupScrollY}
 						hideStats={sheet === "owner"}
-						collapseAction={sheet === "owner" ? ownerCollapseAction : undefined}
+						collapseAction={groupCollapseAction}
 						onOpenLogs={dialogs.actions.openLogs}
 						onOpenGroupTickets={(group, mode) => {
 							void dialogs.actions.openGroupTickets(`工单 · ${group.title} · ${mode === "overdue" ? "工单逾期" : "未完成工单"}`, group.rows, mode, group.segmentIds, group.ownerName);
@@ -697,13 +753,14 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					/>
 				) : (
 					<ProjectSheet
-						rows={rows}
+						rows={visibleProjectRows}
 						columns={displayColumns}
-						loading={loading}
+						loading={onlyUrgent ? allRowsLoading : loading}
 						page={page}
 						pageSize={pageSize}
-						total={total}
+						total={onlyUrgent ? visibleProjectRows.length : total}
 						scrollY={scrollY}
+						pagination={onlyUrgent ? false : undefined}
 						onPageChange={(nextPage, nextPageSize) => {
 							setPage(nextPage);
 							setPageSize(nextPageSize);
