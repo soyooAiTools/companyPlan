@@ -1,6 +1,6 @@
 ---
 name: company-plan
-description: Work on the companyPlan Ops/project-pool/product-management system and its soyoo integrations. Use when changing or investigating companyPlan, Ops 提单, Ops 项目池, 项目阶段, 下版交付时间, 超时关注, 飞书同步, soyoo helper-server/helper-admin interactions, role/tag sync, notifications, deployment, or repo cleanup/design planning.
+description: Work on the companyPlan Ops/project-management system, external soyoo authentication, and realtime integrations. Use when changing or investigating companyPlan, Ops 提单, Ops 项目池, 外部账号登录, 账号同步, 制片/管理员权限, 项目阶段, 下版交付时间, 超时关注, 飞书同步, soyoo helper-server/helper-admin interactions, role/tag projection, notifications, deployment, or repo cleanup/design planning.
 ---
 
 # company-plan
@@ -37,7 +37,10 @@ For the current design map and refactor plan, read `references/design.md`.
 - Editing “下版交付时间” should write a project flow log when actual dates change.
 - Feishu project stage sync uses project name/record id matching and should report unmatched or empty-stage records to local markdown.
 - Status sync from Feishu may need to update both soyoo and Ops snapshots when Feishu was manually changed.
-- Role/tag sync comes from soyoo labels into Ops people/roles; Ops login and permissions still use Ops-side user data after sync.
+- Login sends credentials only to soyoo `POST /tools/login`; never validate or persist production passwords locally.
+- Invalid credentials must return before user enrichment, local upsert, or session creation. Never put a directory sync in the login critical path.
+- After successful authentication, upsert the local person and project the authoritative identity into the session: soyoo admin → `admin`, exact `制片` tag → `producer`, otherwise → `member`.
+- Keep `username` and `roleKey` in both login and session responses so downstream apps can enforce administrator/producer access.
 
 ## UI Rules
 
@@ -54,8 +57,9 @@ Use the smallest validation that covers the change:
 
 - Server-only JS: `node --check <file>`.
 - Web TypeScript: prefer the local workspace binary if pnpm tries to reinstall, e.g. `apps/web/node_modules/.bin/tsc -b --pretty false`.
-- Full app build only when dependencies are installed and the user is ready for it: `npm run build`.
+- Full app build only when dependencies are installed and the user is ready for it: `pnpm build`.
 - For sync scripts: run dry-run/query mode before write mode and inspect generated markdown/SQL output.
+- Authentication regression: `pnpm test:auth`.
 
 ## Guardrails
 

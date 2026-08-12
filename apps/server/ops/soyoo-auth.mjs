@@ -2,14 +2,22 @@
 // 成功返回 { ok:true, token, user };失败返回 { ok:false, status, error }。
 import { opsIntegration } from "../config/runtime.mjs";
 
-export async function soyooLogin(username, password) {
-  const base = String(opsIntegration?.baseUrl || "").replace(/\/+$/, "");
+export async function soyooLogin(
+  username,
+  password,
+  {
+    baseUrl = opsIntegration?.baseUrl,
+    timeoutMs = opsIntegration?.timeoutMs ?? 10000,
+    fetchImpl = globalThis.fetch,
+  } = {}
+) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
   if (!base) return { ok: false, status: 500, error: "未配置 soyoo 地址(COMPANYPLAN_OPS_BASE_URL)" };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opsIntegration?.timeoutMs ?? 10000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/tools/login`, {
+    const res = await fetchImpl(`${base}/tools/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password }),

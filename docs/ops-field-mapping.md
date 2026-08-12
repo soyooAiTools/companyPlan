@@ -2,19 +2,19 @@
 
 本文档说明 `/nickTemp/ops-api.md` 中的字段如何接入到当前 companyPlan 数据模型，供审核对照。
 
-## 同步范围
+## 当前实时接口范围
 
-当 `COMPANYPLAN_OPS_ENABLED` 不等于 `0` 时，服务端会同步以下 Ops 接口：
+companyPlan 已停用用户/项目全量同步。认证和业务选择分别按需调用以下 soyoo 接口：
 
 | Ops 接口 | 在 companyPlan 中的用途 |
 |---|---|
-| `GET /ops/users` | 基础团队成员目录。 |
-| `GET /ops/tenants` | `所属项目` 选项来源。 |
-| `GET /ops/projects` | 项目目录，也是新建提单 `项目名称` 选项来源。 |
-| `GET /ops/projects/:id/members` | 项目成员关系，以及成员在项目中的角色标签。 |
-| `GET /ops/users/:id/projects` | 用户参与项目关系，以及用户角色标签。 |
-| `GET /ops/users/:id/project-stats` | 用户项目数量和项目状态统计，用于估算负载/完成度。 |
-| `GET /ops/tags` | 标签目录同步可见性；当前岗位推断主要使用用户项目明细和项目成员明细里返回的 tags。 |
+| `POST /tools/login` | 校验真实账号密码；失败直接返回，成功后才建本地身份和会话。 |
+| `GET /integration/users/:id` | 登录成功但认证响应缺少 tags 时补查角色；也用于实时用户信息。 |
+| `GET /integration/users/:id/projects` | 当前用户参与项目。 |
+| `GET /integration/projects` | 项目池和管理员选项。 |
+| `GET /integration/projects/:id/members` | 项目成员关系和标签。 |
+| `GET /integration/tenants`、`GET /integration/tags` | 客户与标签选项。 |
+| `GET /integration/changes` | 消费 soyoo outbox 变化，刷新已有工单快照。 |
 
 ## 用户字段映射
 
@@ -23,7 +23,7 @@ Ops 用户会写入 `people` 表，并通过 `/api/bootstrap` 返回给前端 `P
 | Ops 字段 | companyPlan 字段 | 当前规则 |
 |---|---|---|
 | `/ops/users[].id` | `people.id`、`Person.id` | 加前缀保存为 `ops-user-{id}`。 |
-| `/ops/users[].username` | `people.username` | 作为 companyPlan 登录用户名。已有 MySQL 用户密码会保留；新导入 Ops 用户使用 `COMPANYPLAN_SEED_PASSWORD`。 |
+| `/tools/login.user.username` / 登录输入 | `people.username`、会话 `currentUser.username` | soyoo 认证成功后首次登录即 upsert；密码不落库、不写日志。 |
 | `/ops/users[].nickname` | `people.name`、`Person.name` | 直接作为显示姓名；为空时回退到 `username`。 |
 | `/ops/users[].developer_type` | `people.role_key`、`people.discipline`、`people.title` | 如果存在，按开发身份处理：`roleKey=programmer`、`discipline=研发`，岗位标题默认 `{developer_type}开发`，如果 tags 更明确则用 tags。 |
 | `/ops/users[].role` | 暂不直接使用 | 实测接口不稳定返回该字段。管理员权限当前由 `管理员` 标签或 `COMPANYPLAN_OPS_ADMIN_USERNAMES` 推断。 |
@@ -34,18 +34,13 @@ Ops 用户会写入 `people` 表，并通过 `/api/bootstrap` 返回给前端 `P
 | `/ops/users/:id/project-stats.data.total` | `people.capacity` | 估算负载：`45 + total * 6`，限制在 `35..98`。 |
 | `/ops/users/:id/project-stats.data.by_status` | `people.completion` | 用 `已完成`、`已反馈` 项目数除以 total 估算完成度百分比。 |
 
-岗位/角色推断优先级：
+登录会话角色投影：
 
 | Ops 信号 | companyPlan 角色 |
 |---|---|
-| 用户名在 `COMPANYPLAN_OPS_ADMIN_USERNAMES`，或标签包含 `管理员` / `admin` | `roleKey=admin`，`discipline=管理` |
-| 标签包含 `制片` / `策划` / `项目` | `roleKey=producer`，`discipline=项目` |
-| 标签包含 `UI` | `roleKey=ui`，`discipline=UI` |
-| 标签包含 `模型` | `roleKey=model`，`discipline=模型` |
-| 标签包含 `动画` | `roleKey=animator`，`discipline=动画` |
-| `developer_type` 有值，或标签包含 `开发` / `程序` / `unity` / `cocos` | `roleKey=programmer`，`discipline=研发` |
-| 标签包含 `音效` / `sound` | `roleKey=artist`，`discipline=音效` |
-| 其他情况 | `roleKey=artist`，`discipline=美术` |
+| `is_admin=true`，或标签包含 `管理员` / `admin` | `roleKey=admin` |
+| 标签包含精确值 `制片` | `roleKey=producer` |
+| 其他情况 | `roleKey=member` |
 
 ## 项目字段映射
 
@@ -159,7 +154,7 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 
 | 缺口 | 当前处理方式 |
 |---|---|
-| Ops 密码 / SSO | Ops 接口不提供密码。导入用户使用 `COMPANYPLAN_SEED_PASSWORD`；后续可替换成 SSO。 |
+| 身份认证 | 已接入 soyoo `/tools/login`；错误账号密码不执行补查、建档或建会话。 |
 | 手机号 | 暂不存储、不展示。 |
 | 标签颜色 | 暂不展示；当前角色标签仍用本地样式。 |
 | 项目成员 `remark`、`assigned_by`、`assigned_at` | 暂不存储、不展示。 |

@@ -1,4 +1,4 @@
 interface:
   display_name: "companyPlan"
-  short_description: "Ops project pool and soyoo integration guide"
-  default_prompt: "Use $company-plan to work on the Ops project pool, stage deadlines, sync scripts, or soyoo integration safely."
+  short_description: "Operate companyPlan auth and Ops integrations"
+  default_prompt: "Use $company-plan to work on external authentication, Ops project workflows, or soyoo integration safely."

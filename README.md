@@ -15,23 +15,21 @@ https://github.com/soyooAiTools/companyPlan
 - KDocs/WPS-like demand-ticket table, kept intentionally lightweight.
 - Demand ticket creation stores images, attachments, and files through the server.
 - Admin configuration stores the selectable `所属项目` list and per-ticket-type delivery/risk hours in MySQL.
-- Directory data can be synced from the external Ops `/ops` API so usernames, role tags, tenants, project names, and project membership come from the production project system instead of seed fixtures.
+- Authentication and operational directory data come from soyoo in real time; companyPlan no longer runs a full user/project directory sync.
 
 ## Source Package Contents
 
 The handoff source package includes both frontend and backend code:
 
-- Frontend entry: `src/App.tsx`, `src/main.tsx`, `index.html`, `vite.config.ts`.
-- Frontend layers: `src/api/`, `src/types/`, `src/layer/`, `src/view/CompanyPlan/`.
-- Backend entry: `server/index.mjs`.
-- Backend layers: `server/config/`, `server/db/`, `server/dao/`, `server/service/`, `server/controller/`, `server/router/`, `server/middleware/`, `server/core/`.
-- Ops integration: `server/integration/ops-directory.mjs`.
-- Seed data: `server/seed-data.mjs`.
-- Scenario tests: `scripts/company-plan-scenarios.mjs`.
-- SQLite-to-MySQL migration: `scripts/migrate-sqlite-to-mysql.mjs`.
+- Frontend: `apps/web/`.
+- Backend entry: `apps/server/index.mjs`.
+- Backend layers: `apps/server/config/`, `apps/server/db/`, `apps/server/service/`, `apps/server/controller/`, `apps/server/router/`, `apps/server/middleware/`, `apps/server/core/`.
+- soyoo integration: `apps/server/ops/`.
+- Seed data: `apps/server/seed-data.mjs`.
+- SQLite-to-MySQL migration: `apps/server/scripts/migrate-sqlite-to-mysql.mjs`.
 - Documentation: `README.md`, `docs/deployment.md`, `docs/demand-ticket-readiness.md`, `docs/handoff.md`, `docs/ops-field-mapping.md`.
-- Codex skill: `skills/company-plan/`.
-- Dependency manifests: `package.json`, `package-lock.json`.
+- Codex skill: `.skills/company-plan/`.
+- Workspace manifests: `package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`.
 
 The source package intentionally does not include generated dependencies, build output, or runtime data:
 
@@ -48,9 +46,9 @@ production secrets
 After unpacking the source package, install and run with:
 
 ```bash
-npm install
-npm run build
-npm run start
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start
 ```
 
 ## Current Rules
@@ -71,9 +69,9 @@ npm run start
 ## Run
 
 ```bash
-npm install
-npm run build
-npm run start
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start
 ```
 
 The production server listens on `PORT` or `4174` by default. Seed users use `COMPANYPLAN_SEED_PASSWORD` or `CompanyPlan@2026` on a fresh database.
@@ -84,7 +82,7 @@ Default seed usernames:
 admin, producer, artist, ui, model, animator, dev, sound
 ```
 
-With Ops sync enabled, imported Ops usernames are also valid companyPlan usernames. Because the Ops API does not provide passwords, first-time imported users use `COMPANYPLAN_SEED_PASSWORD`; existing MySQL user passwords are preserved.
+Production login sends the submitted credentials directly to soyoo `POST /tools/login`; companyPlan never validates or stores that password. Invalid credentials stop immediately without running directory sync or user enrichment. A successful first login upserts the local `people` identity, maps soyoo administrators to `admin` and the `制片` tag to `producer`, then creates an HttpOnly-cookie session that includes both `username` and `roleKey`.
 
 Attachments are stored under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`. Persistent application data is stored in MySQL:
 
@@ -101,7 +99,7 @@ COMPANYPLAN_OPS_CACHE_TTL_MS=600000
 
 Set `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` only for local setup or tests when the configured MySQL user is allowed to create the schema database.
 
-Set `COMPANYPLAN_OPS_ENABLED=0` to run only against seeded local directory data. In production, leaving it enabled syncs `/ops/users`, `/ops/tenants`, `/ops/projects`, `/ops/projects/:id/members`, `/ops/users/:id/projects`, `/ops/users/:id/project-stats`, and `/ops/tags`. When `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA` is not set, successful Ops sync hides legacy seed users/projects from bootstrap responses.
+`COMPANYPLAN_OPS_BASE_URL` is used for soyoo authentication and integration calls. Production identity creation is login-driven; do not reintroduce the retired full-directory sync into the login critical path.
 
 To migrate an existing legacy SQLite database into an empty MySQL database:
 

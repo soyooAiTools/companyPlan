@@ -39,7 +39,16 @@ The skill should not try to be a full product specification dump. Keep `SKILL.md
 | Stage deadline group | soyoo `stage_deadlines` | Ops reads/edits through soyoo integration |
 | Project flow logs | Ops MySQL | Write when Ops changes status, stage, remark, or deadline dates |
 | Feishu project stage column | Temporary migration/sync input | Use scripts; report unmatched/empty rows |
-| User roles/tags | soyoo labels synced into Ops users | Ops login and permission checks read Ops-side data |
+| User authentication | soyoo `POST /tools/login` | Reject failures directly; successful first login upserts local identity and creates a session |
+| User roles/tags | soyoo login identity, enriched from `/integration/users/:id` only after authentication when needed | Map soyoo admin / exact `制片` tag to session `admin` / `producer`; expose username for downstream role gates |
+
+## Authentication Boundary
+
+- Do not store, hash for validation, log, or include submitted soyoo passwords in audit metadata.
+- Do not run user/project directory sync after bad credentials. The denial path is authentication plus the login-failure audit only.
+- Distinguish upstream unavailability (`502`) from an authentication denial (`401`/`403`) so the UI can give useful feedback.
+- Enrich tags and upsert the local `people` row only after soyoo accepts the credentials.
+- Keep the existing HttpOnly cookie/session mechanism. Login and session identity must contain `username` and `roleKey` for external consumers such as role-gated renderer tools.
 
 ## Project Pool Refactor Plan
 

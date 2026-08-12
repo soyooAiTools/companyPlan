@@ -3,9 +3,10 @@ import { prisma } from "../ops/prisma.mjs";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function mapAuthPerson(row) {
+export function mapAuthPerson(row) {
   return {
     id: row.id,
+    username: row.username,
     name: row.name,
     roleKey: row.role_key,
     title: row.title,

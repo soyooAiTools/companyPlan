@@ -4,29 +4,28 @@ companyPlan now runs as a production data service, not a static GitHub Pages sit
 
 ## Runtime
 
-- Frontend: Vite build output in `dist/`.
-- Backend: Node/Express API composed by `server/index.mjs`.
+- Frontend: Vite build output in `apps/web/dist/`.
+- Backend: Node/Express API composed by `apps/server/index.mjs`.
 - Backend layers:
-  - `server/config/`: runtime environment and constants.
-  - `server/db/`: MySQL connection pool, schema migration, seed materialization, scoped bootstrap reads, mapping, attachment persistence, and audit storage.
-  - `server/dao/`: SQL helpers used by services.
-  - `server/service/`: business rules, permission checks, mutations, and audit orchestration.
-  - `server/controller/`: Express request/response handling.
-  - `server/router/`: URL registration only.
-  - `server/middleware/`: session/auth and write-origin/security headers.
+  - `apps/server/config/`: runtime environment and constants.
+  - `apps/server/db/`: MySQL connection, schema, persistence, and audit storage.
+  - `apps/server/service/`: business rules and authentication orchestration.
+  - `apps/server/controller/`: Express request/response handling.
+  - `apps/server/router/`: URL registration only.
+  - `apps/server/middleware/`: session/auth and write-origin/security headers.
 - Database: MySQL via `COMPANYPLAN_MYSQL_*` environment variables.
 - Attachments: local files under `COMPANYPLAN_UPLOAD_DIR` or `COMPANYPLAN_DATA_DIR/uploads`.
-- Auth: username/password login with HttpOnly session cookie.
+- Auth: credentials are verified by soyoo `POST /tools/login`; companyPlan stores only the resulting identity and an HttpOnly session cookie.
 - Permissions: enforced on the server for project, ticket, warning, gantt, attachment, and audit endpoints.
 - Demand-ticket field storage: `source_project_name` stores `所属项目`; with Ops sync enabled this comes from `/ops/tenants`. `project_name` stores `项目名称`; with Ops sync enabled this comes from `/ops/projects`. `project_id` remains the internal permission mapping for the selected Ops project.
 
 ## Required Commands
 
 ```bash
-npm install
-npm run build
-npm run migrate:sqlite:mysql  # only when migrating an existing legacy SQLite database into empty MySQL
-npm run start
+pnpm install --frozen-lockfile
+pnpm build
+pnpm migrate:sqlite:mysql  # only when migrating an existing legacy SQLite database into empty MySQL
+pnpm start
 ```
 
 The server listens on `PORT`, defaulting to `4174`.
@@ -61,15 +60,15 @@ Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS i
 
 For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1` lets the app create the configured database when the MySQL user has permission. Do not rely on that privilege for production unless it is part of the database operations policy.
 
-## Ops Directory Integration
+## soyoo Authentication And Realtime Integration
 
-By default the server syncs directory data from `COMPANYPLAN_OPS_BASE_URL` under the `/ops` API described in `/nickTemp/ops-api.md`. The sync imports Ops users, tenants, projects, project membership, user project stats, and tags into the companyPlan directory tables, then uses those rows for bootstrap people, project pools, owner choices, role labels, `所属项目` options from tenants, and `项目名称` options from projects.
+`POST /api/auth/login` forwards the submitted username and password to `${COMPANYPLAN_OPS_BASE_URL}/tools/login`. An invalid credential response is returned immediately: it must not trigger a full directory sync, user lookup, local upsert, or session creation. Upstream timeout/unavailability is returned as `502`, not disguised as a bad password.
 
-Ops does not provide passwords, so newly imported Ops users are created with the current `COMPANYPLAN_SEED_PASSWORD` unless they already exist in MySQL. Set `COMPANYPLAN_OPS_ADMIN_USERNAMES` to a comma-separated list when specific Ops usernames should receive companyPlan admin permissions in addition to users tagged as `管理员`.
+After successful authentication only, companyPlan enriches the returned identity when tags are absent, upserts the `people` row, and creates the session. `is_admin`/`管理员` maps to `roleKey=admin`; the exact soyoo tag `制片` maps to `roleKey=producer`; all other accounts map to `member`. Session responses expose `username` and `roleKey` so downstream role-gated applications can admit only administrators and producers.
 
-When an Ops sync succeeds and `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=0`, bootstrap hides legacy seed directory data so fake users/projects do not mix into production views. Set `COMPANYPLAN_OPS_ENABLED=0` for fully isolated local tests, or set `COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=1` only when deliberately comparing imported Ops data against existing local directory rows.
+Passwords are neither persisted nor written to logs/audit metadata. The local `password_hash` remains a schema placeholder for login-created rows and is not used to validate production login.
 
-`COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT=0` means fetch project members for all Ops projects. Use a positive number only as a temporary throttle during API debugging.
+The retired full-directory synchronizer must not be added back to the login path. Project, member, tenant, tag, and change-outbox data are read through the realtime clients in `apps/server/ops/`.
 
 The field-level mapping contract is maintained in `docs/ops-field-mapping.md`. Update that document whenever Ops source fields, ticket field semantics, or imported directory behavior change.
 
