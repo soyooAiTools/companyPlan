@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import { Avatar, Table, Tag } from "antd";
 import type { ColumnsType, ColumnType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
+import ProjectPoolContextMenu, { type ProjectPoolContextRow } from "../components/table/ProjectPoolContextMenu";
 import VirtualGroupStickyBar from "../components/table/VirtualGroupStickyBar";
 import { isNextDeadlineOverdue } from "../deadlineUtils";
 import type { ProjectPoolGroup } from "../utils/groupProjectRows";
@@ -18,6 +19,7 @@ type GroupedProjectPoolViewProps = {
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
+	onToggleUrgent?: (row: OpsProjectPoolRow) => void;
 	collapseAction?: { type: "collapse" | "expand"; version: number };
 };
 
@@ -148,9 +150,11 @@ const groupLabel = (
 	</div>
 );
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, collapseAction }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, collapseAction }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
 	const [activeSort, setActiveSort] = useState<{ key: string; order: SortOrder } | null>(null);
+	const [contextRow, setContextRow] = useState<ProjectPoolContextRow | null>(null);
+	const closeContextMenu = useCallback(() => setContextRow(null), []);
 	const sortedGroups = useMemo(() => {
 		if (!activeSort?.order) return groups;
 		const column = columns.find((item) => String(item.key) === activeSort.key) as ColumnType<OpsProjectPoolRow> | undefined;
@@ -415,12 +419,19 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 								if (window.getSelection()?.toString()) return;
 								onOpenLogs(row.project);
 							},
+							onContextMenu: (event: MouseEvent) => {
+								if (!onToggleUrgent) return;
+								if (row.project.hasVersionChildren && !row.project.isVersionRow) return;
+								event.preventDefault();
+								setContextRow({ row: row.project, x: event.clientX, y: event.clientY });
+							},
 							className: `ops-pool-project-row${row.project.isVersionRow ? " ops-pool-version-row" : ""}${row.project.hasVersionChildren ? " ops-pool-parent-row" : ""}${isNextDeadlineOverdue(row.project) ? " ops-pool-stale" : ""}`,
 							style: { cursor: row.project.hasVersionChildren && !row.project.isVersionRow ? "default" : "pointer" },
 						};
 					}}
 				/>
 			</VirtualGroupStickyBar>
+			<ProjectPoolContextMenu contextRow={contextRow} onClose={closeContextMenu} onToggleUrgent={onToggleUrgent} />
 		</>
 	);
 }

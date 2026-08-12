@@ -219,6 +219,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     res.json(r);
   });
 
+  // 改项目版本加急标记(管理员;写回 soyoo project_versions,再刷新快照)
+  app.post("/api/ops/project-pool/:id/urgent", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const isUrgent = req.body?.isUrgent === true || req.body?.is_urgent === true;
+      const r = await pool.changeProjectUrgent({ user: req.user, projectId: req.params.id, isUrgent });
+      if (r.error) return res.status(r.code || 400).json({ error: r.error });
+      res.json(r);
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 改客户对接人/需求文档(策划本人/管理员;写回 soyoo 并同步飞书)
   app.post("/api/ops/project-pool/:id/meta", requireAuth, requirePlanner, async (req, res) => {
     let r;

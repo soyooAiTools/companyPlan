@@ -15,10 +15,11 @@ type GroupedProjectSheetProps = {
 	onOpenLogs: (row: OpsProjectPoolRow) => void;
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
+	onToggleUrgent?: (row: OpsProjectPoolRow) => void;
 	collapseAction?: { type: "collapse" | "expand"; version: number };
 };
 
-export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, hideStats, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, collapseAction }: GroupedProjectSheetProps) {
+export default function GroupedProjectSheet({ mode, rows, groupsOverride, columns, loading, scrollY, hideStats, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, collapseAction }: GroupedProjectSheetProps) {
 	const groups = useMemo(() => groupProjects(rows, mode), [mode, rows]);
 	return (
 		<GroupedProjectPoolView
@@ -30,6 +31,7 @@ export default function GroupedProjectSheet({ mode, rows, groupsOverride, column
 			onOpenLogs={onOpenLogs}
 			onOpenGroupTickets={onOpenGroupTickets}
 			onOpenGroupDeadlineProjects={onOpenGroupDeadlineProjects}
+			onToggleUrgent={onToggleUrgent}
 			collapseAction={collapseAction}
 		/>
 	);

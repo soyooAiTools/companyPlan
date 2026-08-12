@@ -1,6 +1,7 @@
 import dayjs from "dayjs";
 import zhCN from "antd/es/date-picker/locale/zh_CN";
-import { Checkbox, DatePicker, Modal, Radio, Space } from "antd";
+import { Checkbox, DatePicker, Modal, Radio, Space, Tooltip } from "antd";
+import { QuestionCircleOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectStageDeadline } from "@/api/modules/ops";
 import { stageDeadlineTemplates } from "../../deadlineUtils";
 import { STAGE_PLAN_TEMPLATES, type StagePlanTemplateKey } from "../../stagePlanTemplates";
@@ -41,6 +42,19 @@ const dateRangeDaysText = (rows: OpsProjectStageDeadline[], skipWeekend: boolean
   return `从 ${startDate.format("YYYY-MM-DD")} ～ ${endDate.format("YYYY-MM-DD")}，共 ${main}（${sub}）`;
 };
 
+const stagePlanHelp = (
+  <div style={{ minWidth: 250, lineHeight: 1.7 }}>
+    <div style={{ marginBottom: 6, fontWeight: 600 }}>按工作日编号推算</div>
+    <div style={{ marginTop: 6 }}>
+      {STAGE_PLAN_TEMPLATES.map((tpl) => (
+        <div key={tpl.key}>
+          {tpl.label}：{["asset_confirm", "scene_still", "interactive_alpha", "feature_complete", "final_delivery"].map((key) => tpl.workdayIndexes[key]).join(" -> ")}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 export default function StageDeadlineModal({ open, target, rows, auto, skipWeekend, templateKey, saving, onAutoChange, onSkipWeekendChange, onTemplateChange, onDateChange, onSave, onCancel }: StageDeadlineModalProps) {
   const rangeText = dateRangeDaysText(rows, skipWeekend);
   return (
@@ -61,7 +75,12 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
             </Checkbox>
           </Space>
           <Space size={8} style={{ opacity: auto ? 1 : 0.5 }}>
-            <span style={{ color: "#64748b", fontSize: 13 }}>开发周期</span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#64748b", fontSize: 13 }}>
+              开发周期
+              <Tooltip title={stagePlanHelp} placement="topRight">
+                <QuestionCircleOutlined style={{ color: "#94a3b8", cursor: "help" }} />
+              </Tooltip>
+            </span>
             <Radio.Group
               disabled={!auto}
               size="small"
@@ -71,11 +90,6 @@ export default function StageDeadlineModal({ open, target, rows, auto, skipWeeke
             />
           </Space>
         </div>
-        {auto ? (
-          <div style={{ color: "#d97706", fontSize: 12 }}>
-            周期模板按工作日编号推算：资产确认为第 1 个工作日，后续阶段按所选周期固定节点生成。
-          </div>
-        ) : null}
         <div style={{ border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" }}>
           {rows.map((item, index) => (
             <div

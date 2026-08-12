@@ -217,6 +217,7 @@ export interface OpsProjectPoolRow {
 	versionId?: string;
 	versionCode?: string;
 	versionName?: string;
+	isUrgent?: boolean;
 	parentId?: string;
 	isVersionRow?: boolean;
 	hasVersionChildren?: boolean;
@@ -616,6 +617,11 @@ export const opsApi = {
 		requestJson<{ ok: boolean; stageDeadlines: OpsProjectStageDeadline[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage-deadlines`, {
 			method: "POST",
 			body: JSON.stringify({ stageDeadlines }),
+		}),
+	changeProjectUrgent: (projectId: string, isUrgent: boolean) =>
+		requestJson<{ ok: boolean; isUrgent: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/urgent`, {
+			method: "POST",
+			body: JSON.stringify({ isUrgent }),
 		}),
 	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string }) =>
 		requestJson<{ ok: boolean; customerContact: string; requirementDoc: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/meta`, {

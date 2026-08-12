@@ -719,6 +719,31 @@ export async function changeProjectStageDeadlines({ user, projectId, stageBaseDa
   return { ok: true, stageDeadlines: nextDeadlines };
 }
 
+// ---- 改项目版本加急标记:写 soyoo project_versions.is_urgent → 写项目流转日志 → 刷新快照 ----
+export async function changeProjectUrgent({ user, projectId, isUrgent }) {
+  const { project, baseProjectId } = await getProjectAndMembersForOps(projectId);
+  if (!project) return { error: "项目不存在", code: 404 };
+  const nextUrgent = !!isUrgent;
+  const currentUrgent = !!project.isUrgent;
+  const r = await soyooClient.setProjectUrgent(projectId, nextUrgent, { operator_id: Number(meId(user)) || undefined });
+  const savedUrgent = r?.data?.is_urgent ?? nextUrgent;
+  await prisma.ops_project_status_logs.create({
+    data: {
+      project_id: String(projectId),
+      project_name: project.name,
+      kind: "remark",
+      from_status: currentUrgent ? "加急" : "普通",
+      to_status: savedUrgent ? "加急" : "普通",
+      actor_id: meId(user),
+      actor_name: user?.name || user?.username || "",
+      comment_html: savedUrgent ? '<p><strong style="color:#dc2626;">设为加急</strong></p>' : "<p>取消加急</p>",
+      created_at: nowIso(),
+    },
+  });
+  await refreshProjectPoolSnapshot(baseProjectId);
+  return { ok: true, isUrgent: savedUrgent };
+}
+
 // ---- 改客户对接信息:写 soyoo projects.customer_contact/requirement_doc → 同步飞书 → 刷新快照 ----
 export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);

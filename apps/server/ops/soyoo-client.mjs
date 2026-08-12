@@ -144,6 +144,11 @@ export const soyooClient = {
     }),
   setProjectStageDeadlines: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/stage-deadlines`, { method: "POST", body: withVersionBody(projectId, body) }),
   setProjectMeta: (projectId, body) => callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/meta`, { method: "POST", body: withVersionBody(projectId, body) }),
+  setProjectUrgent: (projectId, isUrgent, options = {}) =>
+    callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/urgent`, {
+      method: "POST",
+      body: withVersionBody(projectId, { is_urgent: !!isUrgent, ...options }),
+    }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
   audioEditSessions: (opts = {}) => {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });

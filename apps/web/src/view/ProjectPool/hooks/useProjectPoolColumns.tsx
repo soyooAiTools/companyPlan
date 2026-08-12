@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { Button, Avatar, Checkbox, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined } from "@ant-design/icons";
+import { EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
@@ -64,6 +64,34 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
 };
 
 const filterIcon = (active: boolean) => <FilterFilled style={{ color: active ? "#1677ff" : "#94a3b8" }} />;
+
+const urgentCornerMark = (
+	<Tooltip title="加急版本">
+		<span
+			style={{
+				position: "absolute",
+				left: 0,
+				top: 0,
+				width: 18,
+				height: 18,
+				clipPath: "polygon(0 0, 100% 0, 0 100%)",
+				background: "#ef4444",
+				boxShadow: "0 1px 2px rgba(239, 68, 68, 0.24)",
+				pointerEvents: "auto",
+			}}>
+			<ThunderboltFilled
+				style={{
+					position: "absolute",
+					left: 1,
+					top: 1,
+					color: "#fff",
+					fontSize: 9,
+					transform: "rotate(-12deg)",
+				}}
+			/>
+		</span>
+	</Tooltip>
+);
 
 const dateSortValue = (date?: string | null) => {
 	if (!date) return Number.POSITIVE_INFINITY;
@@ -223,16 +251,25 @@ export function useProjectPoolColumns(
 				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
 				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
 				return (
-					<div style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
+					<div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
+						{row.isUrgent ? urgentCornerMark : null}
 						<span
 							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
 							{isVersion ? "" : rowNumberOffset + index + 1}
 						</span>
-						<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all", flex: 1 }}>
+						<div
+							style={{
+								position: "relative",
+								minWidth: 0,
+								fontWeight: 600,
+								fontSize: 14,
+								color: "#0f172a",
+								lineHeight: 1.35,
+								wordBreak: "break-all",
+								flex: 1,
+							}}>
 							{isVersion ? (
-								<>
-									<span>{versionText}</span>
-								</>
+								<span>{versionText}</span>
 							) : (
 								<>
 									{row.name || "—"}

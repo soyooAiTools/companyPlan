@@ -189,6 +189,17 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		if (!mine && tab === "all") await loadAllRows(true);
 	};
 	const dialogs = useProjectPoolModals(message, reloadAfterProjectChange);
+	const toggleUrgent = async (row: OpsProjectPoolRow) => {
+		if (!isAdmin || row.hasVersionChildren) return;
+		const nextUrgent = !row.isUrgent;
+		try {
+			await opsApi.changeProjectUrgent(row.id, nextUrgent);
+			message.success(nextUrgent ? "已设为加急" : "已取消加急");
+			await reloadAfterProjectChange();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "修改加急状态失败");
+		}
+	};
 	const [ownerRoleKey, setOwnerRoleKey] = useState<(typeof OWNER_ROLE_OPTIONS)[number]["key"]>("program");
 	const [ownerGroups, setOwnerGroups] = useState<ProjectPoolGroup[]>([]);
 	const [ownerGroupsLoading, setOwnerGroupsLoading] = useState(false);
@@ -682,6 +693,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 							void dialogs.actions.openGroupTickets(`工单 · ${group.title} · ${mode === "overdue" ? "工单逾期" : "未完成工单"}`, group.rows, mode, group.segmentIds, group.ownerName);
 						}}
 						onOpenGroupDeadlineProjects={(group) => dialogs.actions.openDeadlineOverdueProjects(`交付逾期 · ${group.title}`, group.rows)}
+						onToggleUrgent={isAdmin ? toggleUrgent : undefined}
 					/>
 				) : (
 					<ProjectSheet
@@ -702,6 +714,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 							setPage(1);
 						}}
 						onOpenLogs={mine ? undefined : dialogs.actions.openLogs}
+						onToggleUrgent={isAdmin && !mine ? toggleUrgent : undefined}
 					/>
 				)}
 			</div>

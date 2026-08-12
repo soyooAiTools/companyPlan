@@ -1,10 +1,12 @@
+import { useCallback, useState } from "react";
 import { Table } from "antd";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 import type { ColumnsType } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import type { OpsProjectPoolSortBy, OpsProjectPoolSortOrder } from "@/api/modules/ops";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import { isNextDeadlineOverdue } from "../../deadlineUtils";
+import ProjectPoolContextMenu, { type ProjectPoolContextRow } from "./ProjectPoolContextMenu";
 
 type ProjectPoolTableProps = {
   rows: OpsProjectPoolRow[];
@@ -18,6 +20,7 @@ type ProjectPoolTableProps = {
   onPageChange?: (page: number, pageSize: number) => void;
   onSortChange?: (sortBy?: OpsProjectPoolSortBy, sortOrder?: OpsProjectPoolSortOrder) => void;
   onOpenLogs?: (row: OpsProjectPoolRow) => void;
+  onToggleUrgent?: (row: OpsProjectPoolRow) => void;
 };
 
 function columnWidthSum(columns: ColumnsType<OpsProjectPoolRow>) {
@@ -27,7 +30,9 @@ function columnWidthSum(columns: ColumnsType<OpsProjectPoolRow>) {
   }, 0);
 }
 
-export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs }: ProjectPoolTableProps) {
+export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs, onToggleUrgent }: ProjectPoolTableProps) {
+  const [contextRow, setContextRow] = useState<ProjectPoolContextRow | null>(null);
+  const closeContextMenu = useCallback(() => setContextRow(null), []);
   const hasTreeRows = rows.some((row) => Array.isArray(row.children) && row.children.length > 0);
   const displayColumns = columns.map((column, index) => ({
     ...column,
@@ -137,6 +142,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         }
         .ops-pool-table .ant-table-tbody > tr:hover > td:first-child { box-shadow: inset 3px 0 0 #0f766e; }
       `}</style>
+      <ProjectPoolContextMenu contextRow={contextRow} onClose={closeContextMenu} onToggleUrgent={onToggleUrgent} />
       <Table
         className="ops-pool-table"
         rowKey="id"
@@ -175,6 +181,12 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
             if (row.hasVersionChildren && !row.isVersionRow) return;
             if (window.getSelection()?.toString()) return;
             onOpenLogs(row);
+          },
+          onContextMenu: (event: MouseEvent) => {
+            if (!onToggleUrgent) return;
+            if (row.hasVersionChildren && !row.isVersionRow) return;
+            event.preventDefault();
+            setContextRow({ row, x: event.clientX, y: event.clientY });
           },
           className: [
             isNextDeadlineOverdue(row) ? "ops-pool-stale" : "",
