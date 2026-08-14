@@ -501,6 +501,7 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
   return { created: true, ticketId: created.id };
 }
 
+// ops 创建工单
 export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, ownerUserId = "", eventNote = "系统自动生成" }) {
   const lockKey = String(projectId || "");
   if (autoProgramFirstTicketLocks.has(lockKey)) return { created: false, reason: "ticket_creating" };
@@ -512,10 +513,8 @@ export async function autoCreateProgramFirstTicket({ user, requesterUserId, proj
   const liveTags = await listTags().catch(() => []);
   const tagNameById = new Map(liveTags.map((tag) => [String(tag.id), tag.name]));
   const tagIds = effectiveSegmentTagIds(segTags.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) })));
-  if (!tagIds.length) return { created: false, reason: "segment_tags_empty" };
-  const owner = ownerUserId
-    ? members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))))
-    : members.find((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))));
+  if (!ownerUserId) return { created: false, reason: "owner_required" };
+  const owner = members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled");
   if (!owner) return { created: false, reason: "owner_not_found" };
   const exists = await prisma.tickets.findFirst({
     where: { project_id: String(projectId), segment_id: segment.id, title: AUTO_PROGRAM_TITLE, status: { not: "已完成" } },
