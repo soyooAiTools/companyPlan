@@ -2,7 +2,7 @@ import dayjs from "dayjs";
 import { Button, Space, Tag, Tooltip, Typography } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
-import { deadlineRemain, fmtStageDate, nextStageDeadline, stageDescriptionFallback } from "../../deadlineUtils";
+import { deadlineRemain, fmtStageDate, isInactiveDeadlineProjectRow, nextStageDeadline, stageDescriptionFallback } from "../../deadlineUtils";
 
 type StageDeadlineCellProps = {
   row: OpsProjectPoolRow;
@@ -47,7 +47,7 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
 
   const currentDeadlineIndex = items.findIndex((item) => item.name === row.stage || item.key === row.stage);
   const isNextOverdue = !!next.date && dayjs(next.date, "YYYY-MM-DD").isBefore(dayjs(), "day");
-  const remain = deadlineRemain(next.date);
+  const remain = isInactiveDeadlineProjectRow(row) ? null : deadlineRemain(next.date);
   const full = (
     <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 44px", gap: "6px 10px", fontSize: 12, color: "#334155", width: 256, maxWidth: 256 }}>
       {items.map((item, index) => {

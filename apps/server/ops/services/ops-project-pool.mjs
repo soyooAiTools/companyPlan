@@ -11,6 +11,7 @@ import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 import { logger } from "../../core/logger.mjs";
+import { getUserTenantScope } from "./tenant-scope.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 export { lookupProjectPoolStages } from "./project-pool/snapshot-store.mjs";
@@ -204,6 +205,40 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
     .filter(Boolean);
 }
 
+function rowTenantId(row) {
+  return String(row?.tenantId ?? row?.tenant_id ?? "");
+}
+
+/**
+ * 判断客户是否在当前用户可见范围内。
+ * @param {string} tenantId 客户 id。
+ * @param {null | { mode: "include" | "exclude", tenantIds: Set<string> }} scope 客户范围；null=全部客户。
+ * @returns {boolean} include=命中才可见；exclude=命中则不可见。
+ */
+function tenantMatchesScope(tenantId, scope) {
+  if (!scope) return true;
+  const matched = scope.tenantIds.has(String(tenantId ?? ""));
+  return scope.mode === "exclude" ? !matched : matched;
+}
+
+/**
+ * @description 按当前用户客户范围过滤项目池快照 rows。
+ * @param {Array} rows Redis/DB 快照读出的项目池 rows。
+ * @param {null | { mode: "include" | "exclude", tenantIds: Set<string> }} scope 客户范围；null=全部客户。
+ * @returns {Array} 过滤后的 rows；子版本无 tenantId 时用父项目兜底。
+ */
+function filterProjectPoolRowsByTenantScope(rows, scope) {
+  if (!scope) return rows;
+  return rows
+    .map((row) => {
+      const children = rowChildren(row);
+      if (!children.length) return tenantMatchesScope(rowTenantId(row), scope) ? row : null;
+      const matchedChildren = children.filter((child) => tenantMatchesScope(rowTenantId(child) || rowTenantId(row), scope));
+      return matchedChildren.length || tenantMatchesScope(rowTenantId(row), scope) ? { ...row, children: matchedChildren.length ? matchedChildren : children } : null;
+    })
+    .filter(Boolean);
+}
+
 function currentPlannerFilterName(user) {
   return String(user?.name || user?.username || "").trim();
 }
@@ -274,6 +309,9 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
   const effectivePlanner = plannerScoped ? currentPlannerFilterName(user) : planner;
   let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user: snapshotUser, statusNames: effectiveStatus });
   timer?.mark("加载项目池快照", { rows: rows.length, effectiveStatus: effectiveStatus.length ? effectiveStatus.join(",") : "默认状态" });
+  // 分页前应用客户范围，保证总数和子版本一致。
+  rows = filterProjectPoolRowsByTenantScope(rows, await getUserTenantScope(user));
+  timer?.mark("过滤客户可见范围", { rows: rows.length });
   if (effectiveStatus.length) {
     const statusSet = new Set(effectiveStatus);
     rows = filterProjectPoolRows(rows, { status: [...statusSet].join(",") });
@@ -935,12 +973,22 @@ function deadlineChangeHtml(oldItems, newItems) {
   return `<div>修改下版交付时间</div><ul>${rows.join("")}</ul>`;
 }
 
+function isInactiveDeadlinePoolRow(row) {
+  // 这些状态下项目已经不再按下版交付时间追逾期；日期仍展示，但不再进入超时关注/通知扫描。
+  const inactiveStatuses = new Set(["回收中", "已回收", "已完成", "结算完成", "客户暂停"]);
+  return [row?.status, row?.projectLifecycleStatus, row?.project_lifecycle_status, row?.lifecycle_status]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .some((value) => inactiveStatuses.has(value));
+}
+
 // 下版交付时间已逾期的项目 id:根据当前阶段 + soyoo stage_deadlines 计算，不再按「项目阶段时间」配置。
 async function deadlineOverdueProjectIds({ user }) {
   const today = todayDateText();
   const rows = flattenProjectPoolRows(await loadVisibleSnapshotRows({ user }));
   return rows
     .filter((row) => !row.projectLifecycleStatus || row.projectLifecycleStatus === "进行中" || row.projectLifecycleStatus === "正常")
+    .filter((row) => !isInactiveDeadlinePoolRow(row))
     .filter((row) => isNextStageDeadlineOverdue({ stage_deadlines: row.stageDeadlines }, { stage: row.stage }, today))
     .map((row) => String(row.id));
 }
@@ -980,10 +1028,12 @@ async function stageOverdueProjectsForNotify() {
   }
   const projectRows = await loadVisibleSnapshotRows({ user: { roleKey: "admin" } });
   const rowById = new Map(flattenProjectPoolRows(projectRows).map((row) => [String(row.id), row]));
-  return [...new Set(candidates)].map((id) => {
-    const row = rowById.get(String(id));
-    return { id: String(id), name: row?.name ?? "", kind: "stage" };
-  });
+  return [...new Set(candidates)]
+    .map((id) => {
+      const row = rowById.get(String(id));
+      return row && !isInactiveDeadlinePoolRow(row) ? { id: String(id), name: row.name ?? "", kind: "stage" } : null;
+    })
+    .filter(Boolean);
 }
 
 export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
@@ -998,12 +1048,13 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
       return { rows: [], total: 0, page, pageSize };
     }
     const idSet = new Set(extraIds);
-    const allRows = filterProjectPoolRows(await loadVisibleSnapshotRows({ user }), { q, status, stage, planner, segment, advancedFilter })
+    const scopedRows = filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user));
+    const allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter })
       .map((row) => {
         const children = rowChildren(row);
-        if (!children.length) return idSet.has(String(row.id)) ? row : null;
-        const matchedChildren = children.filter((child) => idSet.has(String(child.id)));
-        return matchedChildren.length ? { ...row, children: matchedChildren } : idSet.has(String(row.id)) ? row : null;
+        if (!children.length) return idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
+        const matchedChildren = children.filter((child) => idSet.has(String(child.id)) && !isInactiveDeadlinePoolRow(child));
+        return matchedChildren.length ? { ...row, children: matchedChildren } : idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
       })
       .filter(Boolean);
     sortProjectPoolRows(allRows, { sortBy: sortBy || "nextDeadline", sortOrder: sortOrder || "asc" });
@@ -1024,7 +1075,9 @@ export async function staleCount({ user }) {
     // const cutoffs = await staleCutoffs();
     const extraIds = await deadlineOverdueProjectIds({ user });
     timer.mark("deadlineOverdueProjectIds", { ids: extraIds.length });
-    const total = extraIds.length;
+    const visibleRows = flattenProjectPoolRows(filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user))).filter((row) => !isInactiveDeadlinePoolRow(row));
+    const visibleIds = new Set(visibleRows.map((row) => String(row.id)));
+    const total = extraIds.filter((id) => visibleIds.has(String(id))).length;
     timer.done({ total });
     return total;
   } catch (e) {

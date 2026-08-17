@@ -25,6 +25,12 @@ export interface OpsTenant {
 	id: string;
 	name: string;
 }
+export interface OpsTenantScope {
+	mode: "all" | "include" | "exclude";
+	tenantIds: string[];
+	selectedTenants: OpsTenant[];
+	tenants: OpsTenant[];
+}
 export interface OpsProject {
 	id: string;
 	name: string;
@@ -182,6 +188,8 @@ export interface OpsAudioEditSession {
 	projectVersionName: string;
 	isDefaultVersion: boolean;
 	hasProjectVersions: boolean;
+	projectStatus?: string;
+	projectLifecycleStatus?: string;
 	uploader: string;
 	uploadedAt: string | null;
 	priority: number | null;
@@ -424,6 +432,9 @@ export interface OpsNotifSettings {
 export const opsApi = {
 	tags: () => requestJson<{ tags: OpsTag[] }>("/api/ops/tags"),
 	tenants: () => requestJson<{ tenants: OpsTenant[] }>("/api/ops/tenants"),
+	tenantScope: () => requestJson<{ scope: OpsTenantScope }>("/api/ops/tenant-scope"),
+	saveTenantScope: (body: { mode: "all" | "include" | "exclude"; tenantIds: string[] }) =>
+		requestJson<{ scope: OpsTenantScope }>("/api/ops/tenant-scope", { method: "PUT", body: JSON.stringify(body) }),
 	businessUnits: () => requestJson<{ units: OpsBusinessUnit[] }>("/api/ops/business-units"),
 	recycleHandoffUsers: () => requestJson<{ users: OpsRecycleHandoffUser[] }>("/api/ops/recycle-handoff-users"),
 	projects: (tenantId?: string) => requestJson<{ projects: OpsProject[] }>(`/api/ops/projects${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`),
@@ -665,12 +676,13 @@ export const opsApi = {
 	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
 	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number; notifyStart: string; notifyEnd: string }) =>
 		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
-	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string; sortBy?: string; sortOrder?: "ascend" | "descend" | "" } = {}) => {
+	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string; projectStatus?: string; sortBy?: string; sortOrder?: "ascend" | "descend" | "" } = {}) => {
 		const qs = new URLSearchParams();
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
 		if (params.status) qs.set("status", params.status);
+		if (params.projectStatus) qs.set("projectStatus", params.projectStatus);
 		if (params.sortBy) qs.set("sortBy", params.sortBy);
 		if (params.sortOrder) qs.set("sortOrder", params.sortOrder);
 		const s = qs.toString();

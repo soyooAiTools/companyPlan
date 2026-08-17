@@ -95,13 +95,23 @@ export const nextStageDeadline = (stage: string, items: { key: string; name: str
 	return items[currentIndex + 1];
 };
 
+// 这些状态下项目已经不再按下版交付时间追逾期；日期仍展示，但不再显示「逾/剩 X 天」，也不进入超时关注。
+const inactiveDeadlineStatuses = new Set(["回收中", "已回收", "已完成", "结算完成", "客户暂停"]);
+
+export const isInactiveDeadlineProjectRow = (row: Pick<OpsProjectPoolRow, "status"> & Partial<Pick<OpsProjectPoolRow, "projectLifecycleStatus">>) => {
+	const values = [row.status, row.projectLifecycleStatus].map((value) => String(value || "").trim()).filter(Boolean);
+	return values.some((value) => inactiveDeadlineStatuses.has(value));
+};
+
 export const isNextDeadlineOverdue = (row: OpsProjectPoolRow) => {
+	if (isInactiveDeadlineProjectRow(row)) return false;
 	const items = Array.isArray(row.stageDeadlines) ? row.stageDeadlines : [];
 	const next = nextStageDeadline(row.stage, items);
 	return !!next?.date && dayjs(next.date, "YYYY-MM-DD").isBefore(dayjs(), "day");
 };
 
 export const nextDeadlineDiffDays = (row: OpsProjectPoolRow) => {
+	if (isInactiveDeadlineProjectRow(row)) return Number.POSITIVE_INFINITY;
 	const items = Array.isArray(row.stageDeadlines) ? row.stageDeadlines : [];
 	const next = nextStageDeadline(row.stage, items);
 	if (!next?.date) return Number.POSITIVE_INFINITY;

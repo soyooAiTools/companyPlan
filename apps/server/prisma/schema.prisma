@@ -362,3 +362,18 @@ model ops_user_collaboration_permissions {
   @@index([viewer_user_id, scope, enabled], map: "idx_oucp_viewer_scope")
   @@index([target_user_id, scope, enabled], map: "idx_oucp_target_scope")
 }
+
+// 当前登录用户自助配置的客户可见范围。无记录 = 默认全部;scope_mode 控制只看/排除这些客户。
+model ops_user_tenant_scope {
+  id         Int    @id @default(autoincrement())
+  user_id    String @db.VarChar(64)
+  tenant_id  String @db.VarChar(64)
+  scope_mode String @default("include") @db.VarChar(20)
+  enabled    Int    @default(1) @db.TinyInt
+  created_at String @db.VarChar(40)
+  updated_at String @db.VarChar(40)
+
+  @@unique([user_id, tenant_id], map: "uniq_outs_user_tenant")
+  @@index([user_id, enabled], map: "idx_outs_user_enabled")
+  @@index([tenant_id], map: "idx_outs_tenant")
+}

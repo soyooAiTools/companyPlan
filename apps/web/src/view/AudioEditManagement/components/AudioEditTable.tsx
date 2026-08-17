@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import dayjs from "dayjs";
-import { Avatar, Button, Input, InputNumber, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
+import { Avatar, Button, Checkbox, Input, InputNumber, Modal, Space, Table, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType, TableProps } from "antd/es/table";
-import { EditOutlined, DownloadOutlined, LinkOutlined } from "@ant-design/icons";
+import { EditOutlined, DownloadOutlined, FilterFilled, LinkOutlined } from "@ant-design/icons";
 import type { OpsAudioEditSession } from "../../../api/modules/ops";
+import { PROJECT_STATUSES, statusStyle } from "../../Ops/constants";
 import "../audioEditManagement.css";
+
+const HIDDEN_PROJECT_STATUS_FILTERS = new Set(["结算完成", "客户暂停", "回收中", "打包中", "已完成"]);
+const PROJECT_STATUS_FILTERS = PROJECT_STATUSES.filter((status) => !HIDDEN_PROJECT_STATUS_FILTERS.has(status));
 
 type AudioEditTableProps = {
 	rows: OpsAudioEditSession[];
@@ -13,9 +17,11 @@ type AudioEditTableProps = {
 	page: number;
 	pageSize: number;
 	loading: boolean;
+	projectStatus: string;
 	sortBy: string;
 	sortOrder: "ascend" | "descend" | "";
 	onPageChange: (page: number, pageSize: number) => void;
+	onProjectStatusChange: (value: string) => void;
 	onSortChange: (sortBy: string, sortOrder: "ascend" | "descend" | "") => void;
 	onPrioritySave: (row: OpsAudioEditSession, priority: number | null) => Promise<void>;
 	onRemarkSave: (row: OpsAudioEditSession, remark: string) => Promise<void>;
@@ -30,6 +36,35 @@ function statusTag(status: string) {
 	if (status === "已完成") return <Tag className="audio-status-tag audio-status-tag-done">已完成</Tag>;
 	if (status === "待替换") return <Tag className="audio-status-tag audio-status-tag-pending">待替换</Tag>;
 	return <Tag className="audio-status-tag audio-status-tag-default">{status || "-"}</Tag>;
+}
+
+function projectStatusTag(row: OpsAudioEditSession) {
+	const status = row.projectStatus || row.projectLifecycleStatus || "";
+	if (!status) return <Typography.Text type="secondary">-</Typography.Text>;
+	return <Tag style={{ ...statusStyle(status), border: 0 }}>{status}</Tag>;
+}
+
+function ProjectStatusFilterDropdown({ selectedKeys, setSelectedKeys, confirm, clearFilters }: any) {
+	const current = (selectedKeys || []).map((key: unknown) => String(key));
+	const toggle = (value: string) => {
+		const next = current.includes(value) ? current.filter((item: string) => item !== value) : [...current, value];
+		if (next.length) {
+			setSelectedKeys(next);
+			confirm({ closeDropdown: false });
+			return;
+		}
+		clearFilters?.({ confirm: true, closeDropdown: false });
+	};
+	return (
+		<div className="audio-project-status-filter-menu">
+			{PROJECT_STATUS_FILTERS.map((status) => (
+				<button key={status} type="button" className="audio-project-status-filter-option" onClick={() => toggle(status)}>
+					<Checkbox checked={current.includes(status)} />
+					<span>{status}</span>
+				</button>
+			))}
+		</div>
+	);
 }
 
 function LinkButton({ href, label, icon }: { href?: string; label: string; icon: ReactNode }) {
@@ -228,7 +263,7 @@ function StatusCell({
 	);
 }
 
-export default function AudioEditTable({ rows, total, page, pageSize, loading, sortBy, sortOrder, onPageChange, onSortChange, onPrioritySave, onRemarkSave, onStatusSave }: AudioEditTableProps) {
+export default function AudioEditTable({ rows, total, page, pageSize, loading, projectStatus, sortBy, sortOrder, onPageChange, onProjectStatusChange, onSortChange, onPrioritySave, onRemarkSave, onStatusSave }: AudioEditTableProps) {
 	const [savingId, setSavingId] = useState<string>("");
 	const [savingRemarkId, setSavingRemarkId] = useState<string>("");
 	const [savingStatusId, setSavingStatusId] = useState<string>("");
@@ -252,6 +287,16 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, s
 				),
 			},
 			{ title: "策划制片", dataIndex: "plannerName", width: 160, render: (_text, row) => <PlannerCell row={row} /> },
+			{
+				title: "项目状态",
+				dataIndex: "projectStatus",
+				width: 105,
+				filters: PROJECT_STATUS_FILTERS.map((item) => ({ text: item, value: item })),
+				filteredValue: projectStatus ? projectStatus.split(",").filter(Boolean) : null,
+				filterDropdown: ProjectStatusFilterDropdown,
+				filterIcon: (filtered) => <FilterFilled style={{ color: filtered ? "#dc2626" : undefined }} />,
+				render: (_text, row) => projectStatusTag(row),
+			},
 			{ title: "上传人", dataIndex: "uploader", width: 110, render: (text) => text || "-" },
 			{
 				title: "上传时间",
@@ -342,10 +387,13 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, s
 				),
 			},
 		],
-		[onPrioritySave, onRemarkSave, onStatusSave, page, pageSize, savingId, savingRemarkId, savingStatusId, sortBy, sortOrder],
+		[onPrioritySave, onRemarkSave, onStatusSave, page, pageSize, projectStatus, savingId, savingRemarkId, savingStatusId, sortBy, sortOrder],
 	);
 
-	const handleTableChange: TableProps<OpsAudioEditSession>["onChange"] = (_pagination, _filters, sorter) => {
+	const handleTableChange: TableProps<OpsAudioEditSession>["onChange"] = (_pagination, filters, sorter) => {
+		const nextProjectStatus = (filters.projectStatus || []).map((value) => String(value)).filter(Boolean).join(",");
+		if (nextProjectStatus !== projectStatus) onProjectStatusChange(nextProjectStatus);
+
 		const currentSorter = Array.isArray(sorter) ? sorter[0] : sorter;
 		const field = currentSorter?.field;
 		const order = (currentSorter?.order as "ascend" | "descend" | undefined) || "";
@@ -371,7 +419,7 @@ export default function AudioEditTable({ rows, total, page, pageSize, loading, s
 			dataSource={rows}
 			columns={columns}
 			size="middle"
-			scroll={{ x: 1720, y: "calc(100vh - 220px)" }}
+			scroll={{ x: 1825, y: "calc(100vh - 220px)" }}
 			onChange={handleTableChange}
 			pagination={{
 				current: page,

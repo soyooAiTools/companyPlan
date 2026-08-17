@@ -629,6 +629,25 @@ async function migrateSchema() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
     .run();
+
+  // 当前登录用户自助配置的客户可见范围。无记录 = 默认全部;scope_mode 控制只看/排除这些客户。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_user_tenant_scope (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        tenant_id VARCHAR(64) NOT NULL,
+        scope_mode VARCHAR(20) NOT NULL DEFAULT 'include',
+        enabled TINYINT NOT NULL DEFAULT 1,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uniq_outs_user_tenant (user_id, tenant_id),
+        KEY idx_outs_user_enabled (user_id, enabled),
+        KEY idx_outs_tenant (tenant_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+  await ensureColumn("ops_user_tenant_scope", "scope_mode", "VARCHAR(20) NOT NULL DEFAULT 'include'");
 }
 
 async function ensureColumn(tableName, columnName, definition) {

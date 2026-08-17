@@ -12,6 +12,7 @@ export default function AudioEditManagementPage() {
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 	const [status, setStatus] = useState("待替换");
+	const [projectStatus, setProjectStatus] = useState("");
 	const [keyword, setKeyword] = useState("");
 	const [debouncedKeyword, setDebouncedKeyword] = useState("");
 	const [sortBy, setSortBy] = useState("");
@@ -26,12 +27,13 @@ export default function AudioEditManagementPage() {
 				page,
 				pageSize,
 				status,
+				projectStatus,
 				q: debouncedKeyword.trim(),
 				sortBy: sortBy || (status === "已完成" ? "completed_at" : ""),
 				sortOrder: effectiveSortOrder,
 			};
 		},
-		[page, pageSize, status, debouncedKeyword, sortBy, sortOrder],
+		[page, pageSize, status, projectStatus, debouncedKeyword, sortBy, sortOrder],
 	);
 
 	const load = useCallback(async () => {
@@ -148,9 +150,15 @@ export default function AudioEditManagementPage() {
 					page={page}
 					pageSize={pageSize}
 					loading={loading}
+					projectStatus={projectStatus}
 					onPageChange={(nextPage, nextPageSize) => {
 						setPage(nextPage);
 						setPageSize(nextPageSize);
+					}}
+					onProjectStatusChange={(value) => {
+						setLoading(true);
+						setProjectStatus(value);
+						setPage(1);
 					}}
 					sortBy={sortBy}
 					sortOrder={sortOrder}

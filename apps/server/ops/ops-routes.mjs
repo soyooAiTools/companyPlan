@@ -21,6 +21,7 @@ import {
   saveMutualCollaborationPermissions,
   saveCollaborationPermissions,
 } from "./services/collaboration-permissions.mjs";
+import { filterByTenantScope, getUserTenantScope, getUserTenantScopePayload, saveUserTenantScope } from "./services/tenant-scope.mjs";
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
@@ -290,6 +291,20 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({ user: { id: u.id, name: u.name || u.username || "", username: u.username || "", roleKey: u.roleKey || "", isAdmin: u.roleKey === "admin", isPlanner: planner, avatar: p?.wechat_avatar ?? "", wechatName: p?.wechat_name ?? "", notifyStart: notifyWindow.start, notifyEnd: notifyWindow.end } });
   });
 
+  app.get("/api/ops/tenant-scope", requireAuth, async (req, res) => {
+    res.json({ scope: await getUserTenantScopePayload(req.user) });
+  });
+
+  app.put("/api/ops/tenant-scope", requireAuth, async (req, res) => {
+    const result = await saveUserTenantScope({
+      user: req.user,
+      mode: req.body?.mode,
+      tenantIds: req.body?.tenantIds,
+    });
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json(result);
+  });
+
   // 工单协作权限配置(管理员):viewer 可查看/处理 target 的工单。scope 预留给后续项目池/人员进度。
   app.get("/api/ops/collaboration/users", requireAuth, requireAdmin, async (_req, res) => {
     res.json({ users: await listCollaborationUsers() });
@@ -383,15 +398,18 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/tenants", requireAuth, async (req, res) => {
     const { keyword, page, limit } = req.query;
     const tenants = await listTenants({ keyword, page, limit }).catch(() => []);
-    res.json({ tenants });
+    const scope = await getUserTenantScope(req.user);
+    res.json({ tenants: filterByTenantScope(tenants, scope, (tenant) => tenant.id) });
   });
 
   // 项目:只返当前用户参与的(实时查 soyoo「我的项目」),可按客户过滤
   app.get("/api/ops/projects", requireAuth, async (req, res) => {
     try {
       const all = isAdmin(req.user) ? await listAllProjects() : await listMyProjects(req.user); // 管理员看项目级进行中的项目
+      const scope = await getUserTenantScope(req.user);
       const tenantId = req.query.tenantId ? String(req.query.tenantId) : "";
-      const projects = (tenantId ? all.filter((p) => p.clientId === tenantId) : all).map((p) => ({
+      const visible = filterByTenantScope(all, scope, (project) => project.clientId);
+      const projects = (tenantId ? visible.filter((p) => p.clientId === tenantId) : visible).map((p) => ({
         id: p.id,
         name: p.name,
         tenantId: p.clientId,
@@ -539,6 +557,11 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     if (requesterKw) filters.push({ requester_name: { contains: requesterKw } });
     const ownerKw = String(qy.owner ?? "").trim();
     if (ownerKw) filters.push({ owner_name: { contains: ownerKw } });
+    const tenantScope = await getUserTenantScope(user);
+    if (tenantScope) {
+      const tenantIds = [...tenantScope.tenantIds];
+      filters.push(tenantScope.mode === "exclude" ? { client_id: { notIn: tenantIds } } : { client_id: { in: tenantIds } });
+    }
 
     let orderBy = [{ created_at: "desc" }, { id: "desc" }];
     // 延期预警:未完成 且 warn_at < 现在,按截止时间升序(最急在前)

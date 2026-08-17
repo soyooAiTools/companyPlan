@@ -97,6 +97,35 @@
 	color: #dc2626;
 }
 
+.audio-project-status-filter-menu {
+	width: 150px;
+	padding: 6px;
+}
+
+.audio-project-status-filter-option {
+	width: 100%;
+	height: 30px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: #334155;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.audio-project-status-filter-option:hover {
+	background: #f8fafc;
+}
+
+.audio-project-status-filter-option .ant-checkbox-wrapper,
+.audio-project-status-filter-option .ant-checkbox {
+	pointer-events: none;
+}
+
 .audio-priority-input .ant-input-number-input {
 	text-align: center;
 	font-weight: 600;

@@ -121,6 +121,12 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         .ops-pool-table .ops-pool-version-row > td {
           background: #fff !important;
         }
+        .ops-pool-table .ops-pool-version-row.ops-pool-stale > td {
+          background: #fff7f6 !important;
+        }
+        .ops-pool-table .ops-pool-version-row.ops-pool-stale:hover > td {
+          background: #fff1f0 !important;
+        }
         .ops-pool-table .ops-pool-version-row > td:first-child {
           position: relative;
         }

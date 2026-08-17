@@ -1,4 +1,9 @@
 import { soyooClient } from "../soyoo-client.mjs";
+import { prisma } from "../prisma.mjs";
+import { ensureProjectPoolSnapshotTable, snapshotDbRowToPoolRow } from "./project-pool/snapshot-store.mjs";
+
+const inactiveProjectStatuses = new Set(["回收中", "已回收", "已完成", "结算完成", "客户暂停"]);
+const AUDIO_EDIT_FETCH_LIMIT = 200;
 
 function mapAudioEditSession(row = {}) {
   return {
@@ -26,7 +31,78 @@ function mapAudioEditSession(row = {}) {
   };
 }
 
-export async function listAudioEditSessions(params = {}) {
+function normalizeKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function audioProjectKey(row) {
+  const tenantName = row.tenantName ?? row.tenant_name;
+  const projectName = row.projectName ?? row.project_name ?? row.name;
+  return `${normalizeKey(tenantName)}\n${normalizeKey(projectName)}`;
+}
+
+function isInactiveProjectRow(row) {
+  return [row?.status, row?.projectLifecycleStatus, row?.project_lifecycle_status, row?.lifecycle_status]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .some((value) => inactiveProjectStatuses.has(value));
+}
+
+function audioSessionMatchesProjectRow(session, row) {
+  if (!row) return false;
+  const versionId = String(session.projectVersionId || "").trim();
+  const versionCode = String(session.projectVersionCode || "").trim();
+  if (versionId && String(row.versionId || "").trim() === versionId) return true;
+  if (versionCode && String(row.versionCode || "").trim() === versionCode) return true;
+  return !versionId && !versionCode && !row.isVersionRow;
+}
+
+function matchedAudioProjectRow(session, projectIndex) {
+  const rows = projectIndex.get(audioProjectKey(session));
+  if (!rows?.length) return null;
+  return rows.find((row) => audioSessionMatchesProjectRow(session, row)) || rows[0] || null;
+}
+
+function withAudioProjectStatus(session, projectIndex) {
+  const row = matchedAudioProjectRow(session, projectIndex);
+  return {
+    ...session,
+    projectStatus: row?.status || "",
+    projectLifecycleStatus: row?.projectLifecycleStatus || row?.project_lifecycle_status || row?.lifecycle_status || "",
+  };
+}
+
+function matchesProjectStatus(session, projectStatus) {
+  const statuses = new Set(
+    String(projectStatus || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  if (!statuses.size) return true;
+  return [session.projectStatus, session.projectLifecycleStatus].map((value) => String(value || "").trim()).some((value) => statuses.has(value));
+}
+
+async function loadAudioEditProjectIndex() {
+  await ensureProjectPoolSnapshotTable();
+  const dbRows = await prisma.$queryRaw`SELECT row_json FROM ops_project_pool_snapshot`;
+  const index = new Map();
+  for (const dbRow of dbRows) {
+    const parent = snapshotDbRowToPoolRow(dbRow);
+    if (!parent) continue;
+    const key = audioProjectKey(parent);
+    if (!key.trim()) continue;
+    const rows = [parent, ...(Array.isArray(parent.children) ? parent.children.map((child) => ({ ...child, projectLifecycleStatus: child.projectLifecycleStatus || parent.projectLifecycleStatus })) : [])];
+    index.set(key, rows);
+  }
+  return index;
+}
+
+function audioSessionProjectInactive(session, projectIndex) {
+  return isInactiveProjectRow(matchedAudioProjectRow(session, projectIndex));
+}
+
+async function fetchAudioEditSessionsPage(params = {}) {
   const body = await soyooClient.audioEditSessions({
     page: params.page,
     limit: params.pageSize,
@@ -41,6 +117,38 @@ export async function listAudioEditSessions(params = {}) {
     total: Number(body?.total ?? rows.length),
     page: Number(body?.page ?? params.page ?? 1),
     pageSize: Number(body?.limit ?? params.pageSize ?? 20),
+  };
+}
+
+async function fetchAllAudioEditSessions(params = {}) {
+  const allRows = [];
+  let total = 0;
+  for (let page = 1; page <= 100; page += 1) {
+    const result = await fetchAudioEditSessionsPage({ ...params, page, pageSize: AUDIO_EDIT_FETCH_LIMIT });
+    allRows.push(...result.rows);
+    total = Number(result.total || allRows.length);
+    if (!result.rows.length || allRows.length >= total) break;
+  }
+  return allRows;
+}
+
+export async function listAudioEditSessions(params = {}) {
+  const page = Math.max(1, Number(params.page ?? 1) || 1);
+  const pageSize = Math.max(1, Number(params.pageSize ?? 20) || 20);
+  const projectStatus = String(params.projectStatus || "").trim();
+  if (String(params.status || "").trim() !== "待替换" && !projectStatus) {
+    const [result, projectIndex] = await Promise.all([fetchAudioEditSessionsPage({ ...params, page, pageSize }), loadAudioEditProjectIndex()]);
+    return { ...result, rows: result.rows.map((row) => withAudioProjectStatus(row, projectIndex)) };
+  }
+
+  const [rows, projectIndex] = await Promise.all([fetchAllAudioEditSessions(params), loadAudioEditProjectIndex()]);
+  const mappedRows = rows.map((row) => withAudioProjectStatus(row, projectIndex));
+  const filteredRows = mappedRows.filter((row) => (String(params.status || "").trim() === "待替换" ? !audioSessionProjectInactive(row, projectIndex) : true)).filter((row) => matchesProjectStatus(row, projectStatus));
+  return {
+    rows: filteredRows.slice((page - 1) * pageSize, page * pageSize),
+    total: filteredRows.length,
+    page,
+    pageSize,
   };
 }
 

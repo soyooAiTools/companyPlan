@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { App as AntApp, Avatar, Button, ConfigProvider, Layout, Menu, Spin, Tooltip } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined, CustomerServiceOutlined } from "@ant-design/icons";
+import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined, CustomerServiceOutlined, FilterOutlined } from "@ant-design/icons";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { logoutApi } from "../../api/modules/companyPlan";
 import { opsApi, type OpsMe } from "../../api/modules/ops";
@@ -14,11 +14,20 @@ import OverviewPage from "./OverviewPage";
 import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
 import NotificationCenter from "./components/NotificationCenter";
+import TenantScopeModal from "./components/TenantScopeModal";
 import UpdateLogFloat from "../../components/UpdateLogFloat";
 import AudioEditManagementPage from "../AudioEditManagement/AudioEditManagementPage";
 
 const { Sider, Content } = Layout;
 const OPS_SIDER_COLLAPSED_KEY = "ops.sider.collapsed";
+
+function DataScopeIcon({ active }: { active: boolean }) {
+  return <FilterOutlined />;
+}
+
+function ScopeDot({ active }: { active: boolean }) {
+  return active ? <span style={{ position: "absolute", right: -4, top: -4, width: 11, height: 11, borderRadius: 999, background: "#dc2626", zIndex: 1 }} /> : null;
+}
 
 export default function OpsApp() {
   const navigate = useNavigate();
@@ -27,6 +36,8 @@ export default function OpsApp() {
   const [me, setMe] = useState<OpsMe | null>(null);
   const [auth, setAuth] = useState<"loading" | "login" | "ready">("loading");
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(OPS_SIDER_COLLAPSED_KEY) === "1");
+  const [tenantScopeOpen, setTenantScopeOpen] = useState(false);
+  const [tenantScopeLimited, setTenantScopeLimited] = useState(false);
   const isAdmin = !!me?.isAdmin;
   const canPool = isAdmin || !!me?.isPlanner; // 管理员或策划(制片)可见「项目池」
   const siderWidth = collapsed ? 64 : 200;
@@ -51,6 +62,22 @@ export default function OpsApp() {
   useEffect(() => {
     localStorage.setItem(OPS_SIDER_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
+
+  useEffect(() => {
+    if (auth !== "ready") return;
+    let disposed = false;
+    opsApi
+      .tenantScope()
+      .then((result) => {
+        if (!disposed) setTenantScopeLimited(result.scope.mode !== "all");
+      })
+      .catch(() => {
+        if (!disposed) setTenantScopeLimited(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [auth]);
 
   const onMenuClick = (key: string) => navigate("/" + key);
 
@@ -136,6 +163,12 @@ export default function OpsApp() {
                         </Avatar>
                       </Tooltip>
                       <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
+                      <Tooltip title={tenantScopeLimited ? "数据可见范围（已设置）" : "数据可见范围"} placement="right">
+                        <span style={{ position: "relative", display: "inline-flex" }}>
+                          <Button icon={<DataScopeIcon active={tenantScopeLimited} />} onClick={() => setTenantScopeOpen(true)} />
+                          <ScopeDot active={tenantScopeLimited} />
+                        </span>
+                      </Tooltip>
                       <Tooltip title="退出登录" placement="right">
                         <Button icon={<LogoutOutlined />} onClick={logout} />
                       </Tooltip>
@@ -154,6 +187,12 @@ export default function OpsApp() {
                       </div>
                         <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
                       </div>
+                      <span style={{ position: "relative", display: "block", marginBottom: 8 }}>
+                        <Button block icon={<DataScopeIcon active={tenantScopeLimited} />} onClick={() => setTenantScopeOpen(true)}>
+                          数据可见范围
+                        </Button>
+                        <ScopeDot active={tenantScopeLimited} />
+                      </span>
                       <Button block icon={<LogoutOutlined />} onClick={logout}>
                         退出登录
                       </Button>
@@ -176,6 +215,7 @@ export default function OpsApp() {
                 </Routes>
               </Content>
             </Layout>
+            <TenantScopeModal open={tenantScopeOpen} onCancel={() => setTenantScopeOpen(false)} />
           </Layout>
         )}
       </AntApp>
