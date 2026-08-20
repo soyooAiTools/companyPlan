@@ -262,7 +262,7 @@ export interface OpsProjectPoolRow {
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
 }
-export type OpsProjectPoolSortBy = "nextDeadline" | "projectStart" | "projectEnd";
+export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd";
 export type OpsProjectPoolSortOrder = "asc" | "desc";
 type OpsProjectPoolListParams = {
 	page?: number;

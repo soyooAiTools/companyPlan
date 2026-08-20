@@ -15,6 +15,7 @@
     "start:prod": "pnpm --filter @companyplan/server start:prod",
     "deploy": "bash deploy/deploy.sh",
     "deploy:web": "pnpm build && node scripts/deploy-oss.mjs",
+    "generate": "pnpm --filter @companyplan/server exec prisma generate",
     "migrate:sqlite:mysql": "pnpm --filter @companyplan/server migrate:sqlite:mysql"
   },
   "devDependencies": {

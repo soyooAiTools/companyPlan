@@ -17,6 +17,7 @@ type ProjectPoolTableProps = {
   total?: number;
   scrollY?: number;
   pagination?: false;
+  deadlineSortBy?: OpsProjectPoolSortBy;
   onPageChange?: (page: number, pageSize: number) => void;
   onSortChange?: (sortBy?: OpsProjectPoolSortBy, sortOrder?: OpsProjectPoolSortOrder) => void;
   onOpenLogs?: (row: OpsProjectPoolRow) => void;
@@ -30,8 +31,10 @@ function columnWidthSum(columns: ColumnsType<OpsProjectPoolRow>) {
   }, 0);
 }
 
-export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, onPageChange, onSortChange, onOpenLogs, onToggleUrgent }: ProjectPoolTableProps) {
+export default function ProjectPoolTable({ rows, columns, loading, page, pageSize, total, scrollY, pagination, deadlineSortBy = "nextDeadline", onPageChange, onSortChange, onOpenLogs, onToggleUrgent }: ProjectPoolTableProps) {
   const [contextRow, setContextRow] = useState<ProjectPoolContextRow | null>(null);
+  // 表格自身先记录当前排序列,用于立刻驱动表头「下版时间/逾期时间」文字变色。
+  const [activeSortColumnKey, setActiveSortColumnKey] = useState("");
   const closeContextMenu = useCallback(() => setContextRow(null), []);
   const hasTreeRows = rows.some((row) => Array.isArray(row.children) && row.children.length > 0);
   const displayColumns = columns.map((column, index) => ({
@@ -102,6 +105,15 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         .ops-pool-table .ant-table-column-sorter-down.active {
           color: #dc2626;
         }
+        /* 标题里的下拉不是 antd sorter 内部元素,用变量让它跟随当前排序列变色。 */
+        .ops-pool-table {
+          --project-pool-deadline-sort-color: #64748b;
+          --project-pool-deadline-sort-weight: 400;
+        }
+        .ops-pool-table.ops-pool-deadline-sort-active {
+          --project-pool-deadline-sort-color: #dc2626;
+          --project-pool-deadline-sort-weight: 600;
+        }
         .ops-pool-table .ant-table-tbody > tr:not(.ops-pool-stale):hover > td {
           background: #f8fafc !important;
           transform: translateY(-1px) scale(1.001);
@@ -150,7 +162,7 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
       `}</style>
       <ProjectPoolContextMenu contextRow={contextRow} onClose={closeContextMenu} onToggleUrgent={onToggleUrgent} />
       <Table
-        className="ops-pool-table"
+        className={`ops-pool-table${activeSortColumnKey === "stageDeadlines" ? " ops-pool-deadline-sort-active" : ""}`}
         rowKey="id"
         loading={loading}
         dataSource={rows}
@@ -164,11 +176,13 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
         pagination={tablePagination}
         onChange={(_pagination, _filters, sorter, extra) => {
           if (extra.action !== "sort") return;
-          if (!onSortChange) return;
           const current = Array.isArray(sorter) ? sorter[0] : (sorter as SorterResult<OpsProjectPoolRow>);
           const key = String(current?.columnKey || "");
+          // 先更新本地排序列,避免等待外层 sortBy 回传时表头颜色不同步。
+          setActiveSortColumnKey(current?.order ? key : "");
+          if (!onSortChange) return;
           if (key === "stageDeadlines" && current?.order) {
-            onSortChange("nextDeadline", current.order === "ascend" ? "asc" : "desc");
+            onSortChange(deadlineSortBy, current.order === "ascend" ? "asc" : "desc");
             return;
           }
           if (key === "startedAt" && current?.order) {

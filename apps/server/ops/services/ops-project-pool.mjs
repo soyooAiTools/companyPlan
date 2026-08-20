@@ -249,6 +249,23 @@ function nextDeadlineSortValue(row) {
   return next.date;
 }
 
+// 下版交付日期相对今天的天数:负数=已逾期,正数=还剩余。
+function deadlineDiffDays(date) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const target = new Date(`${date}T00:00:00+08:00`).getTime();
+  const today = new Date(`${todayDateText()}T00:00:00+08:00`).getTime();
+  if (!Number.isFinite(target) || !Number.isFinite(today)) return null;
+  return Math.round((target - today) / 86400000);
+}
+
+// 按逾期时间排序时,逾期越久值越大;已完成/回收等不追逾期的项目排到后面。
+function nextDeadlineOverdueSortValue(row) {
+  if (isInactiveDeadlinePoolRow(row)) return null;
+  const next = nextStageDeadline(row?.stage || "", row?.stageDeadlines || []);
+  const diff = deadlineDiffDays(next?.date);
+  return diff == null ? null : -diff;
+}
+
 function stageDeadlineByKey(row, key, name) {
   if (!Array.isArray(row?.stageDeadlines)) return null;
   return row.stageDeadlines.find((item) => item.key === key || item.name === name) || null;
@@ -267,10 +284,17 @@ function projectEndSortValue(row) {
   return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : null;
 }
 
+// 支持同一个排序器同时比较日期字符串和逾期天数数字。
+function compareSortValue(a, b) {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b));
+}
+
 function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   const order = sortOrder === "asc" ? "asc" : sortOrder === "desc" ? "desc" : "";
   const valueBySort = {
     nextDeadline: nextDeadlineSortValue,
+    nextDeadlineOverdue: nextDeadlineOverdueSortValue,
     projectStart: projectStartSortValue,
     projectEnd: projectEndSortValue,
   }[sortBy];
@@ -290,10 +314,10 @@ function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   return rows.sort((a, b) => {
     const av = valueBySort(a);
     const bv = valueBySort(b);
-    if (!av && !bv) return Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id));
-    if (!av) return 1;
-    if (!bv) return -1;
-    const cmp = av.localeCompare(bv);
+    if (av == null && bv == null) return Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id));
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = compareSortValue(av, bv);
     return cmp === 0 ? Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id)) : cmp * direction;
   }).map(sortChildren);
 }

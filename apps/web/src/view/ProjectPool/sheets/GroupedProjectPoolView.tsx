@@ -21,6 +21,7 @@ type GroupedProjectPoolViewProps = {
 	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
 	onToggleUrgent?: (row: OpsProjectPoolRow) => void;
 	collapseAction?: { type: "collapse" | "expand"; version: number };
+	sortResetKey?: string;
 };
 
 type ProjectGroupTableRow =
@@ -150,8 +151,9 @@ const groupLabel = (
 	</div>
 );
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, collapseAction }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, collapseAction, sortResetKey }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
+	// 分组表不走服务端排序,需要自己维护 sorter 状态和表头颜色。
 	const [activeSort, setActiveSort] = useState<{ key: string; order: SortOrder } | null>(null);
 	const [contextRow, setContextRow] = useState<ProjectPoolContextRow | null>(null);
 	const closeContextMenu = useCallback(() => setContextRow(null), []);
@@ -186,6 +188,10 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 		if (!collapseAction) return;
 		setCollapsedKeys(collapseAction.type === "collapse" ? new Set(groups.map((group) => group.key)) : new Set());
 	}, [collapseAction, groups]);
+
+	useEffect(() => {
+		setActiveSort(null);
+	}, [sortResetKey]);
 
 	const toggleGroup = (groupKey: string) => {
 		setCollapsedKeys((prev) => {
@@ -254,6 +260,15 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				.ops-pool-group-table .ant-table-column-sorter-up.active,
 				.ops-pool-group-table .ant-table-column-sorter-down.active {
 					color: #dc2626;
+				}
+				/* 分组表的 activeSort 在本组件内,用变量同步标题下拉的文字/图标颜色。 */
+				.ops-pool-group-table {
+					--project-pool-deadline-sort-color: #64748b;
+					--project-pool-deadline-sort-weight: 400;
+				}
+				.ops-pool-group-table.ops-pool-deadline-sort-active {
+					--project-pool-deadline-sort-color: #dc2626;
+					--project-pool-deadline-sort-weight: 600;
 				}
 				.ops-pool-group-table .ant-table-thead > tr > th:first-child {
 					position: sticky;
@@ -389,8 +404,9 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				getGroupKey={(group) => group.key}
 				renderGroup={(group) => groupLabel(group, collapsedKeys.has(group.key), hideStats, onOpenGroupTickets, onOpenGroupDeadlineProjects)}
 				onToggleGroup={toggleGroup}>
+				{/* 下版交付时间列排序时,让标题里的「下版时间/逾期时间」跟 sorter 一起标红。 */}
 				<Table<ProjectGroupTableRow>
-					className="ops-pool-table ops-pool-group-table"
+					className={`ops-pool-table ops-pool-group-table${activeSort?.key === "stageDeadlines" ? " ops-pool-deadline-sort-active" : ""}`}
 					rowKey="key"
 					loading={loading}
 					dataSource={rows}

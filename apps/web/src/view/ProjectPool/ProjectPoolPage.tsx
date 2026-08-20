@@ -6,7 +6,7 @@ import "dayjs/locale/zh-cn";
 import { App, Button, Checkbox, Input, Radio, Select, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow } from "@/api/modules/ops";
+import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow, type OpsProjectPoolSortBy } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
 import MembersModal from "./components/dialogs/MembersModal";
@@ -231,7 +231,17 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [refreshing, setRefreshing] = useState(false);
 	const [createTicketProject, setCreateTicketProject] = useState<OpsProjectPoolRow | null>(null);
 	const [createTicketMember, setCreateTicketMember] = useState<OpsProjectPoolMember | null>(null);
+	const [deadlineSortMode, setDeadlineSortMode] = useState<"date" | "overdue">("date");
 	const { hiddenColumnKeys, hiddenColumnKeySet, setHiddenColumnKeys, columnOrderKeys, setColumnOrderKeys, resetColumnConfig, lockedColumnKeys } = useProjectPoolColumnVisibility();
+	const deadlineSortBy: OpsProjectPoolSortBy = deadlineSortMode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
+	const changeDeadlineSortMode = (mode: "date" | "overdue") => {
+		setDeadlineSortMode(mode);
+		const nextSortBy: OpsProjectPoolSortBy = mode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
+		if (sortBy === "nextDeadline" || sortBy === "nextDeadlineOverdue") {
+			setSortBy(nextSortBy);
+			setPage(1);
+		}
+	};
 
 	// 表格内部滚动高度:实测「表格区域」高度 − 表头/分页固定占位,做到分页精准贴底(自适应工具栏换行/各种屏高)
 	const tableWrapRef = useRef<HTMLDivElement>(null);
@@ -580,6 +590,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			serverSort: !groupMode,
 			sortBy,
 			sortOrder: sortOrder === "asc" ? "ascend" : sortOrder === "desc" ? "descend" : null,
+			deadlineSortMode,
+			onDeadlineSortModeChange: changeDeadlineSortMode,
 		},
 	);
 	const orderedColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
@@ -744,6 +756,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						scrollY={groupScrollY}
 						hideStats={sheet === "owner"}
 						collapseAction={groupCollapseAction}
+						sortResetKey={sheet}
 						onOpenLogs={dialogs.actions.openLogs}
 						onOpenGroupTickets={(group, mode) => {
 							void dialogs.actions.openGroupTickets(`工单 · ${group.title} · ${mode === "overdue" ? "工单逾期" : "未完成工单"}`, group.rows, mode, group.segmentIds, group.ownerName);
@@ -761,6 +774,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						total={onlyUrgent ? visibleProjectRows.length : total}
 						scrollY={scrollY}
 						pagination={onlyUrgent ? false : undefined}
+						deadlineSortBy={deadlineSortBy}
 						onPageChange={(nextPage, nextPageSize) => {
 							setPage(nextPage);
 							setPageSize(nextPageSize);

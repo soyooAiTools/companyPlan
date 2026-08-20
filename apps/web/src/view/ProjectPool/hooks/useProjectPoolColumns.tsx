@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { Button, Avatar, Checkbox, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Avatar, Checkbox, Dropdown, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
+import { DownOutlined, EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 import { NO_SEGMENT_FILTER_VALUE, UNSET_STAGE_FILTER_VALUE } from "../utils/filterProjectPoolRows";
+
+type DeadlineSortMode = "date" | "overdue";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
@@ -63,7 +65,7 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
 	);
 };
 
-const filterIcon = (active: boolean) => <FilterFilled style={{ color: active ? "#1677ff" : "#94a3b8" }} />;
+const filterIcon = (active: boolean, activeColor = "#1677ff") => <FilterFilled style={{ color: active ? activeColor : "#94a3b8" }} />;
 
 const urgentCornerMark = (
 	<Tooltip title="加急版本">
@@ -172,16 +174,22 @@ function HeaderMultiDropdown<T extends string | number>({
 	options,
 	onApply,
 	close,
+	defaultAll,
 }: {
 	value: T[];
 	options: { label: ReactNode; value: T }[];
 	onApply: (value: T[]) => void;
 	close: () => void;
+	defaultAll?: boolean;
 }) {
-	const [draft, setDraft] = useState<T[]>(value);
-	useEffect(() => setDraft(value), [value]);
+	const allValues = options.map((option) => option.value);
+	const allValuesKey = allValues.map(String).join("\u0001");
+	const normalizedValue = defaultAll && !value.length ? allValues : value;
+	const [draft, setDraft] = useState<T[]>(normalizedValue);
+	useEffect(() => setDraft(defaultAll && !value.length ? allValues : value), [allValuesKey, defaultAll, value]);
 	const apply = (nextValue: T[]) => {
-		onApply(nextValue);
+		// defaultAll 模式下,全选等价于不过滤,仍然向外提交空数组。
+		onApply(defaultAll && nextValue.length === allValues.length ? [] : nextValue);
 		close();
 	};
 	return (
@@ -194,8 +202,8 @@ function HeaderMultiDropdown<T extends string | number>({
 				))}
 			</Checkbox.Group>
 			<div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-				<Button size="small" type="text" disabled={!draft.length && !value.length} onClick={() => apply([])}>
-					清空
+				<Button size="small" type="text" disabled={defaultAll ? draft.length === allValues.length : !draft.length && !value.length} onClick={() => apply(defaultAll ? allValues : [])}>
+					{defaultAll ? "全选" : "清空"}
 				</Button>
 				<Button size="small" type="primary" onClick={() => apply(draft)}>
 					确定
@@ -209,7 +217,7 @@ export function useProjectPoolColumns(
 	actions: ProjectPoolColumnActions,
 	rowNumberOffset = 0,
 	filters?: ProjectPoolColumnFilters,
-	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder; isAdmin?: boolean } = {},
+	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder; isAdmin?: boolean; deadlineSortMode?: DeadlineSortMode; onDeadlineSortModeChange?: (mode: DeadlineSortMode) => void } = {},
 ): ColumnsType<OpsProjectPoolRow> {
 	const statusFilterOptions = PROJECT_STATUSES.filter((status) => status !== "结算完成").map((status) => ({ label: status, value: status }));
 	const plannerFilterOptions = (filters?.plannerOptions || []).map((planner) => ({
@@ -234,6 +242,53 @@ export function useProjectPoolColumns(
 		: [];
 
 	const advancedFilterActive = filters ? compactAdvancedFilter(filters.advancedFilter).rules.length > 0 : false;
+	// 下版交付时间列支持两种排序口径:按日期本身,或按逾期天数。
+	const deadlineSortMode = options.deadlineSortMode === "overdue" ? "overdue" : "date";
+	const deadlineSortBy: OpsProjectPoolSortBy = deadlineSortMode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
+	const deadlineSortActive = (options.sortBy === "nextDeadline" || options.sortBy === "nextDeadlineOverdue") && !!options.sortOrder;
+	const deadlineSorter = deadlineSortMode === "overdue" ? (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDiffDays(b) - nextDeadlineDiffDays(a) : (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b);
+	const deadlineTitle = (
+		<div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0, gap: 6 }}>
+			{headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。")}
+			<Dropdown
+				trigger={["click"]}
+				menu={{
+					selectedKeys: [deadlineSortMode],
+					items: [
+						{ key: "date", label: "下版时间" },
+						{ key: "overdue", label: "逾期时间" },
+					],
+					onClick: ({ key, domEvent }) => {
+						domEvent.stopPropagation();
+						options.onDeadlineSortModeChange?.(key === "overdue" ? "overdue" : "date");
+					},
+				}}>
+				<Button
+					type="text"
+					size="small"
+					onClick={(e) => e.stopPropagation()}
+					style={{ height: 22, marginLeft: "auto", paddingInline: 4, fontSize: 12 }}>
+						<span
+							className="project-pool-deadline-sort-text"
+							style={{
+								// 分组表的排序状态在 GroupedProjectPoolView 内维护,所以用 CSS 变量兜住文字颜色。
+								color: deadlineSortActive ? "#dc2626" : "var(--project-pool-deadline-sort-color, #64748b)",
+								fontWeight: deadlineSortActive ? 600 : "var(--project-pool-deadline-sort-weight, 400)",
+							}}>
+							{deadlineSortMode === "overdue" ? "逾期时间" : "下版时间"}
+						</span>{" "}
+						<DownOutlined
+							className="project-pool-deadline-sort-icon"
+							style={{
+								// 和文字共用同一套颜色变量,确保下拉箭头也跟随排序态。
+								color: deadlineSortActive ? "#dc2626" : "var(--project-pool-deadline-sort-color, #64748b)",
+								fontSize: 10,
+							}}
+						/>
+				</Button>
+			</Dropdown>
+		</div>
+	);
 	return [
 		{
 			title: "项目名称",
@@ -327,9 +382,9 @@ export function useProjectPoolColumns(
 			key: "planner",
 			width: 150,
 			filterDropdown: filters
-				? ({ close }) => <HeaderMultiDropdown value={filters.plannerFilter || []} options={plannerFilterOptions} onApply={filters.onPlannerFilterChange} close={close} />
+				? ({ close }) => <HeaderMultiDropdown value={filters.plannerFilter || []} options={plannerFilterOptions} onApply={filters.onPlannerFilterChange} close={close} defaultAll />
 				: undefined,
-			filterIcon: filters ? () => filterIcon((filters.plannerFilter || []).length > 0) : undefined,
+			filterIcon: filters ? () => filterIcon((filters.plannerFilter || []).length > 0, "#dc2626") : undefined,
 			render: (_: unknown, row) => {
 				if (!row.plannerName) return <Typography.Text type="secondary">未指定</Typography.Text>;
 				const avatars = (row.planners || []).filter((planner) => planner.avatar);
@@ -388,11 +443,11 @@ export function useProjectPoolColumns(
 			),
 		},
 		{
-			title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。"),
+			title: deadlineTitle,
 			key: "stageDeadlines",
 			width: 290,
-			sorter: options.serverSort ? true : (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
-			sortOrder: options.sortBy === "nextDeadline" ? options.sortOrder : null,
+			sorter: options.serverSort ? true : deadlineSorter,
+			sortOrder: options.sortBy === deadlineSortBy ? options.sortOrder : null,
 			render: (_: unknown, row) => <StageDeadlineCell row={row} onEdit={actions.openDeadlineEdit} />,
 		},
 		{
@@ -429,10 +484,11 @@ export function useProjectPoolColumns(
 							options={statusFilterOptions}
 							onApply={filters.onStatusFilterChange}
 							close={close}
+							defaultAll
 						/>
 					)
 				: undefined,
-			filterIcon: filters ? () => filterIcon(filters.statusFilter.length > 0) : undefined,
+			filterIcon: filters ? () => filterIcon(filters.statusFilter.length > 0, "#dc2626") : undefined,
 			render: (_: unknown, row) => (
 				<Space size={6}>
 					<Tag
