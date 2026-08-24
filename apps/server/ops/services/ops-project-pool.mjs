@@ -456,6 +456,7 @@ async function getProjectAndMembersForOps(projectId) {
 }
 
 const AUTO_PROGRAM_SEGMENT = "程序第一版";
+const AUTO_PROGRAM_SEGMENT_FALLBACK = "程序";
 const AUTO_PROGRAM_TITLE = "立项：程序第一版(系统生成)";
 const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
 const SYSTEM_REQUESTER_ID = "system";
@@ -563,13 +564,21 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
   return { created: true, ticketId: created.id };
 }
 
+async function findAutoProgramSegment() {
+  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+  if (segment) return segment;
+  const fallback = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT_FALLBACK } });
+  if (fallback) logger.warn("[ops-outbox] program first segment fallback", { from: AUTO_PROGRAM_SEGMENT, to: AUTO_PROGRAM_SEGMENT_FALLBACK });
+  return fallback;
+}
+
 // ops 创建工单
-export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, ownerUserId = "", eventNote = "系统自动生成" }) {
-  const lockKey = String(projectId || "");
+export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, versionId = "", ownerUserId = "", eventNote = "系统自动生成" }) {
+  const lockKey = versionId ? `${String(projectId || "")}::version-${String(versionId)}` : String(projectId || "");
   if (autoProgramFirstTicketLocks.has(lockKey)) return { created: false, reason: "ticket_creating" };
   autoProgramFirstTicketLocks.add(lockKey);
   try {
-  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+  const segment = await findAutoProgramSegment();
   if (!segment) return { created: false, reason: "segment_not_found" };
   const segTags = await prisma.ops_segment_tags.findMany({ where: { segment_id: segment.id }, select: { tag_id: true } });
   const liveTags = await listTags().catch(() => []);
@@ -578,8 +587,22 @@ export async function autoCreateProgramFirstTicket({ user, requesterUserId, proj
   if (!ownerUserId) return { created: false, reason: "owner_required" };
   const owner = members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled");
   if (!owner) return { created: false, reason: "owner_not_found" };
+  const versionScope = versionId ? { project_version_id: String(versionId) } : { OR: [{ project_version_id: null }, { project_version_id: "" }] };
   const exists = await prisma.tickets.findFirst({
-    where: { project_id: String(projectId), segment_id: segment.id, title: AUTO_PROGRAM_TITLE, status: { not: "已完成" } },
+    where: {
+      project_id: String(projectId),
+      status: { not: "已完成" },
+      AND: [
+        versionScope,
+        {
+          OR: [
+            { title: AUTO_PROGRAM_TITLE },
+            { segment_id: segment.id },
+            { discipline: segment.name },
+          ],
+        },
+      ],
+    },
     select: { id: true },
   });
   if (exists) return { created: false, reason: "ticket_exists", ticketId: exists.id };
@@ -601,6 +624,9 @@ export async function autoCreateProgramFirstTicket({ user, requesterUserId, proj
       client_name: project.client || "",
       project_name: project.name || "",
       project_id: String(projectId),
+      project_version_id: versionId ? String(versionId) : "",
+      project_version_code: project.versionCode || "",
+      project_version_name: project.versionName || "",
       project_status: project.status || "",
       tag_id: matched?.id || tagIds[0] || "",
       tag_name: matched?.name || "",
