@@ -77,7 +77,17 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [invalidTaskIndex, setInvalidTaskIndex] = useState<number | null>(null);
 	const [form] = Form.useForm();
 	const selectedProjectId = Form.useWatch("projectId", form) as string | undefined;
+	const selectedVersionId = Form.useWatch("projectVersionId", form) as string | undefined;
 	const projectsRequestSeq = useRef(0);
+	const selectedProject = projects.find((project) => String(project.id) === String(selectedProjectId));
+	const selectedVersion = selectedProject?.versions?.find((version) => String(version.id) === String(selectedVersionId));
+	const defaultVersionId = (project?: OpsProject) =>
+		(project?.versions || []).find((version) => version.isDefault || String(version.code || "").toLowerCase() === "v1")?.id || project?.versions?.[0]?.id;
+	const versionProjectId = (projectId?: string, versionId?: string) => {
+		if (!projectId) return "";
+		if (projectId.includes("::version-")) return projectId;
+		return versionId ? `${projectId}::version-${versionId}` : projectId;
+	};
 
 	const loadTickets = async () => {
 		setLoading(true);
@@ -250,7 +260,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		setAssignOwnerId("");
 		setAssignOpen(true);
 		try {
-			const r = await opsApi.projectMembers(detail.projectId);
+			const r = await opsApi.projectMembers(versionProjectId(detail.projectId, detail.projectVersionId));
 			setAssignCandidates(r.members.filter((m) => m.status !== "disabled"));
 		} catch (e) {
 			messageApi.error(e instanceof Error ? e.message : "加载项目成员失败");
@@ -385,7 +395,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	};
 	const onTenantChange = async (tenantId?: string) => {
 		const seq = ++projectsRequestSeq.current;
-		form.setFieldsValue({ projectId: undefined, tickets: [{}] });
+		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{}] });
 		setProjects([]);
 		setSegments([]);
 		setMembers([]);
@@ -400,11 +410,24 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		setProjectsLoading(false);
 	};
 	const onProjectChange = async (projectId?: string) => {
-		form.setFieldsValue({ tickets: [{}] });
+		const nextProject = projects.find((project) => String(project.id) === String(projectId));
+		const nextVersionId = defaultVersionId(nextProject);
+		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{}] });
 		setSegments([]);
 		setMembers([]);
 		if (!projectId) return;
-		const r = await opsApi.responsibles(projectId).catch(() => null);
+		const r = await opsApi.responsibles(versionProjectId(projectId, nextVersionId)).catch(() => null);
+		if (r) {
+			setSegments(r.segments ?? []);
+			setMembers(r.members ?? []);
+		}
+	};
+	const onVersionChange = async (versionId?: string) => {
+		form.setFieldsValue({ tickets: [{}] });
+		setSegments([]);
+		setMembers([]);
+		if (!selectedProjectId) return;
+		const r = await opsApi.responsibles(versionProjectId(selectedProjectId, versionId)).catch(() => null);
 		if (r) {
 			setSegments(r.segments ?? []);
 			setMembers(r.members ?? []);
@@ -438,7 +461,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		const ticketsToCreate = rawTickets
 			.filter(isComplete)
 			.map((ticket: Record<string, unknown>) => ({
-				projectId: v.projectId,
+				projectId: versionProjectId(v.projectId, selectedVersion?.id),
+				projectVersionId: selectedVersion?.id || "",
+				projectVersionCode: selectedVersion?.code || "",
+				projectVersionName: selectedVersion?.name || "",
 				segmentId: Number(ticket.segmentId),
 				ownerId: String(ticket.ownerId),
 				title: String(ticket.title || "").trim(),
@@ -451,7 +477,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		}
 		setSubmitting(true);
 		try {
-			await opsApi.createTickets({ projectId: v.projectId, priority: v.priority, tickets: ticketsToCreate });
+			await opsApi.createTickets({ projectId: versionProjectId(v.projectId, selectedVersion?.id), priority: v.priority, tickets: ticketsToCreate });
 			messageApi.success(ticketsToCreate.length > 1 ? `已创建 ${ticketsToCreate.length} 条工单` : "提单已创建");
 			setOpen(false);
 			await loadTickets();
@@ -612,9 +638,11 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				segments={segments}
 				members={members}
 				selectedProjectId={selectedProjectId}
+				selectedVersionId={selectedVersionId}
 				invalidTaskIndex={invalidTaskIndex}
 				onTenantChange={onTenantChange}
 				onProjectChange={onProjectChange}
+				onVersionChange={onVersionChange}
 				onSubmit={submit}
 				onCancel={closeCreate}
 			/>

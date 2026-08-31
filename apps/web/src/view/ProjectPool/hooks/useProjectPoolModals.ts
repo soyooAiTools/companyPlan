@@ -2,12 +2,17 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
-import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
+import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent, ProjectRemarkField } from "@/api/modules/ops";
 import { inferStageDeadlines, normalizeStageDeadlines, normalizeStageDeadlinesForEdit } from "../deadlineUtils";
 import type { StagePlanTemplateKey } from "../stagePlanTemplates";
 import type { ProjectLogKind } from "../logUtils";
+import { PROJECT_POOL_REMARK_COLUMN_LABELS, type ProjectPoolColumnLabels } from "./useProjectPoolPreferences";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
+const REMARK_LABELS: Record<ProjectRemarkField, string> = {
+  ...PROJECT_POOL_REMARK_COLUMN_LABELS,
+};
+
 type SegmentTicketWithSource = OpsSegmentTicket & {
   projectId?: string;
   projectName?: string;
@@ -18,12 +23,19 @@ type SegmentTicketWithSource = OpsSegmentTicket & {
 
 const waitForPaint = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
-export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>) {
+function versionScopedProjectId(row: OpsProjectPoolRow) {
+  const baseId = String(row.projectId || row.parentId || row.id || "");
+  if (!baseId || baseId.includes("::version-")) return baseId;
+  return row.versionId ? `${baseId}::version-${row.versionId}` : baseId;
+}
+
+export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>, options: { columnLabels?: ProjectPoolColumnLabels } = {}) {
   const [chOpen, setChOpen] = useState(false);
   const [chField, setChField] = useState<"status" | "stage">("status");
   const [chTarget, setChTarget] = useState<OpsProjectPoolRow | null>(null);
   const [chValue, setChValue] = useState("");
   const [chComment, setChComment] = useState("");
+  const [chRecycleHandoffUsername, setChRecycleHandoffUsername] = useState("");
   const [chSaving, setChSaving] = useState(false);
 
   const [logsOpen, setLogsOpen] = useState(false);
@@ -34,6 +46,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
 
   const [rmOpen, setRmOpen] = useState(false);
   const [rmTarget, setRmTarget] = useState<OpsProjectPoolRow | null>(null);
+  const [rmField, setRmField] = useState<ProjectRemarkField>("remark");
   const [rmValue, setRmValue] = useState("");
   const [rmSaving, setRmSaving] = useState(false);
 
@@ -78,6 +91,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setChField(field);
     setChValue(field === "status" ? row.status : row.stage);
     setChComment("");
+    setChRecycleHandoffUsername("");
     setChOpen(true);
   };
 
@@ -92,7 +106,11 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (!metaTarget) return;
     setMetaSaving(true);
     try {
-      await opsApi.changeProjectMeta(metaTarget.id, { customerContact: metaCustomerContact, requirementDoc: metaRequirementDoc });
+      await opsApi.changeProjectMeta(metaTarget.projectId || metaTarget.id, {
+        customerContact: metaCustomerContact,
+        requirementDoc: metaRequirementDoc,
+        versionId: metaTarget.versionId || undefined,
+      });
       message.success("客户信息已更新");
       setMetaOpen(false);
       await reload();
@@ -108,7 +126,10 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (chValue === (chField === "status" ? chTarget.status : chTarget.stage)) return;
     setChSaving(true);
     try {
-      if (chField === "status") await opsApi.changeProjectStatus(chTarget.id, chValue, chComment || undefined);
+      if (chField === "status")
+        await opsApi.changeProjectStatus(chTarget.id, chValue, chComment || undefined, {
+          recycleHandoffUsername: chValue === "回收中" ? chRecycleHandoffUsername || undefined : undefined,
+        });
       else await opsApi.changeProjectStage(chTarget.id, chValue, chComment || undefined);
       message.success(chField === "status" ? "状态已更新" : "阶段已更新");
       setChOpen(false);
@@ -120,9 +141,10 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     }
   };
 
-  const openRemark = (row: OpsProjectPoolRow) => {
+  const openRemark = (row: OpsProjectPoolRow, field: ProjectRemarkField = "remark") => {
     setRmTarget(row);
-    setRmValue(row.remark || "");
+    setRmField(field);
+    setRmValue(row[field] || "");
     setRmOpen(true);
   };
 
@@ -130,8 +152,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (!rmTarget) return;
     setRmSaving(true);
     try {
-      await opsApi.changeProjectRemark(rmTarget.id, rmValue);
-      message.success("备注已更新");
+      await opsApi.changeProjectRemark(rmTarget.id, rmValue, rmField);
+      message.success(`${options.columnLabels?.[rmField] || REMARK_LABELS[rmField]}已更新`);
       setRmOpen(false);
       await reload();
     } catch (e) {
@@ -148,7 +170,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setLogs([]);
     setLogsLoading(true);
     try {
-      const result = await opsApi.projectStatusLogs(row.id);
+      const includeParent = !!row.isVersionRow && (String(row.versionCode || "").toLowerCase() === "v1" || /默认/.test(String(row.versionName || "")));
+      const result = await opsApi.projectStatusLogs(row.id, { includeParent });
       setLogs(result.logs);
     } catch {
       setLogs([]);
@@ -163,7 +186,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     setMembers([]);
     setMemLoading(true);
     try {
-      const result = await opsApi.projectPoolMembers(row.id);
+      const result = await opsApi.projectPoolMembers(versionScopedProjectId(row));
       setMembers(result.members);
     } catch (e) {
       message.error(e instanceof Error ? e.message : "加载协作成员失败");
@@ -351,9 +374,14 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
       target: chTarget,
       value: chValue,
       comment: chComment,
+      recycleHandoffUsername: chRecycleHandoffUsername,
       saving: chSaving,
-      setValue: setChValue,
+      setValue: (next: string) => {
+        setChValue(next);
+        if (next !== "回收中") setChRecycleHandoffUsername("");
+      },
       setComment: setChComment,
+      setRecycleHandoffUsername: setChRecycleHandoffUsername,
       confirm: confirmChange,
       close: () => setChOpen(false),
     },
@@ -369,6 +397,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     remark: {
       open: rmOpen,
       target: rmTarget,
+      title: options.columnLabels?.[rmField] || REMARK_LABELS[rmField],
       value: rmValue,
       saving: rmSaving,
       setValue: setRmValue,

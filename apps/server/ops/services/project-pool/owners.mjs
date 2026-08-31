@@ -17,7 +17,7 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
       select: {
         project_id: true,
         tag_id: true,
-        people: { select: { id: true, username: true, name: true, wechat_avatar: true, wechat_name: true, disabled_at: true } },
+        people: { select: { id: true, username: true, name: true, wechat_avatar: true, wechat_name: true, disabled_at: true, rating: true } },
       },
     });
 
@@ -34,6 +34,7 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
           avatar: person.wechat_avatar || "",
           wechatName: person.wechat_name || "",
           hireDate: "",
+          rating: person.rating || "",
           status: person.disabled_at ? "disabled" : "",
           tags: [],
         };
@@ -66,6 +67,7 @@ export async function listOwnerMembersByTags({ projectIds = [], tagNames = [] })
         avatar: ticket.owner_avatar || "",
         wechatName: "",
         hireDate: "",
+        rating: "",
         status: "",
         tags: [],
       };
@@ -89,13 +91,26 @@ async function fillPeopleMeta(members) {
   const rawIds = [...new Set(members.flatMap((member) => userIdCandidates(member.id)))].filter(Boolean);
   if (!rawIds.length) return;
   const rows = await prisma.$queryRawUnsafe(
-    `SELECT id, hire_date, disabled_at FROM people WHERE id IN (${rawIds.map(() => "?").join(",")})`,
+    `SELECT id, username, name, wechat_name, wechat_avatar, hire_date, disabled_at, rating FROM people WHERE id IN (${rawIds.map(() => "?").join(",")})`,
     ...rawIds,
   );
-  const metaById = new Map(rows.map((row) => [String(row.id), { hireDate: String(row.hire_date || ""), disabled: !!row.disabled_at }]));
+  const metaById = new Map(rows.map((row) => [String(row.id), {
+    username: String(row.username || ""),
+    name: String(row.name || ""),
+    wechatName: String(row.wechat_name || ""),
+    avatar: String(row.wechat_avatar || ""),
+    hireDate: String(row.hire_date || ""),
+    rating: String(row.rating || ""),
+    disabled: !!row.disabled_at,
+  }]));
   for (const member of members) {
     const meta = userIdCandidates(member.id).map((id) => metaById.get(id)).find(Boolean);
+    if (meta?.username && !member.username) member.username = meta.username;
+    if (meta?.name) member.name = meta.name;
+    if (meta?.wechatName) member.wechatName = meta.wechatName;
+    if (meta?.avatar) member.avatar = meta.avatar;
     member.hireDate = meta?.hireDate || "";
+    member.rating = meta?.rating || member.rating || "";
     if (meta?.disabled) member.status = "disabled";
   }
 }

@@ -76,6 +76,9 @@ async function initializeSchema() {
       source_project_name VARCHAR(160),
       project_name VARCHAR(160),
       project_id VARCHAR(64) NOT NULL,
+      project_version_id VARCHAR(64),
+      project_version_code VARCHAR(40),
+      project_version_name VARCHAR(160),
       requester_id VARCHAR(64) NOT NULL,
       owner_id VARCHAR(64) NOT NULL,
       discipline VARCHAR(80) NOT NULL,
@@ -400,6 +403,7 @@ async function migrateSchema() {
   await ensureColumn("people", "wechat_name", "VARCHAR(191)");
   await ensureColumn("people", "wechat_avatar", "VARCHAR(1024)");
   await ensureColumn("people", "hire_date", "VARCHAR(40)");
+  await ensureColumn("people", "rating", "VARCHAR(20) NOT NULL DEFAULT ''");
   await ensureSystemPerson();
   // 弃用字段加注释(保留不删):
   await ensureColumnComment("tickets", "discipline", "VARCHAR(80) NOT NULL", "弃用:改用 tag_id;新单仍写标签名兼容历史");
@@ -409,6 +413,9 @@ async function migrateSchema() {
   // 快照列:建单时把 soyoo 返回的字段都存进工单,显示只读本地,不再 join people/projects
   await ensureColumn("tickets", "client_id", "VARCHAR(64) NOT NULL DEFAULT ''");
   await ensureColumn("tickets", "client_name", "VARCHAR(160)");
+  await ensureColumn("tickets", "project_version_id", "VARCHAR(64)");
+  await ensureColumn("tickets", "project_version_code", "VARCHAR(40)");
+  await ensureColumn("tickets", "project_version_name", "VARCHAR(160)");
   await ensureColumn("tickets", "project_status", "VARCHAR(80)");
   await ensureColumn("tickets", "owner_name", "VARCHAR(120)");
   await ensureColumn("tickets", "owner_avatar", "VARCHAR(1024)");
@@ -537,6 +544,11 @@ async function migrateSchema() {
     .run();
   // 项目备注(ops 自有,富文本;并入流转记录 kind=remark,此列存当前值)
   await ensureColumn("ops_project_ext", "remark", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark2", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark3", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark4", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark5", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark6", "MEDIUMTEXT");
 
   // 项目池列表快照:仅服务 table 快速展示;真实数据仍来自 soyoo 项目 + ops 工单/扩展字段,可重建。
   await db
@@ -601,6 +613,46 @@ async function migrateSchema() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
     )
     .run();
+
+  // 用户协作授权:当前用于“工单互通”;scope 预留 project_pool / people_progress 等后续场景。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_user_collaboration_permissions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        viewer_user_id VARCHAR(64) NOT NULL,
+        target_user_id VARCHAR(64) NOT NULL,
+        scope VARCHAR(40) NOT NULL DEFAULT 'tickets',
+        permission VARCHAR(20) NOT NULL DEFAULT 'handle',
+        enabled TINYINT NOT NULL DEFAULT 1,
+        created_by VARCHAR(64),
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        deleted_at VARCHAR(40),
+        UNIQUE KEY uniq_oucp_viewer_target_scope (viewer_user_id, target_user_id, scope),
+        KEY idx_oucp_viewer_scope (viewer_user_id, scope, enabled),
+        KEY idx_oucp_target_scope (target_user_id, scope, enabled)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+
+  // 当前登录用户自助配置的客户可见范围。无记录 = 默认全部;scope_mode 控制只看/排除这些客户。
+  await db
+    .prepare(
+      `CREATE TABLE IF NOT EXISTS ops_user_tenant_scope (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(64) NOT NULL,
+        tenant_id VARCHAR(64) NOT NULL,
+        scope_mode VARCHAR(20) NOT NULL DEFAULT 'include',
+        enabled TINYINT NOT NULL DEFAULT 1,
+        created_at VARCHAR(40) NOT NULL,
+        updated_at VARCHAR(40) NOT NULL,
+        UNIQUE KEY uniq_outs_user_tenant (user_id, tenant_id),
+        KEY idx_outs_user_enabled (user_id, enabled),
+        KEY idx_outs_tenant (tenant_id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+    )
+    .run();
+  await ensureColumn("ops_user_tenant_scope", "scope_mode", "VARCHAR(20) NOT NULL DEFAULT 'include'");
 }
 
 async function ensureColumn(tableName, columnName, definition) {

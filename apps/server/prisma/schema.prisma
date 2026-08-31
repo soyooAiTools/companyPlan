@@ -53,6 +53,7 @@ model people {
   wechat_name                          String?               @db.VarChar(191)
   wechat_avatar                        String?               @db.VarChar(1024)
   hire_date                            String?               @db.VarChar(40)
+  rating                               String                @default("") @db.VarChar(20)
   project_member_tags                  project_member_tags[]
   project_team                         project_team[]
   projects                             projects[]
@@ -164,6 +165,9 @@ model tickets {
   source_project_name                 String?       @db.VarChar(160)
   project_name                        String?       @db.VarChar(160)
   project_id                          String        @db.VarChar(64)
+  project_version_id                  String?       @db.VarChar(64)
+  project_version_code                String?       @db.VarChar(40)
+  project_version_name                String?       @db.VarChar(160)
   requester_id                        String        @db.VarChar(64)
   owner_id                            String        @db.VarChar(64)
   discipline                          String        @db.VarChar(80)
@@ -288,6 +292,11 @@ model ops_project_ext {
   stage            String? @db.VarChar(40)
   stage_changed_at String? @db.VarChar(40)
   remark           String? @db.MediumText
+  remark2          String? @db.MediumText
+  remark3          String? @db.MediumText
+  remark4          String? @db.MediumText
+  remark5          String? @db.MediumText
+  remark6          String? @db.MediumText
   updated_at       String? @db.VarChar(40)
 }
 
@@ -338,4 +347,38 @@ model ops_config {
   k          String @id @db.VarChar(64)
   v          String @default("") @db.VarChar(255)
   updated_at String @db.VarChar(40)
+}
+
+// OPS 用户协作授权:viewer 可以在某个业务域(scope)查看/处理 target 的数据。
+// 当前只启用 scope=tickets,后续可扩展 project_pool / people_progress。
+model ops_user_collaboration_permissions {
+  id             Int     @id @default(autoincrement())
+  viewer_user_id String  @db.VarChar(64)
+  target_user_id String  @db.VarChar(64)
+  scope          String  @default("tickets") @db.VarChar(40)
+  permission     String  @default("handle") @db.VarChar(20)
+  enabled        Int     @default(1) @db.TinyInt
+  created_by     String? @db.VarChar(64)
+  created_at     String  @db.VarChar(40)
+  updated_at     String  @db.VarChar(40)
+  deleted_at     String? @db.VarChar(40)
+
+  @@unique([viewer_user_id, target_user_id, scope], map: "uniq_oucp_viewer_target_scope")
+  @@index([viewer_user_id, scope, enabled], map: "idx_oucp_viewer_scope")
+  @@index([target_user_id, scope, enabled], map: "idx_oucp_target_scope")
+}
+
+// 当前登录用户自助配置的客户可见范围。无记录 = 默认全部;scope_mode 控制只看/排除这些客户。
+model ops_user_tenant_scope {
+  id         Int    @id @default(autoincrement())
+  user_id    String @db.VarChar(64)
+  tenant_id  String @db.VarChar(64)
+  scope_mode String @default("include") @db.VarChar(20)
+  enabled    Int    @default(1) @db.TinyInt
+  created_at String @db.VarChar(40)
+  updated_at String @db.VarChar(40)
+
+  @@unique([user_id, tenant_id], map: "uniq_outs_user_tenant")
+  @@index([user_id, enabled], map: "idx_outs_user_enabled")
+  @@index([tenant_id], map: "idx_outs_tenant")
 }

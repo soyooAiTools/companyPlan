@@ -1,6 +1,21 @@
 // 需求提单 —— 新接口客户端(对应后端 /api/ops/*,Prisma)。环节=分类,绑定 soyoo 标签。
 import { requestJson } from "../request";
 
+const projectPoolRequestCache = new Map<string, { promise: Promise<unknown>; expiresAt: number }>();
+
+function requestProjectPoolJson<T>(url: string): Promise<T> {
+	const now = Date.now();
+	const cached = projectPoolRequestCache.get(url);
+	if (cached && cached.expiresAt > now) return cached.promise as Promise<T>;
+	const promise = requestJson<T>(url).finally(() => {
+		setTimeout(() => {
+			if (projectPoolRequestCache.get(url)?.promise === promise) projectPoolRequestCache.delete(url);
+		}, 1000);
+	});
+	projectPoolRequestCache.set(url, { promise, expiresAt: now + 1000 });
+	return promise;
+}
+
 export interface OpsTag {
 	id: string;
 	name: string;
@@ -10,6 +25,12 @@ export interface OpsTenant {
 	id: string;
 	name: string;
 }
+export interface OpsTenantScope {
+	mode: "all" | "include" | "exclude";
+	tenantIds: string[];
+	selectedTenants: OpsTenant[];
+	tenants: OpsTenant[];
+}
 export interface OpsProject {
 	id: string;
 	name: string;
@@ -18,6 +39,13 @@ export interface OpsProject {
 	plannerName: string;
 	developerName: string;
 	status: string;
+	versions?: OpsProjectVersion[];
+}
+export interface OpsProjectVersion {
+	id: string;
+	code: string;
+	name: string;
+	isDefault?: boolean;
 }
 export interface OpsSegmentTag {
 	id: string;
@@ -50,6 +78,9 @@ export interface OpsTicket {
 	client: string;
 	projectName: string;
 	projectId: string;
+	projectVersionId?: string;
+	projectVersionCode?: string;
+	projectVersionName?: string;
 	projectStage?: string; // 项目当前阶段(部分接口返回)
 	tagName: string; // 环节名
 	needType: string;
@@ -87,8 +118,38 @@ export interface OpsTicketEvent {
 	note: string;
 	createdAt: string;
 }
+export interface OpsCollaborationUser {
+	id: string;
+	username: string;
+	name: string;
+	wechatName?: string;
+	avatar?: string;
+	tags?: Array<{ name: string; color?: string }>;
+	disabledAt?: string | null;
+}
+export interface OpsCollaborationPermission {
+	id: number;
+	viewerUserId: string;
+	viewerUsername: string;
+	viewerName: string;
+	viewerWechatName?: string;
+	viewerAvatar?: string;
+	targetUserId: string;
+	targetUsername: string;
+	targetName: string;
+	targetWechatName?: string;
+	targetAvatar?: string;
+	scope: string;
+	permission: "view" | "handle";
+	enabled: boolean;
+	createdAt: string;
+	updatedAt: string;
+}
 export interface CreateTicketBody {
 	projectId: string;
+	projectVersionId?: string;
+	projectVersionCode?: string;
+	projectVersionName?: string;
 	segmentId: number;
 	ownerId: string;
 	title: string;
@@ -117,9 +178,60 @@ export interface OpsMe {
 	notifyStart?: string; // 通知时段开始 HH:mm(此窗口外前端不弹桌面)
 	notifyEnd?: string; // 通知时段结束 HH:mm
 }
+
+export interface OpsAudioEditSession {
+	id: string;
+	projectName: string;
+	tenantName: string;
+	projectVersionId: string;
+	projectVersionCode: string;
+	projectVersionName: string;
+	isDefaultVersion: boolean;
+	hasProjectVersions: boolean;
+	projectStatus?: string;
+	projectLifecycleStatus?: string;
+	uploader: string;
+	uploadedAt: string | null;
+	priority: number | null;
+	debugUrl: string;
+	audioCount: number;
+	replacedCount: number;
+	status: string;
+	completedAt: string | null;
+	exportZipUrl: string;
+	plannerName: string;
+	plannerAvatar: string;
+	planners: { name: string; avatar: string }[];
+	systemRemark: string;
+}
+
+export interface OpsBusinessUnit {
+	id: string;
+	name: string;
+	code?: string;
+}
+
+export interface OpsRecycleHandoffUser {
+	id: string;
+	username: string;
+	name: string;
+	avatar: string;
+}
+
 // ===== 项目池 =====
 export interface OpsProjectPoolRow {
 	id: string;
+	projectId?: string;
+	versionId?: string;
+	versionCode?: string;
+	versionName?: string;
+	isUrgent?: boolean;
+	parentId?: string;
+	isVersionRow?: boolean;
+	hasVersionChildren?: boolean;
+	projectLifecycleStatus?: string;
+	sortOrder?: number;
+	children?: OpsProjectPoolRow[];
 	name: string;
 	tenantId?: string; // 客户 id,项目池直接提单时用于预填客户
 	tenantName: string; // 客户名(= soyoo tenant_name)
@@ -130,9 +242,15 @@ export interface OpsProjectPoolRow {
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
 	startedAt: string | null; // soyoo 项目启动时间
-	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
+	endedAt?: string | null; // 项目结束时间(soyoo 按 started_at + duration_days 返回)
+	remark: string; // 策划备注(ops 自有,富文本 HTML;空串=无)
+	remark2: string; // 项目备注2(ops 自有,富文本 HTML;空串=无)
+	remark3: string; // 项目备注3(ops 自有,富文本 HTML;空串=无)
+	remark4: string; // 项目备注4(ops 自有,富文本 HTML;空串=无)
+	remark5: string; // 项目备注5(ops 自有,富文本 HTML;空串=无)
+	remark6: string; // 项目备注6(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
-	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
+	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string; id?: string; userId?: string; username?: string; status?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
 	members?: OpsProjectPoolMember[]; // 项目成员轻量快照,用于按负责人分组和新人标识
 	statusChangedAt: string | null;
 	memberCount: number;
@@ -150,8 +268,9 @@ export interface OpsProjectPoolRow {
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
 }
-export type OpsProjectPoolSortBy = "nextDeadline" | "projectStart" | "projectEnd";
+export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd";
 export type OpsProjectPoolSortOrder = "asc" | "desc";
+export type ProjectRemarkField = "remark" | "remark2" | "remark3" | "remark4" | "remark5" | "remark6";
 type OpsProjectPoolListParams = {
 	page?: number;
 	pageSize?: number;
@@ -161,8 +280,19 @@ type OpsProjectPoolListParams = {
 	segment?: number[];
 	planner?: string[];
 	advancedFilter?: string;
+	remarkFilter?: string;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
+};
+type OpsArchivedProjectPoolListParams = Pick<OpsProjectPoolListParams, "page" | "pageSize" | "q" | "status" | "planner" | "sortBy" | "sortOrder"> & {
+	from?: string;
+	to?: string;
+	dateField?: "started_at" | "ended_at";
+	startedFrom?: string;
+	startedTo?: string;
+	endedFrom?: string;
+	endedTo?: string;
+	advancedFilter?: string;
 };
 export interface OpsProjectStageDeadline {
 	key: string;
@@ -177,8 +307,10 @@ export interface OpsProjectPoolMember {
 	wechatName: string;
 	username: string;
 	hireDate?: string; // 入职日期 YYYY-MM-DD,用于新人标识
+	rating?: string; // 人员评级,例如 A/B/C/D
 	status?: string; // active / disabled
 	tags: string[]; // 角色标签名(如 制片/美术)
+	businessScopes?: OpsBusinessUnit[]; // 用户熟悉的内部业务主体/子公司
 }
 export interface OpsProjectPoolOwnerMember extends OpsProjectPoolMember {
 	projectId: string;
@@ -210,6 +342,11 @@ export interface OpsProjectStatusLog {
 	actorAvatar: string; // 操作人微信头像 URL(无则空)
 	commentHtml: string | null;
 	createdAt: string;
+}
+export interface OpsProjectProgressAnalysis {
+	rows: OpsProjectPoolRow[];
+	total: number;
+	logsByProjectId: Record<string, OpsProjectStatusLog[]>;
 }
 export interface OpsProjectStatusSetting {
 	status: string;
@@ -275,9 +412,11 @@ export interface OpsPeopleProgressRow {
 	avatar: string;
 	wechatName: string;
 	hireDate: string;
+	rating?: string;
 	isNewcomer: boolean;
 	disabled: boolean;
 	roles: string[];
+	businessScopes?: OpsBusinessUnit[];
 	unfinished: number;
 	doing: number;
 	queued: number;
@@ -288,9 +427,14 @@ export interface OpsPeopleProgressRow {
 }
 export interface OpsPeopleProgressProject {
 	id: string;
+	projectId?: string;
+	versionId?: string;
+	versionCode?: string;
+	versionName?: string;
 	name: string;
 	tenantName: string;
 	plannerName: string;
+	planners?: { name: string; avatar?: string }[];
 	status: string;
 	stage: string;
 	stageDeadlines: OpsProjectStageDeadline[];
@@ -312,6 +456,11 @@ export interface OpsNotifSettings {
 export const opsApi = {
 	tags: () => requestJson<{ tags: OpsTag[] }>("/api/ops/tags"),
 	tenants: () => requestJson<{ tenants: OpsTenant[] }>("/api/ops/tenants"),
+	tenantScope: () => requestJson<{ scope: OpsTenantScope }>("/api/ops/tenant-scope"),
+	saveTenantScope: (body: { mode: "all" | "include" | "exclude"; tenantIds: string[] }) =>
+		requestJson<{ scope: OpsTenantScope }>("/api/ops/tenant-scope", { method: "PUT", body: JSON.stringify(body) }),
+	businessUnits: () => requestJson<{ units: OpsBusinessUnit[] }>("/api/ops/business-units"),
+	recycleHandoffUsers: () => requestJson<{ users: OpsRecycleHandoffUser[]; settlementDoneStatus?: string }>("/api/ops/recycle-handoff-users"),
 	projects: (tenantId?: string) => requestJson<{ projects: OpsProject[] }>(`/api/ops/projects${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`),
 	segments: () => requestJson<{ segments: OpsSegment[] }>("/api/ops/segments"),
 	createSegment: (name: string) => requestJson<{ segment: OpsSegment }>("/api/ops/segments", { method: "POST", body: JSON.stringify({ name }) }),
@@ -357,8 +506,8 @@ export const opsApi = {
 		const s = qs.toString();
 		return requestJson<{ tickets: OpsTicket[]; total: number; page: number; pageSize: number; counts: Record<string, number> }>(`/api/ops/tickets${s ? `?${s}` : ""}`);
 	},
-	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
-	createTickets: (body: CreateTicketBatchBody) => requestJson<{ tickets: OpsTicket[] }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	createTicket: (body: CreateTicketBody) => requestJson<{ ticket: OpsTicket; projectRow?: OpsProjectPoolRow | null }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
+	createTickets: (body: CreateTicketBatchBody) => requestJson<{ tickets: OpsTicket[]; projectRows?: OpsProjectPoolRow[] }>("/api/ops/tickets", { method: "POST", body: JSON.stringify(body) }),
 	ticket: (id: string) => requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`),
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)
@@ -435,12 +584,13 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
 		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
 		}
 		const s = qs.toString();
-		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
+		return requestProjectPoolJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool${s ? `?${s}` : ""}`);
 	},
 	myProjects: (params: OpsProjectPoolListParams = {}) => {
 		const qs = new URLSearchParams();
@@ -452,12 +602,13 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
 		}
 		const s = qs.toString();
-		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
+		return requestProjectPoolJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/my-projects${s ? `?${s}` : ""}`);
 	},
 	projectPoolMembers: (projectId: string) =>
 		requestJson<{ members: OpsProjectPoolMember[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/members`),
@@ -481,6 +632,7 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -488,11 +640,43 @@ export const opsApi = {
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
 	},
+	projectPoolArchive: (params: OpsArchivedProjectPoolListParams = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.from) qs.set("from", params.from);
+		if (params.to) qs.set("to", params.to);
+		if (params.dateField) qs.set("date_field", params.dateField);
+		if (params.startedFrom) qs.set("started_from", params.startedFrom);
+		if (params.startedTo) qs.set("started_to", params.startedTo);
+		if (params.endedFrom) qs.set("ended_from", params.endedFrom);
+		if (params.endedTo) qs.set("ended_to", params.endedTo);
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.sortBy === "projectStart") qs.set("sort_by", "started_at");
+		if (params.sortBy === "projectEnd") qs.set("sort_by", "ended_at");
+		if (params.sortOrder) qs.set("sort_order", params.sortOrder);
+		const s = qs.toString();
+		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/archive${s ? `?${s}` : ""}`);
+	},
 	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
-	changeProjectStatus: (projectId: string, status: string, commentHtml?: string) =>
+	projectPoolProgressAnalysis: (params: Omit<OpsProjectPoolListParams, "page" | "pageSize" | "sortBy" | "sortOrder"> = {}) => {
+		const qs = new URLSearchParams();
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.stage?.length) qs.set("stage", params.stage.join(","));
+		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		const s = qs.toString();
+		return requestJson<OpsProjectProgressAnalysis>(`/api/ops/project-pool/progress-analysis${s ? `?${s}` : ""}`);
+	},
+	changeProjectStatus: (projectId: string, status: string, commentHtml?: string, options?: { recycleHandoffUsername?: string }) =>
 		requestJson<{ ok: boolean; status: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status`, {
 			method: "POST",
-			body: JSON.stringify({ status, commentHtml }),
+			body: JSON.stringify({ status, commentHtml, recycleHandoffUsername: options?.recycleHandoffUsername }),
 		}),
 	changeProjectStage: (projectId: string, stage: string, commentHtml?: string) =>
 		requestJson<{ ok: boolean; stage: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/stage`, {
@@ -504,23 +688,47 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ stageDeadlines }),
 		}),
-	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string }) =>
+	changeProjectUrgent: (projectId: string, isUrgent: boolean) =>
+		requestJson<{ ok: boolean; isUrgent: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/urgent`, {
+			method: "POST",
+			body: JSON.stringify({ isUrgent }),
+		}),
+	changeProjectPlanner: (projectId: string, toUserId: string, remark = "") =>
+		requestJson<{ ok: boolean; plannerName: string; transferCount: number }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/planner`, {
+			method: "POST",
+			body: JSON.stringify({ toUserId, remark }),
+		}),
+	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string; versionId?: string }) =>
 		requestJson<{ ok: boolean; customerContact: string; requirementDoc: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/meta`, {
 			method: "POST",
 			body: JSON.stringify(body),
 		}),
-	changeProjectRemark: (projectId: string, remark: string) =>
+	changeProjectRemark: (projectId: string, remark: string, field: ProjectRemarkField = "remark") =>
 		requestJson<{ ok: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/remark`, {
 			method: "POST",
-			body: JSON.stringify({ remark }),
+			body: JSON.stringify({ remark, field }),
 		}),
-	projectStatusLogs: (projectId: string) => requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs`),
+	projectStatusLogs: (projectId: string, options: { includeParent?: boolean } = {}) =>
+		requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs${options.includeParent ? "?include_parent=1" : ""}`),
 	projectStatusSettings: () => requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings"),
 	saveProjectStatusSettings: (settings: OpsProjectStatusSetting[]) =>
 		requestJson<{ settings: OpsProjectStatusSetting[] }>("/api/ops/project-status-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
 	projectStageSettings: () => requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings"),
 	saveProjectStageSettings: (settings: OpsProjectStageSetting[]) =>
 		requestJson<{ settings: OpsProjectStageSetting[] }>("/api/ops/project-stage-settings", { method: "PUT", body: JSON.stringify({ settings }) }),
+	collaborationUsers: () => requestJson<{ users: OpsCollaborationUser[] }>("/api/ops/collaboration/users"),
+	ticketCollaborationPermissions: () => requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions?scope=tickets"),
+	saveTicketCollaborationPermissions: (body: { viewerUserId: string; targetUserIds: string[]; permission?: "view" | "handle" }) =>
+		requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions", {
+			method: "PUT",
+			body: JSON.stringify({ ...body, scope: "tickets" }),
+		}),
+	saveMutualTicketCollaborationPermissions: (userIds: string[]) =>
+		requestJson<{ permissions: OpsCollaborationPermission[] }>("/api/ops/collaboration/permissions", {
+			method: "PUT",
+			body: JSON.stringify({ mode: "mutual", userIds, scope: "tickets" }),
+		}),
+	deleteCollaborationPermission: (id: number) => requestJson<{ ok: boolean }>(`/api/ops/collaboration/permissions/${encodeURIComponent(String(id))}`, { method: "DELETE" }),
 	// 通知(站内消息):列表/未读、已读、配置。SSE 流由 EventSource 直连,不走这里。
 	notifications: (status: "unread" | "all" = "all", page = 1, pageSize = 10) =>
 		requestJson<{ items: OpsNotification[]; total: number; unread: number }>(
@@ -532,4 +740,31 @@ export const opsApi = {
 	notifSettings: () => requestJson<OpsNotifSettings>("/api/ops/notification-settings"),
 	saveNotifSettings: (payload: { events: OpsNotifSettingEvent[]; scanIntervalMin: number; notifyStart: string; notifyEnd: string }) =>
 		requestJson<OpsNotifSettings>("/api/ops/notification-settings", { method: "PUT", body: JSON.stringify(payload) }),
+	audioEditSessions: (params: { page?: number; pageSize?: number; q?: string; status?: string; projectStatus?: string; sortBy?: string; sortOrder?: "ascend" | "descend" | "" } = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status) qs.set("status", params.status);
+		if (params.projectStatus) qs.set("projectStatus", params.projectStatus);
+		if (params.sortBy) qs.set("sortBy", params.sortBy);
+		if (params.sortOrder) qs.set("sortOrder", params.sortOrder);
+		const s = qs.toString();
+		return requestJson<{ rows: OpsAudioEditSession[]; total: number; page: number; pageSize: number }>(`/api/ops/audio-edit/sessions${s ? `?${s}` : ""}`);
+	},
+	updateAudioEditPriority: (id: string, priority: number | null) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/priority`, {
+			method: "PATCH",
+			body: JSON.stringify({ priority }),
+		}),
+	updateAudioEditRemark: (id: string, remark: string) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/remark`, {
+			method: "PATCH",
+			body: JSON.stringify({ remark }),
+		}),
+	updateAudioEditStatus: (id: string, status: string, remark: string) =>
+		requestJson<{ session: OpsAudioEditSession }>(`/api/ops/audio-edit/sessions/${encodeURIComponent(id)}/status`, {
+			method: "PATCH",
+			body: JSON.stringify({ status, remark }),
+		}),
 };

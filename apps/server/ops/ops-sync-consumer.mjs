@@ -22,9 +22,9 @@ function userIdCandidates(userId) {
   return id.startsWith("ops-user-") ? [id, id.replace(/^ops-user-/, "")] : [id, `ops-user-${id}`];
 }
 
-function programFirstTicketOwnerId(action) {
-  const match = String(action || "").match(/^program_first_ticket:(\d+)$/);
-  return match ? match[1] : "";
+function programFirstTicketRequest(action) {
+  const match = String(action || "").match(/^program_first_ticket:(\d+)(?::(\d+))?$/);
+  return match ? { ownerId: match[1], versionId: match[2] || "" } : null;
 }
 
 // 用户改名/换头像/管理员/禁用状态 → 同步本地身份 + 刷该用户在所有工单里的 owner/requester 快照
@@ -42,6 +42,7 @@ async function refreshUser(userId) {
       wechat_name: u.wechatName,
       wechat_avatar: u.avatar,
       hire_date: u.hireDate || null,
+      rating: u.rating || "",
       role_key: u.isAdmin ? "admin" : "member",
       disabled_at: u.status === "disabled" ? new Date().toISOString() : null,
     },
@@ -79,19 +80,21 @@ async function refreshProject(projectId) {
 
 async function handleProjectChange(ch, logger) {
   const projectId = String(ch.entity_id);
-  const programOwnerId = programFirstTicketOwnerId(ch.action);
-  if (programOwnerId) {
-    const { project, members } = await getProjectWithMembers(projectId);
+  const programRequest = programFirstTicketRequest(ch.action);
+  if (programRequest) {
+    const projectRef = programRequest.versionId ? `${projectId}::version-${programRequest.versionId}` : projectId;
+    const { project, members } = await getProjectWithMembers(projectRef);
     if (!project) return;
     const result = await autoCreateProgramFirstTicket({
       requesterUserId: String(ch.requester_user_id || ""),
       project,
       members,
       projectId,
-      ownerUserId: programOwnerId,
+      versionId: programRequest.versionId,
+      ownerUserId: programRequest.ownerId,
       eventNote: "项目分配程序后自动生成",
     });
-    logger?.info?.("[ops-outbox] auto create program ticket", { projectId, requesterUserId: ch.requester_user_id, ...result });
+    logger?.info?.("[ops-outbox] auto create program ticket", { projectId, versionId: programRequest.versionId, requesterUserId: ch.requester_user_id, ...result });
     await refreshProjectPoolSnapshot(projectId);
     return;
   }

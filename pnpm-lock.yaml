@@ -11,6 +11,9 @@ importers:
       ali-oss:
         specifier: ^6.23.0
         version: 6.23.0
+      prisma:
+        specifier: ^6.19.3
+        version: 6.19.3(typescript@5.9.3)
 
   apps/server:
     dependencies:

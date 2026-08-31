@@ -1,0 +1,267 @@
+.audio-edit-page {
+	padding: 0;
+}
+
+.audio-edit-card,
+.audio-edit-card > .ant-card-body {
+	min-height: 0;
+}
+
+.audio-edit-page-header {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: 12px;
+	margin-bottom: 10px;
+}
+
+.audio-edit-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 10px;
+	flex-wrap: wrap;
+	min-width: 0;
+}
+
+.audio-edit-table {
+	flex: 1;
+	min-height: 0;
+}
+
+.audio-edit-table .ant-table-pagination {
+	position: sticky;
+	bottom: 0;
+	z-index: 5;
+	margin: 0;
+	padding: 10px 0 0;
+	background: #ffffff;
+}
+
+.audio-priority-input {
+	width: 64px;
+}
+
+.audio-priority-display {
+	min-width: 40px;
+	height: 28px;
+	padding: 0 8px;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	background: transparent;
+	color: #0f172a;
+	font-weight: 600;
+	text-align: center;
+	cursor: pointer;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 5px;
+}
+
+.audio-priority-display:hover {
+	border-color: #cbd5e1;
+	background: #f8fafc;
+}
+
+.audio-priority-display:disabled {
+	cursor: not-allowed;
+	opacity: 0.65;
+}
+
+.audio-priority-edit-icon {
+	color: #94a3b8;
+	font-size: 12px;
+}
+
+.audio-priority-display:hover .audio-priority-edit-icon {
+	color: #0f766e;
+}
+
+.audio-project-cell {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.audio-project-index {
+	flex: 0 0 22px;
+	color: #2563eb;
+	font-weight: 600;
+	text-align: right;
+}
+
+.audio-edit-table .ant-table-column-sorter-up.active,
+.audio-edit-table .ant-table-column-sorter-down.active {
+	color: #dc2626;
+}
+
+.audio-project-status-filter-menu {
+	width: 150px;
+	padding: 6px;
+}
+
+.audio-project-status-filter-option {
+	width: 100%;
+	height: 30px;
+	border: 0;
+	border-radius: 4px;
+	background: transparent;
+	color: #334155;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 0 8px;
+	text-align: left;
+	cursor: pointer;
+}
+
+.audio-project-status-filter-option:hover {
+	background: #f8fafc;
+}
+
+.audio-project-status-filter-option .ant-checkbox-wrapper,
+.audio-project-status-filter-option .ant-checkbox {
+	pointer-events: none;
+}
+
+.audio-priority-input .ant-input-number-input {
+	text-align: center;
+	font-weight: 600;
+}
+
+.audio-status-tag {
+	border: 0;
+	border-radius: 999px;
+	padding: 2px 10px;
+	font-weight: 600;
+	line-height: 20px;
+	color: #ffffff;
+}
+
+.audio-status-tag-done {
+	background: #047857;
+}
+
+.audio-status-tag-pending {
+	background: #fef3c7;
+	color: #b45309;
+}
+
+.audio-status-tag-default {
+	background: #475569;
+}
+
+.audio-status-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+}
+
+.audio-status-button:disabled {
+	cursor: not-allowed;
+	opacity: 0.65;
+}
+
+.audio-status-button .audio-status-tag {
+	margin-inline-end: 0;
+}
+
+.audio-status-edit-icon {
+	color: #94a3b8;
+	font-size: 12px;
+	opacity: 0;
+	transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.audio-status-button:hover .audio-status-edit-icon,
+.audio-edit-table .ant-table-row:hover .audio-status-edit-icon {
+	opacity: 1;
+	color: #0f766e;
+}
+
+.audio-status-current {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: #64748b;
+}
+
+.audio-remark-cell {
+	position: relative;
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	min-height: 22px;
+	cursor: pointer;
+}
+
+.audio-remark-cell:hover {
+	color: #0f766e;
+}
+
+.audio-remark-edit {
+	flex: 0 0 auto;
+	margin-top: 2px;
+	color: #0f766e;
+	font-size: 13px;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.audio-remark-cell:hover .audio-remark-edit,
+.audio-edit-table .ant-table-row:hover .audio-remark-edit {
+	opacity: 1;
+}
+
+.audio-remark-count {
+	margin-top: 6px;
+	text-align: right;
+	color: #64748b;
+	font-size: 12px;
+}
+
+.audio-remark-count-error {
+	color: #dc2626;
+}
+
+.audio-remark-history {
+	margin-top: 12px;
+	padding: 10px 12px;
+	border: 1px solid #e2e8f0;
+	border-radius: 6px;
+	background: #f8fafc;
+}
+
+.audio-remark-history-title {
+	margin-bottom: 6px;
+	color: #475569;
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.audio-remark-history-content {
+	max-height: 120px;
+	overflow: auto;
+	white-space: pre-wrap;
+	color: #334155;
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+@media (max-width: 760px) {
+	.audio-edit-page-header {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+
+	.audio-edit-toolbar {
+		justify-content: flex-start;
+		width: 100%;
+	}
+}

@@ -1,46 +1,53 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
-import { Button, Avatar, Checkbox, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Avatar, Dropdown, Input, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined } from "@ant-design/icons";
-import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment } from "@/api/modules/ops";
+import { DownOutlined, EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
+import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment, ProjectRemarkField } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
+import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
-import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, projectStartDate, stageRangeLabel } from "../deadlineUtils";
+import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, nextStageDeadline, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 import { NO_SEGMENT_FILTER_VALUE, UNSET_STAGE_FILTER_VALUE } from "../utils/filterProjectPoolRows";
+import type { ProjectPoolColumnLabels } from "./useProjectPoolPreferences";
+
+type DeadlineSortMode = "date" | "overdue";
 
 export type ProjectPoolColumnActions = {
 	openChange: (row: OpsProjectPoolRow, field: "status" | "stage") => void;
 	openMeta: (row: OpsProjectPoolRow) => void;
 	openDeadlineEdit: (row: OpsProjectPoolRow) => void;
-	openRemark: (row: OpsProjectPoolRow) => void;
+	openRemark: (row: OpsProjectPoolRow, field?: ProjectRemarkField) => void;
 	openSegTickets: (row: OpsProjectPoolRow, segment: { id: number; name: string }) => void;
 	openMembers: (row: OpsProjectPoolRow) => void;
 	openCreateTicket?: (row: OpsProjectPoolRow) => void;
+	transferPlanner?: (row: OpsProjectPoolRow, planner: { id: string; name: string }) => void;
 };
 
 export type ProjectPoolColumnFilters = {
 	statusFilter: string[];
 	stageFilter: string[];
 	plannerFilter: string[];
-	plannerOptions: { name: string; avatar?: string }[];
+	plannerOptions: { id?: string; userId?: string; username?: string; name: string; avatar?: string; status?: string }[];
 	segmentFilter: number[];
 	segmentOptions: OpsSegment[];
 	advancedFilter: AdvancedFilterValue;
+	remarkFilter: AdvancedFilterValue;
 	onStatusFilterChange: (value: string[]) => void;
 	onStageFilterChange: (value: string[]) => void;
 	onPlannerFilterChange: (value: string[]) => void;
 	onSegmentFilterChange: (value: number[]) => void;
 	onAdvancedFilterChange: (value: AdvancedFilterValue) => void;
+	onRemarkFilterChange: (value: AdvancedFilterValue) => void;
 };
 
 const headerTip = (text: string, tip: string) => (
-	<span>
-		{text}{" "}
+	<span style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: "100%", minWidth: 0, overflow: "hidden", whiteSpace: "nowrap" }}>
+		<span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
 		<Tooltip title={<span style={{ whiteSpace: "pre-line" }}>{tip}</span>}>
-			<QuestionCircleOutlined style={{ color: "#94a3b8", cursor: "help" }} />
+			<QuestionCircleOutlined style={{ flexShrink: 0, color: "#94a3b8", cursor: "help" }} />
 		</Tooltip>
 	</span>
 );
@@ -63,12 +70,76 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
 	);
 };
 
-const filterIcon = (active: boolean) => <FilterFilled style={{ color: active ? "#1677ff" : "#94a3b8" }} />;
+const filterIcon = (active: boolean, activeColor = "#dc2626") => <FilterFilled style={{ color: active ? activeColor : "#94a3b8" }} />;
+
+function advancedFieldFilterValue(value: AdvancedFilterValue, field: string) {
+	const rule = (value.rules || []).find((item) => item.field === field && item.operator === "contains");
+	return rule?.value || "";
+}
+
+function withAdvancedContainsFilter(value: AdvancedFilterValue, field: string, keyword: string): AdvancedFilterValue {
+	const trimmed = keyword.trim();
+	const rules = (value.rules || []).filter((rule) => !(rule.field === field && rule.operator === "contains"));
+	if (!trimmed) return { ...value, rules };
+	return {
+		match: "all",
+		rules: [
+			...rules,
+			{
+				id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+				field,
+				operator: "contains",
+				value: trimmed,
+			},
+		],
+	};
+}
+
+function remarkPreview(value: string) {
+	return (value || "")
+		.replace(/<[^>]+>/g, " ")
+		.replace(/&nbsp;/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+const urgentCornerMark = (
+	<Tooltip title="加急版本">
+		<span
+			style={{
+				position: "absolute",
+				left: 0,
+				top: 0,
+				width: 18,
+				height: 18,
+				clipPath: "polygon(0 0, 100% 0, 0 100%)",
+				background: "#ef4444",
+				boxShadow: "0 1px 2px rgba(239, 68, 68, 0.24)",
+				pointerEvents: "auto",
+			}}>
+			<ThunderboltFilled
+				style={{
+					position: "absolute",
+					left: 1,
+					top: 1,
+					color: "#fff",
+					fontSize: 9,
+					transform: "rotate(-12deg)",
+				}}
+			/>
+		</span>
+	</Tooltip>
+);
 
 const dateSortValue = (date?: string | null) => {
 	if (!date) return Number.POSITIVE_INFINITY;
 	const time = new Date(date).getTime();
 	return Number.isFinite(time) ? time : Number.POSITIVE_INFINITY;
+};
+
+const nextDeadlineDateSortValue = (row: OpsProjectPoolRow) => {
+	const next = nextStageDeadline(row.stage, Array.isArray(row.stageDeadlines) ? row.stageDeadlines : []);
+	return dateSortValue(next?.date);
 };
 
 function EditableTextCell({
@@ -81,7 +152,7 @@ function EditableTextCell({
 	value?: string;
 	placeholder?: string;
 	readonly?: boolean;
-	width?: number;
+	width?: number | string;
 	onEdit: () => void;
 }) {
 	const text = String(value || "").trim();
@@ -135,45 +206,84 @@ const editableCellStyles = (
 			.project-pool-editable-cell.is-empty {
 				color: #94a3b8;
 			}
+			.project-pool-planner-transfer-list {
+				scrollbar-width: thin;
+				scrollbar-color: #cbd5e1 transparent;
+			}
+			.project-pool-planner-transfer-list::-webkit-scrollbar {
+				width: 4px;
+			}
+			.project-pool-planner-transfer-list::-webkit-scrollbar-thumb {
+				background: #cbd5e1;
+				border-radius: 999px;
+			}
 		`}
 	</style>
 );
 
-function HeaderMultiDropdown<T extends string | number>({
-	value,
+function PlannerTransferPopover({
+	content,
 	options,
-	onApply,
-	close,
+	onTransfer,
 }: {
-	value: T[];
-	options: { label: ReactNode; value: T }[];
-	onApply: (value: T[]) => void;
-	close: () => void;
+	content: ReactNode;
+	options: { id: string; name: string; avatar?: string }[];
+	onTransfer: (planner: { id: string; name: string }) => void;
 }) {
-	const [draft, setDraft] = useState<T[]>(value);
-	useEffect(() => setDraft(value), [value]);
-	const apply = (nextValue: T[]) => {
-		onApply(nextValue);
-		close();
-	};
+	const [open, setOpen] = useState(false);
 	return (
-		<div style={{ minWidth: 180, maxWidth: 240, padding: 10 }} onClick={(e) => e.stopPropagation()}>
-			<Checkbox.Group value={draft} onChange={(nextValue) => setDraft(nextValue as T[])} style={{ display: "grid", gap: 8 }}>
-				{options.map((option) => (
-					<Checkbox key={String(option.value)} value={option.value}>
-						{option.label}
-					</Checkbox>
-				))}
-			</Checkbox.Group>
-			<div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 10 }}>
-				<Button size="small" type="text" disabled={!draft.length && !value.length} onClick={() => apply([])}>
-					清空
-				</Button>
-				<Button size="small" type="primary" onClick={() => apply(draft)}>
-					确定
-				</Button>
-			</div>
-		</div>
+		<Popover
+			open={open}
+			trigger="click"
+			placement="bottomLeft"
+			onOpenChange={setOpen}
+			content={
+				<div className="project-pool-planner-transfer-list" style={{ width: 152, maxHeight: 320, overflowY: "auto", padding: 3 }} onClick={(e) => e.stopPropagation()}>
+					{options.map((planner) => (
+						<button
+							key={planner.id}
+							type="button"
+							style={{
+								width: "100%",
+								display: "flex",
+								alignItems: "center",
+								gap: 7,
+								border: 0,
+								background: "transparent",
+								padding: "7px 8px",
+								borderRadius: 6,
+								cursor: "pointer",
+								textAlign: "left",
+							}}
+							onMouseEnter={(e) => {
+								e.currentTarget.style.background = "#f1f5f9";
+							}}
+							onMouseLeave={(e) => {
+								e.currentTarget.style.background = "transparent";
+							}}
+							onClick={(e) => {
+								e.stopPropagation();
+								setOpen(false);
+								onTransfer({ id: planner.id, name: planner.name });
+							}}>
+							<Avatar size={22} src={planner.avatar || undefined} style={{ background: "#e2e8f0", color: "#475569", fontSize: 10, flexShrink: 0 }}>
+								{planner.name.slice(0, 1)}
+							</Avatar>
+							<span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#0f172a", fontSize: 13 }}>
+								{planner.name}
+							</span>
+						</button>
+					))}
+				</div>
+			}>
+			<button
+				type="button"
+				style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer", maxWidth: 132, textAlign: "left" }}
+				title="点击转交策划"
+				onClick={(e) => e.stopPropagation()}>
+				{content}
+			</button>
+		</Popover>
 	);
 }
 
@@ -181,8 +291,9 @@ export function useProjectPoolColumns(
 	actions: ProjectPoolColumnActions,
 	rowNumberOffset = 0,
 	filters?: ProjectPoolColumnFilters,
-	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder } = {},
+	options: { readonly?: boolean; serverSort?: boolean; sortBy?: OpsProjectPoolSortBy; sortOrder?: SortOrder; isAdmin?: boolean; deadlineSortMode?: DeadlineSortMode; onDeadlineSortModeChange?: (mode: DeadlineSortMode) => void; columnLabels?: ProjectPoolColumnLabels } = {},
 ): ColumnsType<OpsProjectPoolRow> {
+	const statusFilterOptions = PROJECT_STATUSES.filter((status) => status !== "结算完成").map((status) => ({ label: status, value: status }));
 	const plannerFilterOptions = (filters?.plannerOptions || []).map((planner) => ({
 		value: planner.name,
 		searchText: planner.name,
@@ -199,42 +310,190 @@ export function useProjectPoolColumns(
 		? [
 				{ key: "name", label: "项目名称" },
 				{ key: "tenantName", label: "客户" },
+				{ key: "versionCode", label: "版本标识" },
+				{ key: "versionName", label: "版本名称" },
 			]
 		: [];
 
 	const advancedFilterActive = filters ? compactAdvancedFilter(filters.advancedFilter).rules.length > 0 : false;
+	const remarkLabel = (field: ProjectRemarkField, fallback: string) => options.columnLabels?.[field] || fallback;
+	// 下版交付时间列支持两种排序口径:按日期本身,或按逾期天数。
+	const deadlineSortMode = options.deadlineSortMode === "overdue" ? "overdue" : "date";
+	const deadlineSortBy: OpsProjectPoolSortBy = deadlineSortMode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
+	const deadlineSortActive = options.sortBy === deadlineSortBy && !!options.sortOrder;
+	const deadlineSorter = deadlineSortMode === "overdue" ? (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDiffDays(b) - nextDeadlineDiffDays(a) : (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDateSortValue(a) - nextDeadlineDateSortValue(b);
+	const deadlineTitle = (
+		<div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0, gap: 6, overflow: "hidden", whiteSpace: "nowrap" }}>
+			{headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。")}
+			<Dropdown
+				trigger={["click"]}
+				menu={{
+					selectedKeys: [deadlineSortMode],
+					items: [
+						{ key: "date", label: "下版时间" },
+						{ key: "overdue", label: "逾期时间" },
+					],
+					onClick: ({ key, domEvent }) => {
+						domEvent.stopPropagation();
+						options.onDeadlineSortModeChange?.(key === "overdue" ? "overdue" : "date");
+					},
+				}}>
+				<Button
+					type="text"
+					size="small"
+					onClick={(e) => e.stopPropagation()}
+					style={{ height: 22, marginLeft: "auto", paddingInline: 4, fontSize: 12, flexShrink: 0 }}>
+						<span
+							className="project-pool-deadline-sort-text"
+							style={{
+								// 分组表的排序状态在 GroupedProjectPoolView 内维护,所以用 CSS 变量兜住文字颜色。
+								color: deadlineSortActive ? "#dc2626" : "var(--project-pool-deadline-sort-color, #64748b)",
+								fontWeight: deadlineSortActive ? 600 : "var(--project-pool-deadline-sort-weight, 400)",
+							}}>
+							{deadlineSortMode === "overdue" ? "逾期时间" : "下版时间"}
+						</span>{" "}
+						<DownOutlined
+							className="project-pool-deadline-sort-icon"
+							style={{
+								// 和文字共用同一套颜色变量,确保下拉箭头也跟随排序态。
+								color: deadlineSortActive ? "#dc2626" : "var(--project-pool-deadline-sort-color, #64748b)",
+								fontSize: 10,
+							}}
+						/>
+				</Button>
+			</Dropdown>
+		</div>
+	);
+	const remarkColumn = (field: ProjectRemarkField, label: string) => ({
+		title: label,
+		key: field,
+		width: 180,
+		filterDropdown: filters
+			? ({ close }: { close: () => void }) => {
+					let keyword = advancedFieldFilterValue(filters.remarkFilter, field);
+					return (
+						<div style={{ width: 220, padding: 10 }} onClick={(event) => event.stopPropagation()}>
+							<Input
+								allowClear
+								autoFocus
+								defaultValue={keyword}
+								placeholder={`搜索${label}`}
+								onChange={(event) => {
+									keyword = event.target.value;
+								}}
+								onPressEnter={() => {
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, keyword));
+									close();
+								}}
+							/>
+							<div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 8 }}>
+								<Button
+									size="small"
+									onClick={() => {
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, ""));
+										close();
+									}}
+								>
+									清空
+								</Button>
+								<Button
+									type="primary"
+									size="small"
+									onClick={() => {
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, keyword));
+										close();
+									}}
+								>
+									搜索
+								</Button>
+							</div>
+						</div>
+					);
+				}
+			: undefined,
+		filterIcon: filters ? () => filterIcon(!!advancedFieldFilterValue(filters.remarkFilter, field), "#dc2626") : undefined,
+		render: (_: unknown, row: OpsProjectPoolRow) => {
+			const value = row[field] || "";
+			const text = remarkPreview(value);
+			const preview = text || (value ? "[图文备注]" : "");
+			return (
+				<>
+					{editableCellStyles}
+					<EditableTextCell
+						value={preview}
+						placeholder="—"
+						readonly={options.readonly}
+						width="100%"
+						onEdit={() => actions.openRemark(row, field)}
+					/>
+				</>
+			);
+		},
+	});
 	return [
 		{
 			title: "项目名称",
 			key: "name",
 			width: 270,
 			fixed: "left",
-			filterDropdown: filters ? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} /> : undefined,
+			filterDropdown: filters
+				? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} />
+				: undefined,
 			filterDropdownProps: filters ? { align: { offset: [240, 0] } } : undefined,
-			filterIcon: filters ? () => <FilterFilled style={{ color: advancedFilterActive ? "#1677ff" : "#94a3b8" }} /> : undefined,
-			render: (_: unknown, row, index) => (
-				<div style={{ display: "flex", alignItems: "center", gap: 9, minWidth: 0, height: "100%" }}>
-					<span style={{ width: 24, flexShrink: 0, textAlign: "right", color: "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
-						{rowNumberOffset + index + 1}
-					</span>
-					<div style={{ minWidth: 0, fontWeight: 600, fontSize: 14, color: "#0f172a", lineHeight: 1.35, wordBreak: "break-all", flex: 1 }}>
-						{row.name || "—"}
-						<span style={{ color: "#64748b", fontSize: 13, fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
-					</div>
-					{!options.readonly && actions.openCreateTicket ? (
-						<Button
-							type="link"
-							size="small"
-							style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
-							onClick={(e) => {
-								e.stopPropagation();
-								actions.openCreateTicket?.(row);
+			filterIcon: filters ? () => filterIcon(advancedFilterActive) : undefined,
+			render: (_: unknown, row, index) => {
+				const isParent = !!row.hasVersionChildren;
+				const isVersion = !!row.isVersionRow;
+				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
+				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
+				const showUrgentMark = row.isUrgent && !isParent;
+				return (
+					<div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
+						{showUrgentMark ? urgentCornerMark : null}
+						<span
+							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+							{isVersion ? "" : rowNumberOffset + index + 1}
+						</span>
+						<div
+							style={{
+								position: "relative",
+								minWidth: 0,
+								fontWeight: 600,
+								fontSize: 14,
+								color: "#0f172a",
+								lineHeight: 1.35,
+								wordBreak: "break-all",
+								flex: 1,
 							}}>
-							+ 提单
-						</Button>
-					) : null}
-				</div>
-			),
+							{isVersion ? (
+								<span>{versionText}</span>
+							) : (
+								<>
+									{row.name || "—"}
+									<span style={{ color: "#64748b", fontSize: 13, fontWeight: 400 }}> - {row.tenantName || "未填客户"}</span>
+									{isParent ? (
+										<Tag color="blue" style={{ marginInlineStart: 8, fontWeight: 500 }}>
+											多版本
+										</Tag>
+									) : null}
+								</>
+							)}
+						</div>
+						{canCreateTicket ? (
+							<Button
+								type="link"
+								size="small"
+								style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
+								onClick={(e) => {
+									e.stopPropagation();
+									actions.openCreateTicket?.(row);
+								}}>
+								+ 提单
+							</Button>
+						) : null}
+					</div>
+				);
+			},
 		},
 		{
 			title: "客户对接人",
@@ -245,7 +504,12 @@ export function useProjectPoolColumns(
 					{editableCellStyles}
 					<EditableTextCell value={row.customerContact} readonly={options.readonly} width={row.requirementDoc ? 82 : 132} onEdit={() => actions.openMeta(row)} />
 					{row.requirementDoc ? (
-						<a href={row.requirementDoc} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1677ff", fontSize: 13 }} onClick={(e) => e.stopPropagation()}>
+						<a
+							href={row.requirementDoc}
+							target="_blank"
+							rel="noreferrer"
+							style={{ display: "inline-flex", alignItems: "center", gap: 3, flexShrink: 0, color: "#1677ff", fontSize: 13 }}
+							onClick={(e) => e.stopPropagation()}>
 							<span style={{ color: "#cbd5e1" }}>·</span>
 							<FileTextOutlined style={{ fontSize: 13 }} />
 							文档
@@ -259,20 +523,13 @@ export function useProjectPoolColumns(
 			key: "planner",
 			width: 150,
 			filterDropdown: filters
-				? ({ close }) => (
-						<HeaderMultiDropdown
-							value={filters.plannerFilter || []}
-							options={plannerFilterOptions}
-							onApply={filters.onPlannerFilterChange}
-							close={close}
-						/>
-					)
+				? ({ close }) => <HeaderMultiSelectDropdown value={filters.plannerFilter || []} options={plannerFilterOptions} onApply={filters.onPlannerFilterChange} close={close} defaultAll />
 				: undefined,
-			filterIcon: filters ? () => filterIcon((filters.plannerFilter || []).length > 0) : undefined,
+			filterIcon: filters ? () => filterIcon((filters.plannerFilter || []).length > 0, "#dc2626") : undefined,
 			render: (_: unknown, row) => {
 				if (!row.plannerName) return <Typography.Text type="secondary">未指定</Typography.Text>;
 				const avatars = (row.planners || []).filter((planner) => planner.avatar);
-				return (
+				const content = (
 					<Space size={6}>
 						{avatars.length ? (
 							<Avatar.Group size={24}>
@@ -286,15 +543,29 @@ export function useProjectPoolColumns(
 						<span style={{ color: "#334155" }}>{row.plannerName}</span>
 					</Space>
 				);
+				const currentNames = new Set(String(row.plannerName || "").split(/[、,，/]/).map((name) => name.trim()).filter(Boolean));
+				const transferOptions = (filters?.plannerOptions || [])
+					.map((planner) => ({ ...planner, id: String(planner.id || planner.userId || "") }))
+					.filter((planner) => planner.id && planner.status !== "disabled" && !currentNames.has(planner.name));
+				if (options.readonly || !actions.transferPlanner || !transferOptions.length) return content;
+				return (
+					<PlannerTransferPopover
+						content={content}
+						options={transferOptions}
+						onTransfer={(planner) => {
+							actions.transferPlanner?.(row, planner);
+						}}
+					/>
+				);
 			},
 		},
 		{
-			title: headerTip("当前阶段", "项目当前所处的制作阶段。可任意调整,变更会记入流转。"),
+			title: "当前阶段",
 			key: "stage",
 			width: 230,
 			filterDropdown: filters
 				? ({ close }) => (
-						<HeaderMultiDropdown
+						<HeaderMultiSelectDropdown
 							value={filters.stageFilter}
 							options={[{ label: "未设置", value: UNSET_STAGE_FILTER_VALUE }, ...PROJECT_STAGES.map((stage) => ({ label: stageRangeLabel(stage), value: stage }))]}
 							onApply={filters.onStageFilterChange}
@@ -304,9 +575,10 @@ export function useProjectPoolColumns(
 				: undefined,
 			filterIcon: filters ? () => filterIcon(filters.stageFilter.length > 0) : undefined,
 			render: (_: unknown, row) => (
-				<Tag
-					style={{
+					<Tag
+						style={{
 						display: "inline-block",
+						maxWidth: "100%",
 						background: "#f0f5ff",
 						color: "#1d39c4",
 						padding: "2px 10px",
@@ -315,6 +587,8 @@ export function useProjectPoolColumns(
 						border: "none",
 						margin: 0,
 						whiteSpace: "nowrap",
+						overflow: "hidden",
+						textOverflow: "ellipsis",
 						cursor: options.readonly ? "default" : "pointer",
 					}}
 					title={stageRangeLabel(row.stage)}
@@ -327,11 +601,11 @@ export function useProjectPoolColumns(
 			),
 		},
 		{
-			title: headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。"),
+			title: deadlineTitle,
 			key: "stageDeadlines",
 			width: 290,
-			sorter: options.serverSort ? true : (a, b) => nextDeadlineDiffDays(a) - nextDeadlineDiffDays(b),
-			sortOrder: options.sortBy === "nextDeadline" ? options.sortOrder : null,
+			sorter: options.serverSort ? true : deadlineSorter,
+			sortOrder: options.sortBy === deadlineSortBy ? options.sortOrder : null,
 			render: (_: unknown, row) => <StageDeadlineCell row={row} onEdit={actions.openDeadlineEdit} />,
 		},
 		{
@@ -363,15 +637,16 @@ export function useProjectPoolColumns(
 			width: 132,
 			filterDropdown: filters
 				? ({ close }) => (
-						<HeaderMultiDropdown
+						<HeaderMultiSelectDropdown
 							value={filters.statusFilter}
-							options={PROJECT_STATUSES.map((status) => ({ label: status, value: status }))}
+							options={statusFilterOptions}
 							onApply={filters.onStatusFilterChange}
 							close={close}
+							defaultAll
 						/>
 					)
 				: undefined,
-			filterIcon: filters ? () => filterIcon(filters.statusFilter.length > 0) : undefined,
+			filterIcon: filters ? () => filterIcon(filters.statusFilter.length > 0, "#dc2626") : undefined,
 			render: (_: unknown, row) => (
 				<Space size={6}>
 					<Tag
@@ -386,53 +661,24 @@ export function useProjectPoolColumns(
 				</Space>
 			),
 		},
-		{
-			title: headerTip("备注", "项目备注(可富文本、附图)。修改会记入流转记录,可在流转记录里按「备注」筛选查看修改历史。"),
-			key: "remark",
-			width: 180,
-			render: (_: unknown, row) => {
-				const text = (row.remark || "")
-					.replace(/<[^>]+>/g, " ")
-					.replace(/&nbsp;/g, " ")
-					.replace(/\s+/g, " ")
-					.trim();
-				const preview = text || (row.remark ? "[图文备注]" : "");
-				return (
-					<div style={{ display: "flex", alignItems: "center", gap: 4, width: 160, minWidth: 0 }}>
-						{preview ? (
-							<span style={{ fontSize: 13, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{preview}</span>
-						) : (
-							<Typography.Text type="secondary">—</Typography.Text>
-						)}
-						{options.readonly ? null : (
-							<Tooltip title="修改备注">
-								<Button
-									type="text"
-									size="small"
-									icon={<EditOutlined style={{ fontSize: 15 }} />}
-									style={{ color: "#0f766e" }}
-									onClick={(e) => {
-										e.stopPropagation();
-										actions.openRemark(row);
-									}}
-								/>
-							</Tooltip>
-						)}
-					</div>
-				);
-			},
-		},
+		remarkColumn("remark", remarkLabel("remark", "策划备注")),
+		remarkColumn("remark2", remarkLabel("remark2", "备注2")),
+		remarkColumn("remark3", remarkLabel("remark3", "备注3")),
+		remarkColumn("remark4", remarkLabel("remark4", "备注4")),
+		remarkColumn("remark5", remarkLabel("remark5", "备注5")),
+		remarkColumn("remark6", remarkLabel("remark6", "备注6")),
 		{
 			title: headerTip("目前环节", "该项目未完成工单涉及的环节,及每个环节的未完成工单数。点击环节查看该环节下所有人的未完成工单。"),
 			key: "segments",
 			width: 170,
 			filterDropdown: filters
 				? ({ close }) => (
-						<HeaderMultiDropdown
+						<HeaderMultiSelectDropdown
 							value={filters.segmentFilter}
 							options={[{ label: "无环节", value: NO_SEGMENT_FILTER_VALUE }, ...filters.segmentOptions.map((segment) => ({ label: segment.name, value: segment.id }))]}
 							onApply={filters.onSegmentFilterChange}
 							close={close}
+							defaultAll
 						/>
 					)
 				: undefined,
@@ -462,6 +708,7 @@ export function useProjectPoolColumns(
 		},
 		{
 			title: "人员列表",
+			key: "memberCount",
 			dataIndex: "memberCount",
 			width: 76,
 			align: "center",

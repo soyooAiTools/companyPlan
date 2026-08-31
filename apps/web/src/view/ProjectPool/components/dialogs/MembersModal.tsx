@@ -137,6 +137,15 @@ export default function MembersModal({ open, project, members, loading, onCreate
                       ))}
                     </Space>
                     {m.wechatName ? <div className="ops-project-member-wechat">微信:{m.wechatName}</div> : null}
+                    {m.businessScopes?.length ? (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                        {m.businessScopes.map((scope) => (
+                          <Tag key={scope.id} style={{ marginInlineEnd: 0, border: "none", background: "#dcfce7", color: "#047857", fontSize: 12 }}>
+                            业务:{scope.name}
+                          </Tag>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                   {onCreateTicket && m.status !== "disabled" ? (
                     <Button

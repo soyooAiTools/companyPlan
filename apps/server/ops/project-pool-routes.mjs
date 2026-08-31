@@ -1,6 +1,6 @@
 // 项目池路由:只注册 + 调 service(分层)。挂 /api/ops/*。可见=策划(制片)或管理员。
 import * as pool from "./services/ops-project-pool.mjs";
-import { isAdmin, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
+import { isAdmin, isPlanner, meId, soyooErrorResponse } from "./ops-helpers.mjs";
 
 const PROJECT_POOL_MAX_PAGE_SIZE = 500;
 
@@ -33,6 +33,11 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
+          startedFrom: String(req.query.started_from ?? ""),
+          startedTo: String(req.query.started_to ?? ""),
+          endedFrom: String(req.query.ended_from ?? ""),
+          endedTo: String(req.query.ended_to ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -56,6 +61,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""), // 策划多选(逗号分隔)
           segment: String(req.query.segment ?? ""), // 环节多选(逗号分隔):只看包含这些未完成环节工单的项目
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -79,8 +85,33 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
+        }),
+      );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 历史项目:只转发到 soyoo helper 做项目基础数据分页/筛选，不读 ops 快照或工单聚合。
+  app.get("/api/ops/project-pool/archive", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json(
+        await pool.listArchivedProjectPool({
+          user: req.user,
+          page: Number(req.query.page) || 1,
+          pageSize: projectPoolPageSize(req.query.pageSize),
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          planner: String(req.query.planner ?? ""),
+          from: String(req.query.from ?? ""),
+          to: String(req.query.to ?? ""),
+          dateField: String(req.query.date_field ?? ""),
+          sortBy: String(req.query.sort_by ?? ""),
+          sortOrder: String(req.query.sort_order ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
         }),
       );
     } catch (e) {
@@ -97,10 +128,47 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 进度分析:一次返回可见项目/版本和对应状态/阶段流转记录,避免前端逐项目请求。
+  app.get("/api/ops/project-pool/progress-analysis", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json(
+        await pool.progressAnalysis({
+          user: req.user,
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          stage: String(req.query.stage ?? ""),
+          planner: String(req.query.planner ?? ""),
+          segment: String(req.query.segment ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
+        }),
+      );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 按负责人查看:按项目成员标签批量取负责人,避免前端逐项目请求成员
   app.post("/api/ops/project-pool/owner-members", requireAuth, requirePlanner, async (req, res) => {
     try {
       res.json(await pool.listOwnerMembersByTags({ projectIds: req.body?.projectIds, tagNames: req.body?.tagNames }));
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 业务范围筛选项：取完整配置，不依赖当前页/当前负责人分组里实际出现的范围
+  app.get("/api/ops/business-units", requireAuth, requirePlanner, async (_req, res) => {
+    try {
+      res.json({ units: await pool.listBusinessUnits() });
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 回收项目配置：交接账号从环境变量读取，展示信息从 soyoo 用户数据补齐。
+  app.get("/api/ops/recycle-handoff-users", requireAuth, requirePlanner, async (_req, res) => {
+    try {
+      res.json({ ...pool.projectPoolRuntimeOptions(), users: await pool.listRecycleHandoffUsers() });
     } catch (e) {
       soyooErrorResponse(res, e);
     }
@@ -118,6 +186,16 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.get("/api/ops/project-pool/snapshot-stats", requireAuth, requireAdmin, async (_req, res) => {
     try {
       res.json(await pool.projectPoolSnapshotStats());
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 手动刷新单个项目快照(管理员):用于测试/修复单个项目状态变化,避免全量重建。
+  app.post("/api/ops/project-pool/:id/refresh-snapshot", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const row = await pool.refreshProjectPoolSnapshot(req.params.id);
+      res.json({ ok: true, refreshed: !!row });
     } catch (e) {
       soyooErrorResponse(res, e);
     }
@@ -152,7 +230,14 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/status", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectStatus({ user: req.user, projectId: req.params.id, status: String(req.body?.status ?? ""), commentHtml: req.body?.commentHtml, force: req.body?.force === true });
+      r = await pool.changeProjectStatus({
+        user: req.user,
+        projectId: req.params.id,
+        status: String(req.body?.status ?? ""),
+        commentHtml: req.body?.commentHtml,
+        force: req.body?.force === true,
+        recycleHandoffUsername: req.body?.recycleHandoffUsername,
+      });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }
@@ -184,11 +269,41 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     res.json(r);
   });
 
+  // 改项目版本加急标记(管理员;写回 soyoo project_versions,再刷新快照)
+  app.post("/api/ops/project-pool/:id/urgent", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const isUrgent = req.body?.isUrgent === true || req.body?.is_urgent === true;
+      const r = await pool.changeProjectUrgent({ user: req.user, projectId: req.params.id, isUrgent });
+      if (r.error) return res.status(r.code || 400).json({ error: r.error });
+      res.json(r);
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  // 转交策划(策划本人/管理员;写回 soyoo 成员关系,再刷新快照)
+  app.post("/api/ops/project-pool/:id/planner", requireAuth, requirePlanner, async (req, res) => {
+    let r;
+    try {
+      r = await pool.changeProjectPlanner({ user: req.user, projectId: req.params.id, toUserId: req.body?.toUserId ?? req.body?.to_user_id, remark: req.body?.remark });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
   // 改客户对接人/需求文档(策划本人/管理员;写回 soyoo 并同步飞书)
   app.post("/api/ops/project-pool/:id/meta", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectMeta({ user: req.user, projectId: req.params.id, customerContact: req.body?.customerContact, requirementDoc: req.body?.requirementDoc });
+      r = await pool.changeProjectMeta({
+        user: req.user,
+        projectId: req.params.id,
+        versionId: req.body?.versionId,
+        customerContact: req.body?.customerContact,
+        requirementDoc: req.body?.requirementDoc,
+      });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }
@@ -200,7 +315,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/remark", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark });
+      r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark, field: req.body?.field });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }
@@ -210,7 +325,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
 
   // 项目状态/阶段流转记录(同一时间线)
   app.get("/api/ops/project-pool/:id/status-logs", requireAuth, requirePlanner, async (req, res) => {
-    res.json({ logs: await pool.getStatusLogs(req.params.id) });
+    res.json({ logs: await pool.getStatusLogs(req.params.id, { includeParentLegacy: req.query.include_parent === "1" }) });
   });
 
   // 某环节下的未完成工单(目前环节点击查看,纯本地工单表)
@@ -229,10 +344,14 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 项目协作成员(协作列点击查看)
-  app.get("/api/ops/project-pool/:id/members", requireAuth, requirePlanner, async (req, res) => {
+  // 项目协作成员(协作列点击查看)。项目池视角仅策划/管理员可进；我的项目里普通成员也允许查看自己参与项目/版本的成员。
+  app.get("/api/ops/project-pool/:id/members", requireAuth, async (req, res) => {
     try {
-      res.json({ members: await pool.getProjectMembers(req.params.id) });
+      const members = await pool.getProjectMembers(req.params.id);
+      if (!isAdmin(req.user) && !(await isPlanner(req.user)) && !members.some((member) => String(member.id) === String(meId(req.user)))) {
+        return res.status(403).json({ error: "无权查看该项目成员" });
+      }
+      res.json({ members });
     } catch (e) {
       soyooErrorResponse(res, e);
     }

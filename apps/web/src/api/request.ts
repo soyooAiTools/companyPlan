@@ -5,12 +5,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "");
 export const apiUrl = (url: string) => (API_BASE && url.startsWith("/") ? API_BASE + url : url);
 
 export async function readApiError(response: Response) {
-  if (response.status >= 500) return "服务重启中...";
   try {
     const data = (await response.json()) as { error?: string };
     return data.error || `请求失败：${response.status}`;
   } catch {
-    return `请求失败：${response.status}`;
+    return response.status >= 500 ? "服务重启中..." : `请求失败：${response.status}`;
   }
 }
 

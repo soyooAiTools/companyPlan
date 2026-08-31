@@ -12,7 +12,7 @@ function sendResult(response, result) {
   return response.status(result.status).json(result.body);
 }
 
-export function createCompanyPlanController(service, { setSessionCookie, clearSessionCookie }) {
+export function createCompanyPlanController(service, { setSessionCookie, clearSessionCookie, clearSessionCache }) {
   return {
     health(_request, response) {
       response.json(service.getHealth());
@@ -27,6 +27,7 @@ export function createCompanyPlanController(service, { setSessionCookie, clearSe
 
     async logout(request, response) {
       const result = await service.logout(request.sessionId, request.user, auditContext(request));
+      clearSessionCache?.(request.sessionId);
       clearSessionCookie(response);
       return sendResult(response, result);
     },

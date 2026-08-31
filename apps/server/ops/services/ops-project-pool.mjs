@@ -1,15 +1,18 @@
 // 项目池业务层:实时查 soyoo 项目 + 聚合 ops 工单 + 改状态(soyoo+飞书+outbox)+ 流转记录 + 状态阈值配置 + 超时筛。
 import crypto from "node:crypto";
 import { prisma } from "../prisma.mjs";
-import { soyooClient, soyooId } from "../soyoo-client.mjs";
+import { soyooClient, soyooId, soyooProjectId, soyooVersionId } from "../soyoo-client.mjs";
 import { getProjectWithMembers, getUser, listTags } from "../ops-realtime.mjs";
 import { isAdmin, meId, nowIso } from "../ops-helpers.mjs";
 import { PROJECT_STAGES, PLANNER_TAG, EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
 import { sanitizeRichHtml, isBlankRich } from "../../utils/rich-html.mjs";
+import { opsIntegration } from "../../config/runtime.mjs";
 import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
+import { logger } from "../../core/logger.mjs";
+import { getUserTenantScope } from "./tenant-scope.mjs";
 
 export { projectPoolSnapshotStats, rebuildProjectPoolSnapshots, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 export { lookupProjectPoolStages } from "./project-pool/snapshot-store.mjs";
@@ -17,10 +20,46 @@ export { refreshProjectPoolSnapshotsByMember } from "./project-pool/snapshot-sto
 export { getSegmentTicketDetail, listProjectPoolTickets, listSegmentTickets } from "./project-pool/tickets.mjs";
 export { listOwnerMembersByTags } from "./project-pool/owners.mjs";
 
+export async function listBusinessUnits() {
+  const rows = await soyooClient.businessUnits();
+  return (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      id: String(row.id ?? row.ID ?? ""),
+      name: String(row.name ?? "").trim(),
+      code: String(row.code ?? "").trim(),
+    }))
+    .filter((row) => row.id && row.name);
+}
+
+export async function listRecycleHandoffUsers() {
+  const rows = await soyooClient.users();
+  const handoffUsernames = opsIntegration.recycleHandoffUsernames;
+  const usernameSet = new Set(handoffUsernames);
+  const users = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      id: String(row.id ?? row.ID ?? ""),
+      username: String(row.username ?? "").trim(),
+      name: String(row.nickname ?? row.name ?? row.wechat_name ?? row.username ?? "").trim(),
+      avatar: String(row.wechat_avatar_url ?? row.wechat_avatar ?? row.avatar ?? "").trim(),
+    }))
+    .filter((row) => usernameSet.has(row.username));
+  const byUsername = new Map(users.map((user) => [user.username, user]));
+  return handoffUsernames.map((username) => byUsername.get(username) || { id: "", username, name: username, avatar: "" });
+}
+
+export function projectPoolRuntimeOptions() {
+  return {
+    settlementDoneStatus: opsIntegration.settlementDoneStatus,
+  };
+}
+
 const ADVANCED_FILTER_OPERATORS = new Set(["eq", "neq", "contains", "not_contains", "empty", "not_empty"]);
-const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", "remark"]);
+const PROJECT_REMARK_FIELDS = ["remark", "remark2", "remark3", "remark4", "remark5", "remark6"];
+const PROJECT_REMARK_LABELS = { remark: "策划备注", remark2: "备注2", remark3: "备注3", remark4: "备注4", remark5: "备注5", remark6: "备注6" };
+const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", ...PROJECT_REMARK_FIELDS, "versionCode", "versionName"]);
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
 const NO_SEGMENT_FILTER_VALUE = 0;
+const ARCHIVE_PROJECT_STATUSES = ["已完成", "回收中"];
 
 function parseAdvancedFilter(input) {
   if (!input) return null;
@@ -46,6 +85,10 @@ function rowAdvancedFieldText(row, field) {
   switch (field) {
     case "name":
       return row.name || "";
+    case "versionCode":
+      return row.versionCode || "";
+    case "versionName":
+      return row.versionName || "";
     case "tenant":
     case "tenantName":
       return row.tenantName || "";
@@ -62,6 +105,16 @@ function rowAdvancedFieldText(row, field) {
       return (row.segments || []).map((item) => `${item.id} ${item.name}`).join(" ");
     case "remark":
       return row.remark || "";
+    case "remark2":
+      return row.remark2 || "";
+    case "remark3":
+      return row.remark3 || "";
+    case "remark4":
+      return row.remark4 || "";
+    case "remark5":
+      return row.remark5 || "";
+    case "remark6":
+      return row.remark6 || "";
     default:
       return "";
   }
@@ -101,40 +154,55 @@ function applyAdvancedFilter(rows, advancedFilter) {
   });
 }
 
-function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "" }) {
-  let nextRows = rows;
-  const kw = String(q || "").trim().toLowerCase();
-  if (kw) {
-    nextRows = nextRows.filter((row) => [row.name, row.tenantName, row.plannerName].some((value) => String(value || "").toLowerCase().includes(kw)));
-  }
+function rowChildren(row) {
+  return Array.isArray(row?.children) ? row.children : [];
+}
 
+function flattenProjectPoolRows(rows) {
+  return rows.flatMap((row) => {
+    const children = rowChildren(row);
+    return children.length ? children : [row];
+  });
+}
+
+function rowSearchText(row) {
+  const versionText = row.isVersionRow ? `${row.versionCode || ""} ${row.versionName || ""}` : "";
+  return [row.name, row.tenantName, row.plannerName, row.versionCode, row.versionName, versionText].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function matchProjectPoolRow(row, { q = "", statusSet, stageSet, plannerNames, segmentSet, advancedFilter = "", remarkFilter = "" }) {
+  const kw = String(q || "").trim().toLowerCase();
+  if (kw && !rowSearchText(row).includes(kw)) return false;
+  if (statusSet.size && !statusSet.has(row.status)) return false;
+  if (stageSet.size && !(stageSet.has(row.stage) || (stageSet.has(UNSET_STAGE_FILTER_VALUE) && !String(row.stage || "").trim()))) return false;
+  if (plannerNames.length) {
+    const names = Array.isArray(row.planners) && row.planners.length ? row.planners.map((p) => p.name) : String(row.plannerName || "").split(/[、,，/]/);
+    if (!plannerNames.some((name) => names.some((candidate) => String(candidate || "").trim() === name || String(candidate || "").includes(name)))) return false;
+  }
+  if (segmentSet.size) {
+    const segments = row.segments || [];
+    if (!(segments.some((item) => segmentSet.has(Number(item.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0))) return false;
+  }
+	return applyAdvancedFilter([row], advancedFilter).length > 0 && applyAdvancedFilter([row], remarkFilter).length > 0;
+}
+
+function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "" }) {
   const statusSet = new Set(
     String(status || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  if (statusSet.size) nextRows = nextRows.filter((row) => statusSet.has(row.status));
-
   const stageSet = new Set(
     String(stage || "")
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
   );
-  if (stageSet.size) nextRows = nextRows.filter((row) => stageSet.has(row.stage) || (stageSet.has(UNSET_STAGE_FILTER_VALUE) && !String(row.stage || "").trim()));
-
   const plannerNames = String(planner || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  if (plannerNames.length) {
-    nextRows = nextRows.filter((row) => {
-      const names = Array.isArray(row.planners) && row.planners.length ? row.planners.map((p) => p.name) : String(row.plannerName || "").split(/[、,，/]/);
-      return plannerNames.some((name) => names.some((candidate) => String(candidate || "").trim() === name || String(candidate || "").includes(name)));
-    });
-  }
-
   const segmentSet = new Set(
     String(segment || "")
       .split(",")
@@ -143,22 +211,78 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
       .map((s) => Number(s))
       .filter((n) => Number.isInteger(n) && n >= 0),
   );
-  if (segmentSet.size) {
-    nextRows = nextRows.filter((row) => {
-      const segments = row.segments || [];
-      return segments.some((item) => segmentSet.has(Number(item.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0);
-    });
-  }
 
-  nextRows = applyAdvancedFilter(nextRows, advancedFilter);
+  return rows
+    .map((row) => {
+      const children = rowChildren(row);
+		const parentMatched = matchProjectPoolRow(row, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter, remarkFilter });
+      if (!children.length) return parentMatched ? row : null;
+      if (parentMatched) return row;
+		const matchedChildren = children.filter((child) => matchProjectPoolRow(child, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter, remarkFilter }));
+      return matchedChildren.length ? { ...row, children: matchedChildren } : null;
+    })
+    .filter(Boolean);
+}
 
-  return nextRows;
+function rowTenantId(row) {
+  return String(row?.tenantId ?? row?.tenant_id ?? "");
+}
+
+/**
+ * 判断客户是否在当前用户可见范围内。
+ * @param {string} tenantId 客户 id。
+ * @param {null | { mode: "include" | "exclude", tenantIds: Set<string> }} scope 客户范围；null=全部客户。
+ * @returns {boolean} include=命中才可见；exclude=命中则不可见。
+ */
+function tenantMatchesScope(tenantId, scope) {
+  if (!scope) return true;
+  const matched = scope.tenantIds.has(String(tenantId ?? ""));
+  return scope.mode === "exclude" ? !matched : matched;
+}
+
+/**
+ * @description 按当前用户客户范围过滤项目池快照 rows。
+ * @param {Array} rows Redis/DB 快照读出的项目池 rows。
+ * @param {null | { mode: "include" | "exclude", tenantIds: Set<string> }} scope 客户范围；null=全部客户。
+ * @returns {Array} 过滤后的 rows；子版本无 tenantId 时用父项目兜底。
+ */
+function filterProjectPoolRowsByTenantScope(rows, scope) {
+  if (!scope) return rows;
+  return rows
+    .map((row) => {
+      const children = rowChildren(row);
+      if (!children.length) return tenantMatchesScope(rowTenantId(row), scope) ? row : null;
+      const matchedChildren = children.filter((child) => tenantMatchesScope(rowTenantId(child) || rowTenantId(row), scope));
+      return matchedChildren.length || tenantMatchesScope(rowTenantId(row), scope) ? { ...row, children: matchedChildren.length ? matchedChildren : children } : null;
+    })
+    .filter(Boolean);
+}
+
+function currentPlannerFilterName(user) {
+  return String(user?.name || user?.username || "").trim();
 }
 
 function nextDeadlineSortValue(row) {
   const next = nextStageDeadline(row?.stage || "", row?.stageDeadlines || []);
   if (!next?.date || !/^\d{4}-\d{2}-\d{2}$/.test(next.date)) return null;
   return next.date;
+}
+
+// 下版交付日期相对今天的天数:负数=已逾期,正数=还剩余。
+function deadlineDiffDays(date) {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const target = new Date(`${date}T00:00:00+08:00`).getTime();
+  const today = new Date(`${todayDateText()}T00:00:00+08:00`).getTime();
+  if (!Number.isFinite(target) || !Number.isFinite(today)) return null;
+  return Math.round((target - today) / 86400000);
+}
+
+// 按逾期时间排序时,逾期越久值越大;已完成/回收等不追逾期的项目排到后面。
+function nextDeadlineOverdueSortValue(row) {
+  if (isInactiveDeadlinePoolRow(row)) return null;
+  const next = nextStageDeadline(row?.stage || "", row?.stageDeadlines || []);
+  const diff = deadlineDiffDays(next?.date);
+  return diff == null ? null : -diff;
 }
 
 function stageDeadlineByKey(row, key, name) {
@@ -179,49 +303,74 @@ function projectEndSortValue(row) {
   return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : null;
 }
 
+// 支持同一个排序器同时比较日期字符串和逾期天数数字。
+function compareSortValue(a, b) {
+  if (typeof a === "number" && typeof b === "number") return a - b;
+  return String(a).localeCompare(String(b));
+}
+
 function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   const order = sortOrder === "asc" ? "asc" : sortOrder === "desc" ? "desc" : "";
   const valueBySort = {
     nextDeadline: nextDeadlineSortValue,
+    nextDeadlineOverdue: nextDeadlineOverdueSortValue,
     projectStart: projectStartSortValue,
     projectEnd: projectEndSortValue,
   }[sortBy];
+  const sortChildren = (row) => {
+    const children = rowChildren(row);
+    return children.length
+      ? {
+          ...row,
+          children: [...children].sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0) || String(a.versionCode || a.id).localeCompare(String(b.versionCode || b.id))),
+        }
+      : row;
+  };
   if (!valueBySort || !order) {
-    return rows.sort((a, b) => Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)));
+    return rows.sort((a, b) => Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id))).map(sortChildren);
   }
   const direction = order === "asc" ? 1 : -1;
   return rows.sort((a, b) => {
     const av = valueBySort(a);
     const bv = valueBySort(b);
-    if (!av && !bv) return Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id));
-    if (!av) return 1;
-    if (!bv) return -1;
-    const cmp = av.localeCompare(bv);
-    return cmp === 0 ? Number(b.id) - Number(a.id) || String(b.id).localeCompare(String(a.id)) : cmp * direction;
-  });
+    if (av == null && bv == null) return Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id));
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    const cmp = compareSortValue(av, bv);
+    return cmp === 0 ? Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id)) : cmp * direction;
+  }).map(sortChildren);
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "", onlyMine = false, timer = null }) {
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "", onlyMine = false, paginate = true, timer = null }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
   const effectiveStatus = statusFilter.length ? statusFilter : [];
-  let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user, statusNames: effectiveStatus });
+  const plannerScoped = !onlyMine && !isAdmin(user);
+  const snapshotUser = plannerScoped ? { roleKey: "admin" } : user;
+  const effectivePlanner = plannerScoped ? currentPlannerFilterName(user) : planner;
+  let rows = onlyMine ? await loadMySnapshotRows({ user, statusNames: effectiveStatus }) : await loadVisibleSnapshotRows({ user: snapshotUser, statusNames: effectiveStatus });
   timer?.mark("加载项目池快照", { rows: rows.length, effectiveStatus: effectiveStatus.length ? effectiveStatus.join(",") : "默认状态" });
+  // 分页前应用客户范围，保证总数和子版本一致。
+  rows = filterProjectPoolRowsByTenantScope(rows, await getUserTenantScope(user));
+  timer?.mark("过滤客户可见范围", { rows: rows.length });
   if (effectiveStatus.length) {
     const statusSet = new Set(effectiveStatus);
-    rows = rows.filter((row) => statusSet.has(row.status));
-  } else {
-    rows = rows.filter((row) => row.status !== "已完成" && row.status !== "回收中");
+    rows = filterProjectPoolRows(rows, { status: [...statusSet].join(",") });
   }
   timer?.mark("过滤项目状态", { rows: rows.length });
-  rows = filterProjectPoolRows(rows, { q, stage, planner, segment, advancedFilter });
+	rows = filterProjectPoolRows(rows, { q, stage, planner: effectivePlanner, segment, advancedFilter, remarkFilter });
   timer?.mark("应用筛选条件", { rows: rows.length });
 
   rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
   timer?.mark("排序项目", { rows: rows.length });
   const total = rows.length;
+  if (!paginate) {
+    const responseBytes = Buffer.byteLength(JSON.stringify(rows), "utf8");
+    timer?.mark("返回全量数据", { rows: rows.length, total, responseBytes });
+    return { rows, total, page: 1, pageSize: total };
+  }
   const start = (page - 1) * pageSize;
   const pageRows = rows.slice(start, start + pageSize);
   const responseBytes = pageSize >= 100 ? Buffer.byteLength(JSON.stringify(pageRows), "utf8") : undefined;
@@ -231,10 +380,10 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -244,11 +393,156 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
   }
 }
 
+function archiveProjectRow(project) {
+  return {
+    id: String(project.id ?? ""),
+    projectId: String(project.id ?? ""),
+    name: project.name ?? "",
+    tenantId: String(project.tenant_id ?? ""),
+    tenantName: project.tenant_name ?? "",
+    status: project.project_lifecycle_status || project.lifecycle_status || project.status || "",
+    plannerName: project.planner_name ?? "",
+    planners: Array.isArray(project.planners)
+      ? project.planners.map((planner) => ({ name: planner?.name ?? "", avatar: planner?.avatar ?? "" })).filter((planner) => planner.name)
+      : [],
+    startedAt: project.started_at ?? null,
+    endedAt: project.ended_at ?? null,
+    statusChangedAt: null,
+    stage: "",
+    stageDeadlines: [],
+    stageChangedAt: null,
+    remark: "",
+    remark2: "",
+    remark3: "",
+    remark4: "",
+    remark5: "",
+    remark6: "",
+    memberCount: 0,
+    members: [],
+    segments: [],
+    ticketGroups: {},
+    ticketTotal: 0,
+    atRisk: 0,
+    overdue: 0,
+  };
+}
+
+// 历史项目只看 helper 的项目基础数据；过滤、排序、分页都下推给 helper，避免在 ops 侧拉全量再二次处理。
+export async function listArchivedProjectPool({
+  user,
+  page = 1,
+  pageSize = 20,
+  q = "",
+  status = "",
+  planner = "",
+  from = "",
+  to = "",
+  dateField = "started_at",
+  sortBy = "",
+  sortOrder = "",
+  advancedFilter = "",
+  startedFrom = "",
+  startedTo = "",
+  endedFrom = "",
+  endedTo = "",
+}) {
+  const effectiveStatus = status || ARCHIVE_PROJECT_STATUSES.join(",");
+  const effectiveDateField = dateField === "ended_at" ? "ended_at" : "started_at";
+  const timer = createProjectPoolTimer("archive", { page, pageSize, q: !!q, status: effectiveStatus, planner: !!planner, from, to, dateField: effectiveDateField, admin: isAdmin(user) });
+  try {
+    const effectivePlanner = !isAdmin(user) ? currentPlannerFilterName(user) : planner;
+    const result = await soyooClient.projectsList({
+      page,
+      limit: pageSize,
+      keyword: q,
+      lifecycleStatus: effectiveStatus,
+      planner: effectivePlanner,
+      exclude: "__none__",
+      dateField: effectiveDateField,
+      from,
+      to,
+      sortBy: sortBy === "ended_at" ? "ended_at" : sortBy === "started_at" ? "started_at" : effectiveDateField,
+      sortOrder: sortOrder === "asc" ? "asc" : "desc",
+      advancedFilter,
+      startedFrom,
+      startedTo,
+      endedFrom,
+      endedTo,
+      light: true,
+    });
+    const pageRows = (Array.isArray(result?.data) ? result.data : []).map(archiveProjectRow);
+    const total = Number(result?.total ?? pageRows.length);
+    timer.done({ rows: pageRows.length, total });
+    return { rows: pageRows, total, page: Math.max(1, Number(page) || 1), pageSize };
+  } catch (e) {
+    timer.error(e);
+    throw e;
+  }
+}
+
+function projectLogLookupIds(projectId) {
+  const pid = String(projectId || "");
+  if (!pid) return [];
+  const withLegacyPrefix = (id) => (String(id).startsWith("ops-project-") ? String(id) : `ops-project-${String(id)}`);
+  return [...new Set([pid, withLegacyPrefix(pid)])];
+}
+
+async function listStatusLogsByProjectIds(projectIds) {
+  const idToProjectId = new Map();
+  for (const projectId of projectIds) {
+    for (const lookupId of projectLogLookupIds(projectId)) {
+      idToProjectId.set(lookupId, String(projectId));
+    }
+  }
+  const lookupIds = [...idToProjectId.keys()];
+  if (!lookupIds.length) return {};
+  const rows = await prisma.ops_project_status_logs.findMany({
+    where: { project_id: { in: lookupIds } },
+    orderBy: { id: "asc" },
+  });
+  const pureIds = [...new Set(rows.map((r) => soyooId(r.actor_id)).filter(Boolean))];
+  const avatarByPure = {};
+  if (pureIds.length) {
+    const candidates = [...pureIds, ...pureIds.map((id) => `ops-user-${id}`)];
+    const ppl = await prisma.people.findMany({ where: { id: { in: candidates } }, select: { id: true, wechat_avatar: true } });
+    for (const p of ppl) if (p.wechat_avatar) avatarByPure[soyooId(p.id)] = p.wechat_avatar;
+  }
+  const byProjectId = {};
+  for (const row of rows) {
+    const projectId = idToProjectId.get(row.project_id);
+    if (!projectId) continue;
+    if (!byProjectId[projectId]) byProjectId[projectId] = [];
+    byProjectId[projectId].push({
+      id: row.id,
+      kind: row.kind || "status",
+      fromStatus: row.from_status,
+      toStatus: row.to_status,
+      actorName: row.actor_name,
+      actorAvatar: avatarByPure[soyooId(row.actor_id)] || "",
+      commentHtml: row.comment_html,
+      createdAt: row.created_at,
+    });
+  }
+  return byProjectId;
+}
+
+export async function progressAnalysis({ user, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "" }) {
+  const result = await listProjectPoolFromSnapshot({ user, q, status, stage, planner, segment, advancedFilter, paginate: false });
+  const projectIds = flattenProjectPoolRows(result.rows)
+    .map((row) => String(row.id || ""))
+    .filter(Boolean);
+  return {
+    rows: result.rows,
+    total: result.total,
+    logsByProjectId: await listStatusLogsByProjectIds(projectIds),
+  };
+}
+
 // ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
-export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, userId: meId(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder, onlyMine: true, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, onlyMine: true, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -259,22 +553,81 @@ export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "",
 }
 
 // ---- 项目协作成员(协作列点击查看)----
-export async function getProjectMembers(projectId) {
-  const { members } = await getProjectWithMembers(projectId);
-  return members.map((m) => ({
-    id: m.id,
-    name: m.name,
-    avatar: m.avatar,
-    wechatName: m.wechatName,
-    username: m.username,
-    status: m.status,
-    tags: (m.tags || []).map((t) => t.name).filter(Boolean),
-  }));
+function mapProjectMember(member) {
+  return {
+    id: String(member?.user_id ?? member?.userId ?? member?.id ?? ""),
+    name: member?.name ?? member?.nickname ?? member?.username ?? "",
+    avatar: member?.avatar ?? member?.wechat_avatar_url ?? member?.wechatAvatar ?? "",
+    wechatName: member?.wechatName ?? member?.wechat_name ?? "",
+    username: member?.username ?? "",
+    status: member?.status ?? member?.user_status ?? "",
+    tags: (Array.isArray(member?.tags) ? member.tags : [])
+      .map((tag) => (typeof tag === "string" ? tag : tag?.name))
+      .map((name) => String(name || "").trim())
+      .filter(Boolean),
+  };
 }
 
-const AUTO_PROGRAM_SEGMENT = "程序第一版";
-const AUTO_PROGRAM_TITLE = "立项：程序第一版(系统生成)";
-const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
+function memberHasTag(member, tagName) {
+  return (Array.isArray(member?.tags) ? member.tags : []).some((tag) => (typeof tag === "string" ? tag : tag?.name) === tagName);
+}
+
+async function projectMembersFromSnapshot(projectId) {
+  const baseProjectId = soyooProjectId(projectId);
+  const versionId = soyooVersionId(projectId);
+  const rows = await loadVisibleSnapshotRows({ user: { roleKey: "admin" } });
+  const parent = rows.find((row) => String(row.id) === baseProjectId || String(row.projectId) === baseProjectId);
+  if (!parent) return [];
+  const target = versionId ? (parent.children || []).find((row) => String(row.versionId) === String(versionId) || String(row.id) === String(projectId)) : parent;
+  const members = Array.isArray(target?.members) ? target.members : [];
+  return members.map(mapProjectMember).filter((member) => member.id);
+}
+
+export async function getProjectMembers(projectId) {
+  try {
+    const response = await soyooClient.projectMembers(projectId);
+    const members = Array.isArray(response?.members) ? response.members : Array.isArray(response) ? response : [];
+    return members.map(mapProjectMember).filter((member) => member.id);
+  } catch (e) {
+    const snapshotMembers = await projectMembersFromSnapshot(projectId);
+    if (snapshotMembers.length) return snapshotMembers;
+    throw e;
+  }
+}
+
+async function getProjectAndMembersForOps(projectId) {
+  const baseProjectId = soyooProjectId(projectId);
+  const versionId = soyooVersionId(projectId);
+  const [project, memberResponse] = await Promise.all([soyooClient.project(baseProjectId), soyooClient.projectMembers(projectId)]);
+  const rawMembers = Array.isArray(memberResponse?.members) ? memberResponse.members : Array.isArray(memberResponse) ? memberResponse : [];
+  const members = rawMembers.map(mapProjectMember).filter((member) => member.id);
+  if (!project?.id) return { project: null, members: [] };
+  const version = versionId ? (project.versions || []).find((item) => String(item.id) === String(versionId)) : null;
+  if (!version) return { project, members, baseProjectId, versionId: "" };
+  return {
+    project: {
+      ...project,
+      status: version.status || project.status || "",
+      customer_contact: version.customer_contact ?? project.customer_contact,
+      requirement_doc: version.requirement_doc ?? project.requirement_doc,
+      stage_deadlines: Array.isArray(version.stage_deadlines) ? version.stage_deadlines : project.stage_deadlines,
+      started_at: version.started_at || project.started_at,
+      status_changed_at: version.status_changed_at || project.status_changed_at,
+      versionId,
+      versionCode: version.code || "",
+      versionName: version.name || "",
+    },
+    members,
+    baseProjectId,
+    versionId,
+    version,
+  };
+}
+
+export const AUTO_PROGRAM_SEGMENT = "程序第一版";
+export const AUTO_PROGRAM_SEGMENT_FALLBACK = "程序";
+export const AUTO_PROGRAM_TITLE = "立项：程序第一版(系统生成)";
+export const AUTO_PROGRAM_HTML = "<p>系统自动生成</p>";
 const SYSTEM_REQUESTER_ID = "system";
 const SYSTEM_REQUESTER_NAME = "系统";
 const autoProgramFirstTicketLocks = new Set();
@@ -307,7 +660,7 @@ async function ensureSystemRequester() {
 
 function lastPlannerMember(members) {
   const planners = members
-    .filter((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tag.name === PLANNER_TAG))
+    .filter((member) => member.status !== "disabled" && memberHasTag(member, PLANNER_TAG))
     .sort((a, b) => String(a.assignedAt || "").localeCompare(String(b.assignedAt || "")) || Number(a.id) - Number(b.id));
   return planners.at(-1) || null;
 }
@@ -380,24 +733,45 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
   return { created: true, ticketId: created.id };
 }
 
-export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, ownerUserId = "", eventNote = "系统自动生成" }) {
-  const lockKey = String(projectId || "");
+async function findAutoProgramSegment() {
+  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+  if (segment) return segment;
+  const fallback = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT_FALLBACK } });
+  if (fallback) logger.warn("[ops-outbox] program first segment fallback", { from: AUTO_PROGRAM_SEGMENT, to: AUTO_PROGRAM_SEGMENT_FALLBACK });
+  return fallback;
+}
+
+// ops 创建工单
+export async function autoCreateProgramFirstTicket({ user, requesterUserId, project, members, projectId, versionId = "", ownerUserId = "", eventNote = "系统自动生成" }) {
+  const lockKey = versionId ? `${String(projectId || "")}::version-${String(versionId)}` : String(projectId || "");
   if (autoProgramFirstTicketLocks.has(lockKey)) return { created: false, reason: "ticket_creating" };
   autoProgramFirstTicketLocks.add(lockKey);
   try {
-  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+  const segment = await findAutoProgramSegment();
   if (!segment) return { created: false, reason: "segment_not_found" };
   const segTags = await prisma.ops_segment_tags.findMany({ where: { segment_id: segment.id }, select: { tag_id: true } });
   const liveTags = await listTags().catch(() => []);
   const tagNameById = new Map(liveTags.map((tag) => [String(tag.id), tag.name]));
   const tagIds = effectiveSegmentTagIds(segTags.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) })));
-  if (!tagIds.length) return { created: false, reason: "segment_tags_empty" };
-  const owner = ownerUserId
-    ? members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))))
-    : members.find((member) => member.status !== "disabled" && (member.tags || []).some((tag) => tagIds.includes(String(tag.id))));
+  if (!ownerUserId) return { created: false, reason: "owner_required" };
+  const owner = members.find((member) => String(member.id) === String(ownerUserId) && member.status !== "disabled");
   if (!owner) return { created: false, reason: "owner_not_found" };
+  const versionScope = versionId ? { project_version_id: String(versionId) } : { OR: [{ project_version_id: null }, { project_version_id: "" }] };
   const exists = await prisma.tickets.findFirst({
-    where: { project_id: String(projectId), segment_id: segment.id, title: AUTO_PROGRAM_TITLE, status: { not: "已完成" } },
+    where: {
+      project_id: String(projectId),
+      status: { not: "已完成" },
+      AND: [
+        versionScope,
+        {
+          OR: [
+            { title: AUTO_PROGRAM_TITLE },
+            { segment_id: segment.id },
+            { discipline: segment.name },
+          ],
+        },
+      ],
+    },
     select: { id: true },
   });
   if (exists) return { created: false, reason: "ticket_exists", ticketId: exists.id };
@@ -419,6 +793,9 @@ export async function autoCreateProgramFirstTicket({ user, requesterUserId, proj
       client_name: project.client || "",
       project_name: project.name || "",
       project_id: String(projectId),
+      project_version_id: versionId ? String(versionId) : "",
+      project_version_code: project.versionCode || "",
+      project_version_name: project.versionName || "",
       project_status: project.status || "",
       tag_id: matched?.id || tagIds[0] || "",
       tag_name: matched?.name || "",
@@ -472,19 +849,40 @@ const STATUS_AUTO_TICKET = {
   打包中: { title: "催打包", note: "项目状态改为打包中后自动生成" },
 };
 
-// ---- 改状态:先调 soyoo(落库+飞书+outbox)成功,才写 ops 流转记录 ----
-export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false }) {
+// ---- 改状态:路由已限制策划/管理员;这里不再按版本成员二次拦截,避免多版本成员不同步导致误判 ----
+export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false, recycleHandoffUsername }) {
+  const settlementDoneStatus = opsIntegration.settlementDoneStatus;
   if (!status) return { error: "缺少状态", code: 400 };
-  const { project, members } = await getProjectWithMembers(projectId);
+  const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
   const from = project.status;
-  // 相同状态默认拦截(避免 UI 误点把 status_changed_at 清零);force=true 放行(维护用:把停留计时刷新为当前时间)
-  if (!force && from === status) return { error: "状态未变化,无需修改", code: 400 };
-  await soyooClient.setProjectStatus(projectId, status); // 抛错 → 路由转 502,不写日志(保证一致)
+  if (status === settlementDoneStatus) {
+    if (!isAdmin(user)) return { error: "仅管理员可结算完成项目", code: 403 };
+    await soyooClient.setProjectStatus(baseProjectId, settlementDoneStatus, { operator_id: Number(meId(user)) || undefined });
+    await prisma.ops_project_status_logs.create({
+      data: {
+        project_id: String(baseProjectId),
+        project_name: project.name,
+        kind: "status",
+        from_status: from === "回收中" ? from : "回收中",
+        to_status: settlementDoneStatus,
+        actor_id: meId(user),
+        actor_name: user?.name || user?.username || "",
+        comment_html: commentHtml && !isBlankRich(commentHtml) ? sanitizeRichHtml(commentHtml) : "<p>结算完成，项目状态同步为已完成。</p>",
+        created_at: nowIso(),
+      },
+    });
+    await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
+      logger.warn("project-pool snapshot refresh failed after settlement done", { projectId: baseProjectId, error });
+    });
+    return { ok: true, status: settlementDoneStatus };
+  }
+  // OPS 只负责发起状态变更；operator_id 供 helper 写回流转/转交日志，
+  // recycle_handoff_username 仅在「回收中」时透传，用于 helper 校验所有版本回收后统一转交策划。
+  await soyooClient.setProjectStatus(projectId, status, {
+    operator_id: Number(meId(user)) || undefined,
+    recycle_handoff_username: status === "回收中" ? recycleHandoffUsername || undefined : undefined,
+  }); // 抛错 → 路由转 502,不写日志(保证一致)
   await prisma.ops_project_status_logs.create({
     data: {
       project_id: String(projectId),
@@ -502,20 +900,18 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   if (autoTicket) {
     await autoCreateProjectStatusTicket({ project: { ...project, status }, members, projectId, title: autoTicket.title, eventNote: autoTicket.note });
   }
-  await refreshProjectPoolSnapshot(projectId);
+  await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
+    logger.warn("project-pool snapshot refresh failed after status change", { projectId: baseProjectId, error });
+  });
   return { ok: true, status };
 }
 
-// ---- 改阶段(纯 ops:校验权限 → upsert ops_project_ext → 写日志 kind=stage,不调 soyoo)----
+// ---- 改阶段(纯 ops:路由权限 → upsert ops_project_ext → 写日志 kind=stage,不调 soyoo)----
 export async function changeProjectStage({ user, projectId, stage, commentHtml }) {
   if (!stage) return { error: "缺少阶段", code: 400 };
   if (!PROJECT_STAGES.includes(stage)) return { error: "无效的阶段", code: 400 };
-  const { project, members } = await getProjectWithMembers(projectId);
+  const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
   const pid = String(projectId);
   const cur = await prisma.ops_project_ext.findUnique({ where: { project_id: pid }, select: { stage: true } });
   const from = cur?.stage || null; // 没设置过阶段 → from 为空,日志只显示「→ X」
@@ -543,22 +939,19 @@ export async function changeProjectStage({ user, projectId, stage, commentHtml }
     },
   });
   await refreshProjectPoolSnapshot(pid);
+  if (baseProjectId !== pid) await refreshProjectPoolSnapshot(baseProjectId);
   return { ok: true, stage };
 }
 
-// ---- 改下版交付时间(临时校准入口):校验权限 → 写 soyoo projects.stage_deadlines → 写项目流转日志 ----
+// ---- 改下版交付时间(临时校准入口):路由权限 → 写 soyoo projects.stage_deadlines → 写项目流转日志 ----
 export async function changeProjectStageDeadlines({ user, projectId, stageBaseDate, stageDeadlines }) {
-  const { project, members } = await getProjectWithMembers(projectId);
+  const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
   const body = {};
   if (stageBaseDate) body.stage_base_date = String(stageBaseDate);
   if (Array.isArray(stageDeadlines) && stageDeadlines.length) body.stage_deadlines = stageDeadlines;
   if (!body.stage_base_date && !body.stage_deadlines) return { error: "缺少阶段交付日期", code: 400 };
-  const beforeProject = await soyooClient.project(projectId).catch(() => null);
+  const beforeProject = project;
   const r = await soyooClient.setProjectStageDeadlines(projectId, body);
   const nextDeadlines = Array.isArray(r?.data?.stage_deadlines) ? r.data.stage_deadlines : [];
   if (deadlineItemsChanged(beforeProject?.stage_deadlines, nextDeadlines)) {
@@ -577,23 +970,75 @@ export async function changeProjectStageDeadlines({ user, projectId, stageBaseDa
       },
     });
   }
-  await refreshProjectPoolSnapshot(projectId);
+  await refreshProjectPoolSnapshot(baseProjectId);
   return { ok: true, stageDeadlines: nextDeadlines };
 }
 
-// ---- 改客户对接信息:写 soyoo projects.customer_contact/requirement_doc → 同步飞书 → 刷新快照 ----
-export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
-  const { project, members } = await getProjectWithMembers(projectId);
+// ---- 改项目版本加急标记:写 soyoo project_versions.is_urgent → 写项目流转日志 → 刷新快照 ----
+export async function changeProjectUrgent({ user, projectId, isUrgent }) {
+  const { project, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  const nextUrgent = !!isUrgent;
+  const currentUrgent = !!project.isUrgent;
+  const r = await soyooClient.setProjectUrgent(projectId, nextUrgent, { operator_id: Number(meId(user)) || undefined });
+  const savedUrgent = r?.data?.is_urgent ?? nextUrgent;
+  await prisma.ops_project_status_logs.create({
+    data: {
+      project_id: String(projectId),
+      project_name: project.name,
+      kind: "remark",
+      from_status: currentUrgent ? "加急" : "普通",
+      to_status: savedUrgent ? "加急" : "普通",
+      actor_id: meId(user),
+      actor_name: user?.name || user?.username || "",
+      comment_html: savedUrgent ? '<p><strong style="color:#dc2626;">设为加急</strong></p>' : "<p>取消加急</p>",
+      created_at: nowIso(),
+    },
+  });
+  await refreshProjectPoolSnapshot(baseProjectId);
+  return { ok: true, isUrgent: savedUrgent };
+}
+
+// ---- 转交策划:写回 soyoo 项目/版本成员关系 → 写 ops 流转日志 → 刷新快照 ----
+export async function changeProjectPlanner({ user, projectId, toUserId, remark = "" }) {
+  const { project, baseProjectId } = await getProjectAndMembersForOps(projectId);
+  if (!project) return { error: "项目不存在", code: 404 };
+  const target = String(toUserId ?? "").trim();
+  if (!target) return { error: "请选择接手策划", code: 400 };
+  const transferRemark = String(remark ?? "").trim().slice(0, 300);
+  const fromPlanner = project.planner_name || project.plannerName || "";
+  const r = await soyooClient.transferProjectPlanner(projectId, target, { operator_id: Number(meId(user)) || undefined, remark: transferRemark || undefined });
+  const data = r?.data || {};
+  const toPlanner = data.to_user_name || target;
+  const html = `<div>策划转交：${escapeHtml(fromPlanner || "未指定")} → ${escapeHtml(toPlanner)}</div>${transferRemark ? `<div>转交备注：${escapeHtml(transferRemark)}</div>` : ""}`;
+  await prisma.ops_project_status_logs.create({
+    data: {
+      project_id: String(projectId),
+      project_name: project.name,
+      kind: "remark",
+      from_status: fromPlanner || null,
+      to_status: toPlanner,
+      actor_id: meId(user),
+      actor_name: user?.name || user?.username || "",
+      comment_html: html,
+      created_at: nowIso(),
+    },
+  });
+  await refreshProjectPoolSnapshot(baseProjectId);
+  return { ok: true, plannerName: toPlanner, transferCount: Number(data.transfer_count || 0) };
+}
+
+// ---- 改客户对接信息:版本行优先写该版本,项目行才写项目级字段 → 同步飞书 → 刷新快照 ----
+export async function changeProjectMeta({ user, projectId, versionId, customerContact, requirementDoc }) {
+  const baseProjectId = soyooProjectId(projectId);
+  const targetProjectRef = versionId ? `${baseProjectId}::version-${versionId}` : projectId;
+  const { project } = await getProjectAndMembersForOps(targetProjectRef);
+  if (!project) return { error: "项目不存在", code: 404 };
   const oldContact = String(project.customer_contact ?? "");
   const oldDoc = String(project.requirement_doc ?? "");
   const nextContact = String(customerContact ?? "").trim();
   const nextDoc = String(requirementDoc ?? "").trim();
-  const r = await soyooClient.setProjectMeta(projectId, { customer_contact: nextContact, requirement_doc: nextDoc });
+  const r = await soyooClient.setProjectMeta(targetProjectRef, { customer_contact: nextContact, requirement_doc: nextDoc });
   if (oldContact !== nextContact || oldDoc !== nextDoc) {
     const html = [
       `<div>客户对接人：${escapeHtml(oldContact || "空")} → ${escapeHtml(nextContact || "空")}</div>`,
@@ -601,7 +1046,7 @@ export async function changeProjectMeta({ user, projectId, customerContact, requ
     ].join("");
     await prisma.ops_project_status_logs.create({
       data: {
-        project_id: String(projectId),
+        project_id: String(baseProjectId),
         project_name: project.name,
         kind: "remark",
         from_status: null,
@@ -613,25 +1058,23 @@ export async function changeProjectMeta({ user, projectId, customerContact, requ
       },
     });
   }
-  await refreshProjectPoolSnapshot(projectId);
+  await refreshProjectPoolSnapshot(baseProjectId);
   return { ok: true, customerContact: r?.data?.customer_contact ?? nextContact, requirementDoc: r?.data?.requirement_doc ?? nextDoc };
 }
 
-// ---- 改备注(纯 ops:富文本 sanitize → upsert ext.remark → 写日志 kind=remark,内容存 comment_html)----
-export async function changeProjectRemark({ user, projectId, remark }) {
-  const { project, members } = await getProjectWithMembers(projectId);
+// ---- 改备注(纯 ops:路由权限 → 富文本 sanitize → upsert ext.remark~remark6 → 写日志 kind=remark,内容存 comment_html)----
+export async function changeProjectRemark({ user, projectId, remark, field = "remark" }) {
+  const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
-  if (!isAdmin(user)) {
-    const m = members.find((x) => x.id === meId(user));
-    if (!m || !m.tags.some((t) => t.name === PLANNER_TAG)) return { error: "无权修改(仅该项目策划或管理员)", code: 403 };
-  }
+  const remarkField = PROJECT_REMARK_FIELDS.includes(field) ? field : "remark";
+  const label = PROJECT_REMARK_LABELS[remarkField] || "策划备注";
   const pid = String(projectId);
   const now = nowIso();
   const html = isBlankRich(remark) ? "" : sanitizeRichHtml(remark); // 富文本白名单清洗;允许清空
   await prisma.ops_project_ext.upsert({
     where: { project_id: pid },
-    create: { project_id: pid, remark: html, updated_at: now },
-    update: { remark: html, updated_at: now },
+    create: { project_id: pid, [remarkField]: html, updated_at: now },
+    update: { [remarkField]: html, updated_at: now },
   });
   await prisma.ops_project_status_logs.create({
     data: {
@@ -639,7 +1082,7 @@ export async function changeProjectRemark({ user, projectId, remark }) {
       project_name: project.name,
       kind: "remark",
       from_status: null,
-      to_status: "修改备注",
+      to_status: `修改${label}`,
       actor_id: meId(user),
       actor_name: user?.name || user?.username || "",
       comment_html: html || null,
@@ -647,12 +1090,22 @@ export async function changeProjectRemark({ user, projectId, remark }) {
     },
   });
   await refreshProjectPoolSnapshot(pid);
+  if (baseProjectId !== pid) await refreshProjectPoolSnapshot(baseProjectId);
   return { ok: true };
 }
 
 // ---- 流转记录(倒序)----
-export async function getStatusLogs(projectId) {
-  const rows = await prisma.ops_project_status_logs.findMany({ where: { project_id: String(projectId) }, orderBy: { id: "desc" }, take: 200 });
+export async function getStatusLogs(projectId, { includeParentLegacy = false } = {}) {
+  const pid = String(projectId);
+  const baseProjectId = soyooProjectId(pid);
+  const versionId = soyooVersionId(pid);
+  const withLegacyPrefix = (id) => (String(id).startsWith("ops-project-") ? String(id) : `ops-project-${String(id)}`);
+  const versionIds = [...new Set([pid, withLegacyPrefix(pid)])];
+  const parentIds = [...new Set([baseProjectId, withLegacyPrefix(baseProjectId)])];
+  const where = versionId
+    ? { project_id: { in: includeParentLegacy ? [...versionIds, ...parentIds] : versionIds } }
+    : { OR: [{ project_id: { in: parentIds } }, { project_id: { startsWith: `${baseProjectId}::version-` } }, { project_id: { startsWith: `${withLegacyPrefix(baseProjectId)}::version-` } }] };
+  const rows = await prisma.ops_project_status_logs.findMany({ where, orderBy: { id: "desc" }, take: 200 });
   // 操作人头像:join 本地 people。actor_id 是去前缀的纯 id(如 "3"),而 people.id 可能带 ops-user- 前缀
   //(如 "ops-user-3")→ 两种形式都查、用 soyooId() 归一成纯 id 匹配,带不带前缀都能对上
   const pureIds = [...new Set(rows.map((r) => soyooId(r.actor_id)).filter(Boolean))];
@@ -771,18 +1224,28 @@ function deadlineChangeHtml(oldItems, newItems) {
   return `<div>修改下版交付时间</div><ul>${rows.join("")}</ul>`;
 }
 
+function isInactiveDeadlinePoolRow(row) {
+  // 这些状态下项目已经不再按下版交付时间追逾期；日期仍展示，但不再进入超时关注/通知扫描。
+  const inactiveStatuses = new Set(["回收中", "已回收", "已完成", "结算完成", "客户暂停"]);
+  return [row?.status, row?.projectLifecycleStatus, row?.project_lifecycle_status, row?.lifecycle_status]
+    .map((value) => String(value || "").trim())
+    .filter(Boolean)
+    .some((value) => inactiveStatuses.has(value));
+}
+
 // 下版交付时间已逾期的项目 id:根据当前阶段 + soyoo stage_deadlines 计算，不再按「项目阶段时间」配置。
 async function deadlineOverdueProjectIds({ user }) {
   const today = todayDateText();
-  const rows = await loadVisibleSnapshotRows({ user });
+  const rows = flattenProjectPoolRows(await loadVisibleSnapshotRows({ user }));
   return rows
-    .filter((row) => row.status !== "已完成" && row.status !== "回收中")
+    .filter((row) => !row.projectLifecycleStatus || row.projectLifecycleStatus === "进行中" || row.projectLifecycleStatus === "正常")
+    .filter((row) => !isInactiveDeadlinePoolRow(row))
     .filter((row) => isNextStageDeadlineOverdue({ stage_deadlines: row.stageDeadlines }, { stage: row.stage }, today))
     .map((row) => String(row.id));
 }
 
 async function loadProjectsByIds(projectIds) {
-  const ids = [...new Set(projectIds.map(String).filter(Boolean))];
+  const ids = [...new Set(projectIds.map(soyooProjectId).filter(Boolean))];
   const out = [];
   for (let i = 0; i < ids.length; i += 100) {
     const batch = ids.slice(i, i + 100);
@@ -791,7 +1254,7 @@ async function loadProjectsByIds(projectIds) {
       page: 1,
       limit: 100,
       projectIds: batch,
-      exclude: "已完成,回收中",
+      exclude: "已完成,回收中,已回收,客户暂停",
       excludeTenants: EXCLUDED_CLIENT_NAMES,
     });
     out.push(...(Array.isArray(r?.data) ? r.data : []));
@@ -814,11 +1277,17 @@ async function stageOverdueProjectsForNotify() {
     });
     candidates.push(...rows.map((r) => String(r.project_id)));
   }
-  const projects = await loadProjectsByIds(candidates);
-  return projects.map((p) => ({ id: String(p.id), name: p.name ?? "", kind: "stage" }));
+  const projectRows = await loadVisibleSnapshotRows({ user: { roleKey: "admin" } });
+  const rowById = new Map(flattenProjectPoolRows(projectRows).map((row) => [String(row.id), row]));
+  return [...new Set(candidates)]
+    .map((id) => {
+      const row = rowById.get(String(id));
+      return row && !isInactiveDeadlinePoolRow(row) ? { id: String(id), name: row.name ?? "", kind: "stage" } : null;
+    })
+    .filter(Boolean);
 }
 
-export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
     // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
@@ -830,10 +1299,15 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
       return { rows: [], total: 0, page, pageSize };
     }
     const idSet = new Set(extraIds);
-    const allRows = filterProjectPoolRows(
-      (await loadVisibleSnapshotRows({ user })).filter((row) => idSet.has(String(row.id))),
-      { q, status, stage, planner, segment, advancedFilter },
-    );
+    const scopedRows = filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user));
+		const allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter, remarkFilter })
+      .map((row) => {
+        const children = rowChildren(row);
+        if (!children.length) return idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
+        const matchedChildren = children.filter((child) => idSet.has(String(child.id)) && !isInactiveDeadlinePoolRow(child));
+        return matchedChildren.length ? { ...row, children: matchedChildren } : idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
+      })
+      .filter(Boolean);
     sortProjectPoolRows(allRows, { sortBy: sortBy || "nextDeadline", sortOrder: sortOrder || "asc" });
     const total = allRows.length;
     const rows = allRows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
@@ -852,7 +1326,9 @@ export async function staleCount({ user }) {
     // const cutoffs = await staleCutoffs();
     const extraIds = await deadlineOverdueProjectIds({ user });
     timer.mark("deadlineOverdueProjectIds", { ids: extraIds.length });
-    const total = extraIds.length;
+    const visibleRows = flattenProjectPoolRows(filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user))).filter((row) => !isInactiveDeadlinePoolRow(row));
+    const visibleIds = new Set(visibleRows.map((row) => String(row.id)));
+    const total = extraIds.filter((id) => visibleIds.has(String(id))).length;
     timer.done({ total });
     return total;
   } catch (e) {
@@ -866,7 +1342,9 @@ export async function listOverdueProjectsForNotify() {
   // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
   // const cutoffs = await staleCutoffs();
   const [deadlineIds, stageProjects] = await Promise.all([deadlineOverdueProjectIds({ user: { roleKey: "admin" } }), stageOverdueProjectsForNotify()]);
-  const deadlineProjects = (await loadProjectsByIds(deadlineIds)).map((p) => ({ id: String(p.id), name: p.name ?? "", kind: "deadline" }));
+  const projectRows = flattenProjectPoolRows(await loadVisibleSnapshotRows({ user: { roleKey: "admin" } }));
+  const rowById = new Map(projectRows.map((row) => [String(row.id), row]));
+  const deadlineProjects = deadlineIds.map((id) => ({ id: String(id), name: rowById.get(String(id))?.name ?? "", kind: "deadline" }));
   return [...deadlineProjects, ...stageProjects];
 }
 

@@ -1,5 +1,6 @@
-import { Avatar, Button, Input, Space, Table, Tag } from "antd";
-import { SearchOutlined } from "@ant-design/icons";
+import { useEffect, useMemo, useState } from "react";
+import { Avatar, Button, Checkbox, Input, Space, Table, Tag } from "antd";
+import { FilterFilled, SearchOutlined } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import type { PeopleProgressRow } from "../types";
 
@@ -24,10 +25,84 @@ const badgeStyle = {
 
 const hasTextSelection = () => window.getSelection()?.toString().trim();
 const hiddenRoleLabels = new Set(["管理员", "外包"]);
+const projectCountRoleKeys = new Set(["program", "level"]);
 const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
+const ratingRank = (rating?: string) => {
+	const value = String(rating || "").trim().toUpperCase();
+	if (!value) return 999;
+	const first = value.charCodeAt(0);
+	if (first >= 65 && first <= 90) return first - 65;
+	return 500 + value.charCodeAt(0);
+};
+const normalizeScopeValue = (value: unknown) => String(value || "").trim();
+const scopeFilterValues = (scope: { id?: string; name?: string; code?: string }) =>
+	[scope.id, scope.name, scope.code].map(normalizeScopeValue).filter(Boolean);
+const ratingStyle = (rating?: string) => {
+	switch (String(rating || "").trim().toUpperCase()) {
+		case "A":
+			return { color: "#047857", background: "#ecfdf5", borderColor: "#a7f3d0" };
+		case "B":
+			return { color: "#0369a1", background: "#f0f9ff", borderColor: "#bae6fd" };
+		case "C":
+			return { color: "#c2410c", background: "#fff7ed", borderColor: "#fed7aa" };
+		case "D":
+			return { color: "#6d28d9", background: "#f5f3ff", borderColor: "#ddd6fe" };
+		default:
+			return { color: "#475569", background: "#f8fafc", borderColor: "#e2e8f0" };
+	}
+};
 
 export default function PeopleWorkloadTable({ rows, loading, role, query, onOpenTickets, onOpenProjects, onQueryChange, onSearch }: PeopleWorkloadTableProps) {
+	const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
+	const [selectedBusinessScopes, setSelectedBusinessScopes] = useState<string[]>([]);
+	const [selectedRatings, setSelectedRatings] = useState<string[]>([]);
+
+	const roleOptions = useMemo(() => {
+		const labels = new Set<string>();
+		rows.forEach((row) => {
+			visibleRoleLabels(row.roles).forEach((label) => labels.add(label));
+		});
+		return [...labels]
+			.sort((a, b) => a.localeCompare(b, "zh-Hans-CN"))
+			.map((label) => ({ text: label, value: label }));
+	}, [rows]);
+
+	useEffect(() => {
+		const availableValues = new Set(roleOptions.map((option) => String(option.value)));
+		setSelectedRoles((values) => values.filter((value) => availableValues.has(value)));
+	}, [roleOptions]);
+
+	const businessScopeOptions = useMemo(() => {
+		const scopeMap = new Map<string, string>();
+		rows.forEach((row) => {
+			row.businessScopes?.forEach((scope) => {
+				const id = normalizeScopeValue(scope.id || scope.name);
+				const name = normalizeScopeValue(scope.name);
+				if (id && name) scopeMap.set(id, name);
+			});
+		});
+		return [...scopeMap.entries()]
+			.map(([value, text]) => ({ text, value }))
+			.sort((a, b) => a.text.localeCompare(b.text, "zh-Hans-CN"));
+	}, [rows]);
+
+	useEffect(() => {
+		const availableValues = new Set(businessScopeOptions.map((option) => String(option.value)));
+		setSelectedBusinessScopes((values) => values.filter((value) => availableValues.has(value)));
+	}, [businessScopeOptions]);
+
+	const ratingOptions = useMemo(() => {
+		const ratings = new Set<string>();
+		rows.forEach((row) => {
+			const rating = String(row.rating || "").trim();
+			if (rating) ratings.add(rating);
+		});
+		return [...ratings]
+			.sort((a, b) => ratingRank(a) - ratingRank(b) || a.localeCompare(b, "zh-Hans-CN"))
+			.map((rating) => ({ text: rating, value: rating }));
+	}, [rows]);
+
 	const columns: ColumnsType<PeopleProgressRow> = [
 		{
 			title: "序号",
@@ -42,6 +117,7 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			width: 260,
 			fixed: "left",
 			filtered: Boolean(query.trim()),
+			filteredValue: query.trim() ? [query.trim()] : null,
 			filterIcon: () => <SearchOutlined style={{ color: query.trim() ? "#2563eb" : "#94a3b8", fontSize: 15 }} />,
 			filterDropdown: ({ close }) => (
 				<div style={{ padding: 12, width: 300 }}>
@@ -106,6 +182,28 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 			title: "角色",
 			dataIndex: "roles",
 			width: 180,
+			filteredValue: selectedRoles.length ? selectedRoles : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedRoles.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 130, maxWidth: 220 }}>
+					<Checkbox.Group
+						value={selectedRoles}
+						onChange={(values) => setSelectedRoles(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
+						{roleOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedRoles.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedRoles([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
+			onFilter: (value, row) => visibleRoleLabels(row.roles).includes(String(value)),
 			render: (roles: string[]) => {
 				const labels = visibleRoleLabels(roles);
 				return labels.length ? (
@@ -119,7 +217,77 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 				);
 			},
 		},
-		...(role === "program"
+		{
+			title: "业务范围",
+			dataIndex: "businessScopes",
+			width: 170,
+			filteredValue: selectedBusinessScopes.length ? selectedBusinessScopes : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedBusinessScopes.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 140, maxWidth: 220 }}>
+					<Checkbox.Group
+						value={selectedBusinessScopes}
+						onChange={(values) => setSelectedBusinessScopes(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 260, overflowY: "auto" }}>
+						{businessScopeOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedBusinessScopes.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedBusinessScopes([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
+			onFilter: (value, row) => {
+				const selected = normalizeScopeValue(value);
+				return Boolean(row.businessScopes?.some((scope) => scopeFilterValues(scope).includes(selected)));
+			},
+			render: (_, row) =>
+				row.businessScopes?.length ? (
+					<span style={{ color: "#475569", fontWeight: 600 }}>{row.businessScopes.map((scope) => scope.name).join(" / ")}</span>
+				) : (
+					<span style={{ color: "#94a3b8" }}>-</span>
+				),
+		},
+		{
+			title: "评级",
+			dataIndex: "rating",
+			width: 80,
+			filteredValue: selectedRatings.length ? selectedRatings : null,
+			filterIcon: () => <FilterFilled style={{ color: selectedRatings.length ? "#dc2626" : "#94a3b8" }} />,
+			filterDropdown: () => (
+				<div style={{ padding: 10, minWidth: 110 }}>
+					<Checkbox.Group
+						value={selectedRatings}
+						onChange={(values) => setSelectedRatings(values.map(String))}
+						style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+						{ratingOptions.map((option) => (
+							<Checkbox key={String(option.value)} value={String(option.value)}>
+								{option.text}
+							</Checkbox>
+						))}
+					</Checkbox.Group>
+					{selectedRatings.length ? (
+						<Button type="link" size="small" style={{ padding: 0, marginTop: 8 }} onClick={() => setSelectedRatings([])}>
+							清空
+						</Button>
+					) : null}
+				</div>
+			),
+			onFilter: (value, row) => String(row.rating || "").trim() === String(value),
+			sorter: (a, b) => ratingRank(a.rating) - ratingRank(b.rating) || a.name.localeCompare(b.name, "zh-Hans-CN"),
+			render: (value?: string) =>
+				value ? (
+					<Tag style={{ margin: 0, minWidth: 28, textAlign: "center", fontWeight: 800, ...ratingStyle(value) }}>{value}</Tag>
+				) : (
+					<span style={{ color: "#94a3b8" }}>-</span>
+				),
+		},
+		...(projectCountRoleKeys.has(role)
 			? [
 					{
 						title: "项目数",

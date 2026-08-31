@@ -4,6 +4,7 @@ import OpsTagSettingsPage from "./OpsTagSettingsPage";
 import OpsProjectStatusSettingsPage from "./OpsProjectStatusSettingsPage";
 import OpsProjectStageSettingsPage from "./OpsProjectStageSettingsPage";
 import OpsNotificationSettingsPage from "./OpsNotificationSettingsPage";
+import OpsTicketCollaborationSettingsPage from "./OpsTicketCollaborationSettingsPage";
 
 export default function OpsSettingsPage() {
   return (
@@ -13,6 +14,7 @@ export default function OpsSettingsPage() {
         { key: "tags", label: "标签绑定", children: <OpsTagSettingsPage /> },
         { key: "project-status", label: "项目状态时间", children: <OpsProjectStatusSettingsPage /> },
         { key: "project-stage", label: "项目阶段时间", children: <OpsProjectStageSettingsPage /> },
+        { key: "ticket-collaboration", label: "工单协作权限", children: <OpsTicketCollaborationSettingsPage /> },
         { key: "notification", label: "通知", children: <OpsNotificationSettingsPage /> },
       ]}
     />

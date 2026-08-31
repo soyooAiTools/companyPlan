@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { App as AntApp, Avatar, Button, ConfigProvider, Layout, Menu, Spin, Tooltip } from "antd";
 import zhCN from "antd/locale/zh_CN";
-import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import { DashboardOutlined, ProjectOutlined, TeamOutlined, FileTextOutlined, SettingOutlined, LogoutOutlined, MenuFoldOutlined, MenuUnfoldOutlined, FolderOpenOutlined, CustomerServiceOutlined, FilterOutlined } from "@ant-design/icons";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { logoutApi } from "../../api/modules/companyPlan";
 import { opsApi, type OpsMe } from "../../api/modules/ops";
@@ -14,10 +14,20 @@ import OverviewPage from "./OverviewPage";
 import ProjectPoolPage from "./ProjectPoolPage";
 import PeoplePage from "./PeoplePage";
 import NotificationCenter from "./components/NotificationCenter";
+import TenantScopeModal from "./components/TenantScopeModal";
 import UpdateLogFloat from "../../components/UpdateLogFloat";
+import AudioEditManagementPage from "../AudioEditManagement/AudioEditManagementPage";
 
 const { Sider, Content } = Layout;
 const OPS_SIDER_COLLAPSED_KEY = "ops.sider.collapsed";
+
+function DataScopeIcon({ active }: { active: boolean }) {
+  return <FilterOutlined />;
+}
+
+function ScopeDot({ active }: { active: boolean }) {
+  return active ? <span style={{ position: "absolute", right: -4, top: -4, width: 11, height: 11, borderRadius: 999, background: "#dc2626", zIndex: 1 }} /> : null;
+}
 
 export default function OpsApp() {
   const navigate = useNavigate();
@@ -26,6 +36,8 @@ export default function OpsApp() {
   const [me, setMe] = useState<OpsMe | null>(null);
   const [auth, setAuth] = useState<"loading" | "login" | "ready">("loading");
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem(OPS_SIDER_COLLAPSED_KEY) === "1");
+  const [tenantScopeOpen, setTenantScopeOpen] = useState(false);
+  const [tenantScopeLimited, setTenantScopeLimited] = useState(false);
   const isAdmin = !!me?.isAdmin;
   const canPool = isAdmin || !!me?.isPlanner; // 管理员或策划(制片)可见「项目池」
   const siderWidth = collapsed ? 64 : 200;
@@ -51,6 +63,22 @@ export default function OpsApp() {
     localStorage.setItem(OPS_SIDER_COLLAPSED_KEY, collapsed ? "1" : "0");
   }, [collapsed]);
 
+  useEffect(() => {
+    if (auth !== "ready") return;
+    let disposed = false;
+    opsApi
+      .tenantScope()
+      .then((result) => {
+        if (!disposed) setTenantScopeLimited(result.scope.mode !== "all");
+      })
+      .catch(() => {
+        if (!disposed) setTenantScopeLimited(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [auth]);
+
   const onMenuClick = (key: string) => navigate("/" + key);
 
   const logout = async () => {
@@ -69,6 +97,7 @@ export default function OpsApp() {
     { key: "my-projects", icon: <FolderOpenOutlined />, label: "我的项目", show: true },
     { key: "projects", icon: <ProjectOutlined />, label: "项目池", show: canPool },
     { key: "people", icon: <TeamOutlined />, label: "人员进度", show: isAdmin },
+    { key: "audio-edit", icon: <CustomerServiceOutlined />, label: "音效配置", show: true },
     { key: "tickets", icon: <FileTextOutlined />, label: "需求提单", show: true },
     { key: "settings", icon: <SettingOutlined />, label: "设置", show: isAdmin },
   ];
@@ -134,6 +163,12 @@ export default function OpsApp() {
                         </Avatar>
                       </Tooltip>
                       <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
+                      <Tooltip title={tenantScopeLimited ? "数据可见范围（已设置）" : "数据可见范围"} placement="right">
+                        <span style={{ position: "relative", display: "inline-flex" }}>
+                          <Button icon={<DataScopeIcon active={tenantScopeLimited} />} onClick={() => setTenantScopeOpen(true)} />
+                          <ScopeDot active={tenantScopeLimited} />
+                        </span>
+                      </Tooltip>
                       <Tooltip title="退出登录" placement="right">
                         <Button icon={<LogoutOutlined />} onClick={logout} />
                       </Tooltip>
@@ -152,6 +187,12 @@ export default function OpsApp() {
                       </div>
                         <NotificationCenter enabled={auth === "ready"} notifyStart={me?.notifyStart} notifyEnd={me?.notifyEnd} />
                       </div>
+                      <span style={{ position: "relative", display: "block", marginBottom: 8 }}>
+                        <Button block icon={<DataScopeIcon active={tenantScopeLimited} />} onClick={() => setTenantScopeOpen(true)}>
+                          数据可见范围
+                        </Button>
+                        <ScopeDot active={tenantScopeLimited} />
+                      </span>
                       <Button block icon={<LogoutOutlined />} onClick={logout}>
                         退出登录
                       </Button>
@@ -161,18 +202,20 @@ export default function OpsApp() {
               </div>
             </Sider>
             <Layout style={{ marginLeft: siderWidth, transition: "margin-left 0.18s ease" }}>
-              <Content style={{ padding: 16, background: "#f0f2f5" }}>
+              <Content style={{ padding: 8, background: "#f0f2f5" }}>
                 <Routes>
                   <Route path="tickets" element={<TicketsPage isAdmin={isAdmin} />} />
                   <Route path="overview" element={<OverviewPage />} />
                   <Route path="my-projects" element={<ProjectPoolPage key="my-projects" mine />} />
                   <Route path="projects" element={canPool ? <ProjectPoolPage key="projects" isAdmin={isAdmin} /> : <Navigate to="/tickets" replace />} />
                   <Route path="people" element={<PeoplePage />} />
+                  <Route path="audio-edit" element={<AudioEditManagementPage />} />
                   <Route path="settings" element={isAdmin ? <OpsSettingsPage /> : <Navigate to="/tickets" replace />} />
                   <Route path="*" element={<Navigate to="/tickets" replace />} />
                 </Routes>
               </Content>
             </Layout>
+            <TenantScopeModal open={tenantScopeOpen} onCancel={() => setTenantScopeOpen(false)} />
           </Layout>
         )}
       </AntApp>

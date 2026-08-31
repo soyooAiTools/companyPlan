@@ -19,9 +19,10 @@ const cleanStatusText = (value?: string | null) => String(value || "").replace(/
 
 export default function ProjectLogsDrawer({ open, project, logs, loading, logKind, onLogKindChange, onClose }: ProjectLogsDrawerProps) {
   const shownLogs = logs.filter((lg) => logKind === "all" || lg.kind === logKind);
+  const titleName = project?.isVersionRow && project.versionName ? `${project.name} - ${project.versionName}` : project?.name ?? "";
 
   return (
-    <Drawer title={`项目名称:${project?.name ?? ""}`} open={open} onClose={onClose} size={460}>
+    <Drawer title={`项目名称:${titleName}`} open={open} onClose={onClose} size={460}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, fontSize: 15, color: "#0f172a" }}>项目流转记录</span>
         <SegmentedTabs

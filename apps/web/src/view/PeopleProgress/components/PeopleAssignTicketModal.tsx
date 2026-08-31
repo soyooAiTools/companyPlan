@@ -25,6 +25,12 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 	const [invalidTaskIndex, setInvalidTaskIndex] = useState<number | null>(null);
 	const projectsRequestSeq = useRef(0);
 	const selectedProjectId = Form.useWatch("projectId", form) as string | undefined;
+	const selectedVersionId = Form.useWatch("projectVersionId", form) as string | undefined;
+	const selectedProject = projects.find((project) => String(project.id) === String(selectedProjectId));
+	const selectedVersion = selectedProject?.versions?.find((version) => String(version.id) === String(selectedVersionId));
+	const defaultVersionId = (project?: OpsProject) =>
+		(project?.versions || []).find((version) => version.isDefault || String(version.code || "").toLowerCase() === "v1")?.id || project?.versions?.[0]?.id;
+	const versionProjectId = (projectId?: string, versionId?: string) => (projectId && versionId ? `${projectId}::version-${versionId}` : projectId || "");
 
 	const resetDraft = () => {
 		form.resetFields();
@@ -44,7 +50,7 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 
 	const onTenantChange = async (tenantId?: string) => {
 		const seq = ++projectsRequestSeq.current;
-		form.setFieldsValue({ projectId: undefined, tickets: [{ ownerId: person?.userId }] });
+		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{ ownerId: person?.userId }] });
 		setProjects([]);
 		setSegments([]);
 		setMembers([]);
@@ -60,11 +66,24 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 	};
 
 	const onProjectChange = async (projectId?: string) => {
-		form.setFieldsValue({ tickets: [{ ownerId: person?.userId }] });
+		const nextProject = projects.find((project) => String(project.id) === String(projectId));
+		const nextVersionId = defaultVersionId(nextProject);
+		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{ ownerId: person?.userId }] });
 		setSegments([]);
 		setMembers([]);
 		if (!projectId) return;
-		const response = await opsApi.responsibles(projectId).catch(() => null);
+		const response = await opsApi.responsibles(versionProjectId(projectId, nextVersionId)).catch(() => null);
+		if (response) {
+			setSegments(response.segments ?? []);
+			setMembers(response.members ?? []);
+		}
+	};
+	const onVersionChange = async (versionId?: string) => {
+		form.setFieldsValue({ tickets: [{ ownerId: person?.userId }] });
+		setSegments([]);
+		setMembers([]);
+		if (!selectedProjectId) return;
+		const response = await opsApi.responsibles(versionProjectId(selectedProjectId, versionId)).catch(() => null);
 		if (response) {
 			setSegments(response.segments ?? []);
 			setMembers(response.members ?? []);
@@ -87,7 +106,10 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 		const tickets = rawTickets
 			.filter(isComplete)
 			.map((ticket) => ({
-				projectId: value.projectId,
+				projectId: versionProjectId(value.projectId, selectedVersion?.id),
+				projectVersionId: selectedVersion?.id || "",
+				projectVersionCode: selectedVersion?.code || "",
+				projectVersionName: selectedVersion?.name || "",
 				segmentId: Number(ticket.segmentId),
 				ownerId: String(ticket.ownerId),
 				title: String(ticket.title || "").trim(),
@@ -100,7 +122,7 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 		}
 		setSubmitting(true);
 		try {
-			await opsApi.createTickets({ projectId: value.projectId, priority: value.priority, tickets });
+			await opsApi.createTickets({ projectId: versionProjectId(value.projectId, selectedVersion?.id), priority: value.priority, tickets });
 			message.success(tickets.length > 1 ? `已创建 ${tickets.length} 条工单` : "提单已创建");
 			onCreated();
 			onClose();
@@ -153,9 +175,11 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 			segments={segments}
 			members={members}
 			selectedProjectId={selectedProjectId}
+			selectedVersionId={selectedVersionId}
 			invalidTaskIndex={invalidTaskIndex}
 			onTenantChange={onTenantChange}
 			onProjectChange={onProjectChange}
+			onVersionChange={onVersionChange}
 			onSubmit={submit}
 			onCancel={cancel}
 		/>

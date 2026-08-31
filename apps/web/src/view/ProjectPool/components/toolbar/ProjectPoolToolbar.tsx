@@ -3,6 +3,7 @@ import { FilterOutlined } from "@ant-design/icons";
 import type { OpsSegment } from "@/api/modules/ops";
 import { PROJECT_STATUSES, PROJECT_STAGES } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
+import { PROJECT_POOL_REMARK_COLUMN_LABELS } from "../../hooks/useProjectPoolPreferences";
 
 type ProjectPoolToolbarProps = {
 	plannerOptions: { name: string; avatar?: string }[];
@@ -25,7 +26,12 @@ export default function ProjectPoolToolbar({
 		{ key: "status", label: "项目状态", options: PROJECT_STATUSES.map((status) => ({ label: status, value: status })) },
 		{ key: "stage", label: "当前阶段", options: PROJECT_STAGES.map((stage) => ({ label: stage, value: stage })) },
 		{ key: "segment", label: "环节", options: segmentOptions.map((segment) => ({ label: segment.name, value: String(segment.id) })) },
-		{ key: "remark", label: "备注" },
+		{ key: "remark", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark },
+		{ key: "remark2", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark2 },
+		{ key: "remark3", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark3 },
+		{ key: "remark4", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark4 },
+		{ key: "remark5", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark5 },
+		{ key: "remark6", label: PROJECT_POOL_REMARK_COLUMN_LABELS.remark6 },
 	];
 	return (
 		<div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "8px 12px", borderBottom: "1px solid #e5e7eb", background: "#fff", flexShrink: 0 }}>

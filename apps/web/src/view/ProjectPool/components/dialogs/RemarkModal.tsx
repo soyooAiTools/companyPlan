@@ -5,6 +5,7 @@ import RichTextEditor from "@/view/Ops/RichTextEditor";
 type RemarkModalProps = {
   open: boolean;
   target: OpsProjectPoolRow | null;
+  title?: string;
   value: string;
   saving: boolean;
   onChange: (value: string) => void;
@@ -12,9 +13,9 @@ type RemarkModalProps = {
   onCancel: () => void;
 };
 
-export default function RemarkModal({ open, target, value, saving, onChange, onSave, onCancel }: RemarkModalProps) {
+export default function RemarkModal({ open, target, title = "备注", value, saving, onChange, onSave, onCancel }: RemarkModalProps) {
   return (
-    <Modal title={`修改备注 · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
+    <Modal title={`修改${title} · ${target?.name ?? ""}`} open={open} onOk={onSave} confirmLoading={saving} onCancel={onCancel} okText="保存" cancelText="取消" width={760} destroyOnHidden>
       <RichTextEditor value={value} onChange={onChange} projectId={target?.id} />
     </Modal>
   );
