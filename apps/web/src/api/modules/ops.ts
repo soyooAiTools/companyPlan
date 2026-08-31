@@ -283,10 +283,15 @@ type OpsProjectPoolListParams = {
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
 };
-type OpsArchivedProjectPoolListParams = Pick<OpsProjectPoolListParams, "page" | "pageSize" | "q" | "status" | "planner"> & {
+type OpsArchivedProjectPoolListParams = Pick<OpsProjectPoolListParams, "page" | "pageSize" | "q" | "status" | "planner" | "sortBy" | "sortOrder"> & {
 	from?: string;
 	to?: string;
 	dateField?: "started_at" | "ended_at";
+	startedFrom?: string;
+	startedTo?: string;
+	endedFrom?: string;
+	endedTo?: string;
+	advancedFilter?: string;
 };
 export interface OpsProjectStageDeadline {
 	key: string;
@@ -641,6 +646,14 @@ export const opsApi = {
 		if (params.from) qs.set("from", params.from);
 		if (params.to) qs.set("to", params.to);
 		if (params.dateField) qs.set("date_field", params.dateField);
+		if (params.startedFrom) qs.set("started_from", params.startedFrom);
+		if (params.startedTo) qs.set("started_to", params.startedTo);
+		if (params.endedFrom) qs.set("ended_from", params.endedFrom);
+		if (params.endedTo) qs.set("ended_to", params.endedTo);
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.sortBy === "projectStart") qs.set("sort_by", "started_at");
+		if (params.sortBy === "projectEnd") qs.set("sort_by", "ended_at");
+		if (params.sortOrder) qs.set("sort_order", params.sortOrder);
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/archive${s ? `?${s}` : ""}`);
 	},

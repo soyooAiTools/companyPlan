@@ -33,6 +33,10 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
           advancedFilter: String(req.query.advanced_filter ?? ""),
+          startedFrom: String(req.query.started_from ?? ""),
+          startedTo: String(req.query.started_to ?? ""),
+          endedFrom: String(req.query.ended_from ?? ""),
+          endedTo: String(req.query.ended_to ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -102,6 +106,9 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           from: String(req.query.from ?? ""),
           to: String(req.query.to ?? ""),
           dateField: String(req.query.date_field ?? ""),
+          sortBy: String(req.query.sort_by ?? ""),
+          sortOrder: String(req.query.sort_order ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
         }),
       );
     } catch (e) {

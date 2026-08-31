@@ -402,7 +402,9 @@ function archiveProjectRow(project) {
     tenantName: project.tenant_name ?? "",
     status: project.project_lifecycle_status || project.lifecycle_status || project.status || "",
     plannerName: project.planner_name ?? "",
-    planners: [],
+    planners: Array.isArray(project.planners)
+      ? project.planners.map((planner) => ({ name: planner?.name ?? "", avatar: planner?.avatar ?? "" })).filter((planner) => planner.name)
+      : [],
     startedAt: project.started_at ?? null,
     endedAt: project.ended_at ?? null,
     statusChangedAt: null,
@@ -426,7 +428,24 @@ function archiveProjectRow(project) {
 }
 
 // 历史项目只看 helper 的项目基础数据；过滤、排序、分页都下推给 helper，避免在 ops 侧拉全量再二次处理。
-export async function listArchivedProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", planner = "", from = "", to = "", dateField = "started_at" }) {
+export async function listArchivedProjectPool({
+  user,
+  page = 1,
+  pageSize = 20,
+  q = "",
+  status = "",
+  planner = "",
+  from = "",
+  to = "",
+  dateField = "started_at",
+  sortBy = "",
+  sortOrder = "",
+  advancedFilter = "",
+  startedFrom = "",
+  startedTo = "",
+  endedFrom = "",
+  endedTo = "",
+}) {
   const effectiveStatus = status || ARCHIVE_PROJECT_STATUSES.join(",");
   const effectiveDateField = dateField === "ended_at" ? "ended_at" : "started_at";
   const timer = createProjectPoolTimer("archive", { page, pageSize, q: !!q, status: effectiveStatus, planner: !!planner, from, to, dateField: effectiveDateField, admin: isAdmin(user) });
@@ -442,8 +461,13 @@ export async function listArchivedProjectPool({ user, page = 1, pageSize = 20, q
       dateField: effectiveDateField,
       from,
       to,
-      sortBy: effectiveDateField,
-      sortOrder: "desc",
+      sortBy: sortBy === "ended_at" ? "ended_at" : sortBy === "started_at" ? "started_at" : effectiveDateField,
+      sortOrder: sortOrder === "asc" ? "asc" : "desc",
+      advancedFilter,
+      startedFrom,
+      startedTo,
+      endedFrom,
+      endedTo,
       light: true,
     });
     const pageRows = (Array.isArray(result?.data) ? result.data : []).map(archiveProjectRow);

@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { App, Avatar, Button, DatePicker, Input, Select, Space, Tag } from "antd";
+import { App, Avatar, Button, DatePicker, Space, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsProjectPoolRow } from "@/api/modules/ops";
+import { FilterFilled } from "@ant-design/icons";
+import { opsApi, type OpsProjectPoolRow, type OpsProjectPoolSortBy, type OpsProjectPoolSortOrder } from "@/api/modules/ops";
 import { statusStyle } from "@/view/Ops/constants";
+import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
 import ProjectSheet from "./ProjectSheet";
+import AdvancedFilterBuilder, { compactAdvancedFilter, emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 
 const ARCHIVE_STATUSES = ["已完成", "回收中"];
 
@@ -14,6 +16,26 @@ type ArchiveProjectSheetProps = {
 	scrollY: number;
 	onOpenLogs?: (row: OpsProjectPoolRow) => void;
 };
+
+type DateRangeFilterProps = {
+	value: [Dayjs | null, Dayjs | null] | null;
+	placeholder: [string, string];
+	onApply: (value: [Dayjs | null, Dayjs | null] | null) => void;
+	close: () => void;
+};
+
+function DateRangeFilterDropdown({ value, placeholder, onApply, close }: DateRangeFilterProps) {
+	const [draft, setDraft] = useState<[Dayjs | null, Dayjs | null] | null>(value);
+	return (
+		<div style={{ padding: 10, width: 290 }} onClick={(event) => event.stopPropagation()}>
+			<DatePicker.RangePicker size="small" value={draft} placeholder={placeholder} onChange={setDraft} style={{ width: "100%" }} />
+			<Space size={8} style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+				<Button size="small" onClick={() => setDraft(null)}>清空</Button>
+				<Button size="small" type="primary" onClick={() => { onApply(draft); close(); }}>筛选</Button>
+			</Space>
+		</div>
+	);
+}
 
 function formatProjectDate(value?: string | null) {
 	if (!value) return "—";
@@ -49,24 +71,29 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 	const [loading, setLoading] = useState(false);
-	const [keyword, setKeyword] = useState("");
-	const [keywordInput, setKeywordInput] = useState("");
 	const [statusFilter, setStatusFilter] = useState<string[]>(ARCHIVE_STATUSES);
-	const [dateRange, setDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
-	const [dateField, setDateField] = useState<"started_at" | "ended_at">("started_at");
+	const [startedDateRange, setStartedDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+	const [endedDateRange, setEndedDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+	const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
+	const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy>();
+	const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder>();
 
 	const load = useCallback(async () => {
 		setLoading(true);
 		try {
-			const [from, to] = dateRange || [];
+			const [startedFrom, startedTo] = startedDateRange || [];
+			const [endedFrom, endedTo] = endedDateRange || [];
 			const result = await opsApi.projectPoolArchive({
 				page,
 				pageSize,
-				q: keyword.trim(),
 				status: statusFilter,
-				from: from ? from.format("YYYY-MM-DD") : undefined,
-				to: to ? to.format("YYYY-MM-DD") : undefined,
-				dateField,
+				startedFrom: startedFrom ? startedFrom.format("YYYY-MM-DD") : undefined,
+				startedTo: startedTo ? startedTo.format("YYYY-MM-DD") : undefined,
+				endedFrom: endedFrom ? endedFrom.format("YYYY-MM-DD") : undefined,
+				endedTo: endedTo ? endedTo.format("YYYY-MM-DD") : undefined,
+				advancedFilter: stringifyAdvancedFilter(advancedFilter),
+				sortBy,
+				sortOrder,
 			});
 			setRows(result.rows || []);
 			setTotal(Number(result.total || 0));
@@ -75,7 +102,18 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 		} finally {
 			setLoading(false);
 		}
-	}, [dateField, dateRange, keyword, message, page, pageSize, statusFilter]);
+	}, [advancedFilter, endedDateRange, message, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
+
+	const advancedFilterFields = useMemo(
+		() => [
+			{ key: "name", label: "项目名称" },
+			{ key: "tenantName", label: "客户" },
+			{ key: "plannerName", label: "策划" },
+			{ key: "status", label: "状态", options: ARCHIVE_STATUSES.map((status) => ({ label: status, value: status })) },
+		],
+		[],
+	);
+	const activeAdvancedCount = compactAdvancedFilter(advancedFilter).rules.length;
 
 	useEffect(() => {
 		void load();
@@ -88,22 +126,28 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				title: "项目",
 				key: "name",
 				width: 300,
+				filterDropdown: ({ close }) => (
+					<AdvancedFilterBuilder
+						value={advancedFilter}
+						fields={advancedFilterFields}
+						onChange={(value) => {
+							setAdvancedFilter(value);
+							setPage(1);
+						}}
+						onApply={close}
+					/>
+				),
+				filterIcon: () => <FilterFilled style={{ color: activeAdvancedCount ? "#dc2626" : undefined }} />,
 				render: (_: unknown, row, index) => (
 					<div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
 						<span style={{ width: 28, flexShrink: 0, textAlign: "right", color: row.isVersionRow ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600 }}>
 							{row.isVersionRow ? "" : offset + index + 1}
 						</span>
 						<span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }}>
-							{row.isVersionRow ? row.versionName || row.versionCode || row.name : row.name || "—"}
+							{row.isVersionRow ? row.versionName || row.versionCode || row.name : [row.name, row.tenantName].filter(Boolean).join(" - ") || "—"}
 						</span>
 					</div>
 				),
-			},
-			{
-				title: "客户",
-				key: "tenantName",
-				width: 130,
-				render: (_: unknown, row) => row.tenantName || "—",
 			},
 			{
 				title: "策划",
@@ -115,6 +159,21 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				title: "状态",
 				key: "status",
 				width: 110,
+				filterDropdown: ({ close }) => (
+					<HeaderMultiSelectDropdown
+						value={statusFilter}
+						options={ARCHIVE_STATUSES.map((status) => ({
+							value: status,
+							label: <Tag bordered={false} style={{ ...statusStyle(status), marginInlineEnd: 0 }}>{status}</Tag>,
+						}))}
+						onApply={(value) => {
+							setStatusFilter(value.length ? value : ARCHIVE_STATUSES);
+							setPage(1);
+						}}
+						close={close}
+					/>
+				),
+				filterIcon: () => <FilterFilled style={{ color: statusFilter.length === ARCHIVE_STATUSES.length ? undefined : "#dc2626" }} />,
 				render: (_: unknown, row) => (
 					<Tag bordered={false} style={{ ...statusStyle(row.status), marginInlineEnd: 0 }}>
 						{row.status || "—"}
@@ -125,110 +184,41 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				title: "项目启动时间",
 				key: "startedAt",
 				width: 130,
+				sorter: true,
+				sortOrder: sortBy === "projectStart" ? (sortOrder === "asc" ? "ascend" : "descend") : null,
+				filterDropdown: ({ close }) => (
+					<DateRangeFilterDropdown
+						value={startedDateRange}
+						placeholder={["项目启动时间", ""]}
+						onApply={(value) => { setStartedDateRange(value); setPage(1); }}
+						close={close}
+					/>
+				),
+				filterIcon: () => <FilterFilled style={{ color: startedDateRange?.some(Boolean) ? "#dc2626" : undefined }} />,
 				render: (_: unknown, row) => formatProjectDate(row.startedAt),
 			},
 			{
 				title: "项目结束时间",
-				key: "endedAt",
+				key: "duration",
 				width: 130,
+				sorter: true,
+				sortOrder: sortBy === "projectEnd" ? (sortOrder === "asc" ? "ascend" : "descend") : null,
+				filterDropdown: ({ close }) => (
+					<DateRangeFilterDropdown
+						value={endedDateRange}
+						placeholder={["项目结束时间", ""]}
+						onApply={(value) => { setEndedDateRange(value); setPage(1); }}
+						close={close}
+					/>
+				),
+				filterIcon: () => <FilterFilled style={{ color: endedDateRange?.some(Boolean) ? "#dc2626" : undefined }} />,
 				render: (_: unknown, row) => formatProjectDate(row.endedAt),
 			},
-			{
-				title: "操作",
-				key: "actions",
-				width: 110,
-				render: (_: unknown, row) =>
-					row.hasVersionChildren ? null : (
-						<Button size="small" onClick={() => onOpenLogs?.(row)}>
-							查看记录
-						</Button>
-					),
-			},
 		];
-	}, [onOpenLogs, page, pageSize]);
-
-	const search = () => {
-		setKeyword(keywordInput);
-		setPage(1);
-	};
+	}, [activeAdvancedCount, advancedFilter, advancedFilterFields, endedDateRange, onOpenLogs, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
 
 	return (
 		<div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#fff" }}>
-			<div style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 42, padding: "6px 12px", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
-				<Input
-					allowClear
-					size="small"
-					prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-					placeholder="搜索项目 / 客户 / 策划"
-					value={keywordInput}
-					onChange={(event) => setKeywordInput(event.target.value)}
-					onPressEnter={search}
-					style={{ width: 220 }}
-				/>
-				<Select
-					mode="multiple"
-					size="small"
-					maxTagCount="responsive"
-					placeholder="状态"
-					value={statusFilter}
-					options={ARCHIVE_STATUSES.map((status) => ({
-						value: status,
-						label: (
-							<Tag bordered={false} style={{ ...statusStyle(status), marginInlineEnd: 0 }}>
-								{status}
-							</Tag>
-						),
-					}))}
-					onChange={(value) => {
-						setStatusFilter(value.length ? value : ARCHIVE_STATUSES);
-						setPage(1);
-					}}
-					style={{ width: 220 }}
-				/>
-				<DatePicker.RangePicker
-					allowClear
-					size="small"
-					placeholder={["开始日期", "结束日期"]}
-					value={dateRange}
-					onChange={(value) => {
-						setDateRange(value);
-						setPage(1);
-					}}
-				/>
-				<Select
-					size="small"
-					value={dateField}
-					options={[
-						{ value: "started_at", label: "按启动时间" },
-						{ value: "ended_at", label: "按结束时间" },
-					]}
-					onChange={(value) => {
-						setDateField(value);
-						setPage(1);
-					}}
-					style={{ width: 116 }}
-				/>
-				<Space size={8}>
-					<Button type="primary" size="small" onClick={search}>
-						查询
-					</Button>
-					<Button
-						size="small"
-						onClick={() => {
-							setKeyword("");
-							setKeywordInput("");
-							setStatusFilter(ARCHIVE_STATUSES);
-							setDateRange(null);
-							setDateField("started_at");
-							setPage(1);
-						}}>
-						重置
-					</Button>
-					<Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>
-						刷新
-					</Button>
-				</Space>
-			</div>
 			<div style={{ flex: 1, minHeight: 0 }}>
 				<ProjectSheet
 					rows={rows}
@@ -237,10 +227,15 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 					page={page}
 					pageSize={pageSize}
 					total={total}
-					scrollY={Math.max(160, scrollY - 42)}
+					scrollY={scrollY}
 					onPageChange={(nextPage, nextPageSize) => {
 						setPage(nextPage);
 						setPageSize(nextPageSize);
+					}}
+					onSortChange={(nextSortBy, nextSortOrder) => {
+						setSortBy(nextSortBy);
+						setSortOrder(nextSortOrder);
+						setPage(1);
 					}}
 					onOpenLogs={onOpenLogs}
 				/>

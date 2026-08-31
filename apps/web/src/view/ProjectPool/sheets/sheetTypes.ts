@@ -7,7 +7,7 @@ export const projectPoolSheetOptions: { value: ProjectPoolSheetKey; label: strin
 	{ value: "stage", label: "按阶段查看" },
 	{ value: "status", label: "按状态查看" },
 	{ value: "owner", label: "按负责人查看" },
+	{ value: "archive", label: "已完成项目" },
 	{ value: "progress", label: "进度分析" },
-	{ value: "archive", label: "历史项目" },
 	{ value: "stale", label: "超时关注" },
 ];

@@ -142,6 +142,11 @@ export const soyooClient = {
     if (opts.sortBy) q.set("sort_by", String(opts.sortBy));
     if (opts.sortOrder) q.set("sort_order", String(opts.sortOrder));
     if (opts.light) q.set("light", "1");
+    if (opts.advancedFilter) q.set("advanced_filter", String(opts.advancedFilter));
+    if (opts.startedFrom) q.set("started_from", String(opts.startedFrom));
+    if (opts.startedTo) q.set("started_to", String(opts.startedTo));
+    if (opts.endedFrom) q.set("ended_from", String(opts.endedFrom));
+    if (opts.endedTo) q.set("ended_to", String(opts.endedTo));
     return callRaw(`/integration/projects?${q.toString()}`, { timeoutMs: PROJECT_LIST_TIMEOUT });
   },
   setProjectStatus: (projectId, status, options = {}) =>
