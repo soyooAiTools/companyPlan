@@ -130,11 +130,18 @@ export const soyooClient = {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });
     if (opts.keyword) q.set("keyword", String(opts.keyword));
     if (opts.status) q.set("status", String(opts.status));
+    if (opts.lifecycleStatus) q.set("lifecycle_status", String(opts.lifecycleStatus));
     if (opts.planner) q.set("planner", String(opts.planner));
     if (opts.exclude) q.set("exclude", String(opts.exclude)); // 排除的项目级状态(逗号分隔),如 回收中,客户暂停
     if (Array.isArray(opts.excludeTenants) && opts.excludeTenants.length) q.set("exclude_tenants", opts.excludeTenants.join(",")); // 排除的客户名(逗号分隔)
     if (opts.memberUserId) q.set("member_user_id", String(opts.memberUserId));
     if (Array.isArray(opts.projectIds) && opts.projectIds.length) q.set("ids", opts.projectIds.join(","));
+    if (opts.dateField) q.set("date_field", String(opts.dateField));
+    if (opts.from) q.set("from", String(opts.from));
+    if (opts.to) q.set("to", String(opts.to));
+    if (opts.sortBy) q.set("sort_by", String(opts.sortBy));
+    if (opts.sortOrder) q.set("sort_order", String(opts.sortOrder));
+    if (opts.light) q.set("light", "1");
     return callRaw(`/integration/projects?${q.toString()}`, { timeoutMs: PROJECT_LIST_TIMEOUT });
   },
   setProjectStatus: (projectId, status, options = {}) =>

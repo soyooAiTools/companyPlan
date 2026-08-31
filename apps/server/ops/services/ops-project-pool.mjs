@@ -59,6 +59,7 @@ const PROJECT_REMARK_LABELS = { remark: "策划备注", remark2: "备注2", rema
 const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", ...PROJECT_REMARK_FIELDS, "versionCode", "versionName"]);
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
 const NO_SEGMENT_FILTER_VALUE = 0;
+const ARCHIVE_PROJECT_STATUSES = ["已完成", "回收中"];
 
 function parseAdvancedFilter(input) {
   if (!input) return null;
@@ -386,6 +387,69 @@ export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", s
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
+  } catch (e) {
+    timer.error(e);
+    throw e;
+  }
+}
+
+function archiveProjectRow(project) {
+  return {
+    id: String(project.id ?? ""),
+    projectId: String(project.id ?? ""),
+    name: project.name ?? "",
+    tenantId: String(project.tenant_id ?? ""),
+    tenantName: project.tenant_name ?? "",
+    status: project.project_lifecycle_status || project.lifecycle_status || project.status || "",
+    plannerName: project.planner_name ?? "",
+    planners: [],
+    startedAt: project.started_at ?? null,
+    endedAt: project.ended_at ?? null,
+    statusChangedAt: null,
+    stage: "",
+    stageDeadlines: [],
+    stageChangedAt: null,
+    remark: "",
+    remark2: "",
+    remark3: "",
+    remark4: "",
+    remark5: "",
+    remark6: "",
+    memberCount: 0,
+    members: [],
+    segments: [],
+    ticketGroups: {},
+    ticketTotal: 0,
+    atRisk: 0,
+    overdue: 0,
+  };
+}
+
+// 历史项目只看 helper 的项目基础数据；过滤、排序、分页都下推给 helper，避免在 ops 侧拉全量再二次处理。
+export async function listArchivedProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", planner = "", from = "", to = "", dateField = "started_at" }) {
+  const effectiveStatus = status || ARCHIVE_PROJECT_STATUSES.join(",");
+  const effectiveDateField = dateField === "ended_at" ? "ended_at" : "started_at";
+  const timer = createProjectPoolTimer("archive", { page, pageSize, q: !!q, status: effectiveStatus, planner: !!planner, from, to, dateField: effectiveDateField, admin: isAdmin(user) });
+  try {
+    const effectivePlanner = !isAdmin(user) ? currentPlannerFilterName(user) : planner;
+    const result = await soyooClient.projectsList({
+      page,
+      limit: pageSize,
+      keyword: q,
+      lifecycleStatus: effectiveStatus,
+      planner: effectivePlanner,
+      exclude: "__none__",
+      dateField: effectiveDateField,
+      from,
+      to,
+      sortBy: effectiveDateField,
+      sortOrder: "desc",
+      light: true,
+    });
+    const pageRows = (Array.isArray(result?.data) ? result.data : []).map(archiveProjectRow);
+    const total = Number(result?.total ?? pageRows.length);
+    timer.done({ rows: pageRows.length, total });
+    return { rows: pageRows, total, page: Math.max(1, Number(page) || 1), pageSize };
   } catch (e) {
     timer.error(e);
     throw e;

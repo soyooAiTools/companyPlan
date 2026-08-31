@@ -88,6 +88,27 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 历史项目:只转发到 soyoo helper 做项目基础数据分页/筛选，不读 ops 快照或工单聚合。
+  app.get("/api/ops/project-pool/archive", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json(
+        await pool.listArchivedProjectPool({
+          user: req.user,
+          page: Number(req.query.page) || 1,
+          pageSize: projectPoolPageSize(req.query.pageSize),
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          planner: String(req.query.planner ?? ""),
+          from: String(req.query.from ?? ""),
+          to: String(req.query.to ?? ""),
+          dateField: String(req.query.date_field ?? ""),
+        }),
+      );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 超时数(菜单红点轮询)
   app.get("/api/ops/project-pool/stale-count", requireAuth, requirePlanner, async (req, res) => {
     try {

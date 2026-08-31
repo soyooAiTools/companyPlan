@@ -23,6 +23,7 @@ import { useProjectPoolColumns } from "./hooks/useProjectPoolColumns";
 import { useProjectPoolData } from "./hooks/useProjectPoolData";
 import { useProjectPoolModals } from "./hooks/useProjectPoolModals";
 import { useProjectPoolPreferences, type ProjectPoolPreferenceResetKey } from "./hooks/useProjectPoolPreferences";
+import ArchiveProjectSheet from "./sheets/ArchiveProjectSheet";
 import GroupedProjectSheet from "./sheets/GroupedProjectSheet";
 import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
@@ -176,6 +177,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const switchFrameRef = useRef<number | null>(null);
 	const isStaleSheet = !mine && sheet === "stale";
 	const isProgressSheet = !mine && sheet === "progress";
+	const isArchiveSheet = !mine && sheet === "archive";
 	const groupMode = !mine && (sheet === "planner" || sheet === "segment" || sheet === "stage" || sheet === "status" || sheet === "owner") ? sheet : null;
 	const {
 		tab,
@@ -213,7 +215,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setSearch,
 	} = useProjectPoolData(message, {
 		mine,
-		pagedEnabled: mine || !groupMode,
+		pagedEnabled: mine || (!groupMode && !isProgressSheet && !isArchiveSheet),
 		initialPreferences: {
 			pageSize: projectPoolPreferences.pageSize,
 			search: projectPoolPreferences.filters.search,
@@ -435,9 +437,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	}, [isStaleSheet, setPage, setTab, tab]);
 
 	useEffect(() => {
-		if (!mine && !isStaleSheet && !isProgressSheet && (sheet !== "project" || onlyUrgent) && tab === "all") void loadAllRows();
+		if (!mine && !isStaleSheet && !isProgressSheet && !isArchiveSheet && (sheet !== "project" || onlyUrgent) && tab === "all") void loadAllRows();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isProgressSheet, isStaleSheet, tab, sheet, allRowsSourceKey, mine, onlyUrgent]);
+	}, [isArchiveSheet, isProgressSheet, isStaleSheet, tab, sheet, allRowsSourceKey, mine, onlyUrgent]);
 
 	const filteredGroupRows = useMemo(
 		() =>
@@ -723,32 +725,34 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			transferPlanner,
 		},
 		groupMode ? 0 : (page - 1) * pageSize,
+		isArchiveSheet
+			? undefined
+			: {
+					statusFilter,
+					stageFilter,
+					plannerFilter,
+					plannerOptions,
+					segmentFilter,
+					segmentOptions,
+					advancedFilter,
+					onAdvancedFilterChange: (value) => {
+						changeAdvancedFilter(value);
+					},
+					onStatusFilterChange: (value) => {
+						changeStatusFilter(value);
+					},
+					onStageFilterChange: (value) => {
+						changeStageFilter(value);
+					},
+					onPlannerFilterChange: (value) => {
+						changePlannerFilter(value);
+					},
+					onSegmentFilterChange: (value) => {
+						changeSegmentFilter(value);
+					},
+				},
 		{
-			statusFilter,
-			stageFilter,
-			plannerFilter,
-			plannerOptions,
-			segmentFilter,
-			segmentOptions,
-			advancedFilter,
-			onAdvancedFilterChange: (value) => {
-				changeAdvancedFilter(value);
-			},
-			onStatusFilterChange: (value) => {
-				changeStatusFilter(value);
-			},
-			onStageFilterChange: (value) => {
-				changeStageFilter(value);
-			},
-			onPlannerFilterChange: (value) => {
-				changePlannerFilter(value);
-			},
-			onSegmentFilterChange: (value) => {
-				changeSegmentFilter(value);
-			},
-		},
-		{
-			readonly: mine,
+			readonly: mine || isArchiveSheet,
 			isAdmin,
 			serverSort: !groupMode,
 			sortBy,
@@ -811,7 +815,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					onChange={changeSheet}
 					extra={
 						<div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-							{!mine && !isStaleSheet ? (
+							{!mine && !isStaleSheet && !isArchiveSheet ? (
 								<div
 									style={{
 										display: "inline-flex",
@@ -914,6 +918,11 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					<div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
 						<Spin />
 					</div>
+				) : isArchiveSheet ? (
+					<ArchiveProjectSheet
+						scrollY={scrollY}
+						onOpenLogs={dialogs.actions.openLogs}
+					/>
 				) : isProgressSheet ? (
 					<ProjectProgressAnalysisSheet
 						enabled={sheetContentReady}

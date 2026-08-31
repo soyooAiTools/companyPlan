@@ -242,6 +242,7 @@ export interface OpsProjectPoolRow {
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
 	startedAt: string | null; // soyoo 项目启动时间
+	endedAt?: string | null; // 项目结束时间(soyoo 按 started_at + duration_days 返回)
 	remark: string; // 策划备注(ops 自有,富文本 HTML;空串=无)
 	remark2: string; // 项目备注2(ops 自有,富文本 HTML;空串=无)
 	remark3: string; // 项目备注3(ops 自有,富文本 HTML;空串=无)
@@ -281,6 +282,11 @@ type OpsProjectPoolListParams = {
 	advancedFilter?: string;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
+};
+type OpsArchivedProjectPoolListParams = Pick<OpsProjectPoolListParams, "page" | "pageSize" | "q" | "status" | "planner"> & {
+	from?: string;
+	to?: string;
+	dateField?: "started_at" | "ended_at";
 };
 export interface OpsProjectStageDeadline {
 	key: string;
@@ -624,6 +630,19 @@ export const opsApi = {
 		}
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
+	},
+	projectPoolArchive: (params: OpsArchivedProjectPoolListParams = {}) => {
+		const qs = new URLSearchParams();
+		if (params.page) qs.set("page", String(params.page));
+		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.from) qs.set("from", params.from);
+		if (params.to) qs.set("to", params.to);
+		if (params.dateField) qs.set("date_field", params.dateField);
+		const s = qs.toString();
+		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/archive${s ? `?${s}` : ""}`);
 	},
 	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
 	projectPoolProgressAnalysis: (params: Omit<OpsProjectPoolListParams, "page" | "pageSize" | "sortBy" | "sortOrder"> = {}) => {
