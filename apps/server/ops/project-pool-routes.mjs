@@ -97,6 +97,25 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 进度分析:一次返回可见项目/版本和对应状态/阶段流转记录,避免前端逐项目请求。
+  app.get("/api/ops/project-pool/progress-analysis", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      res.json(
+        await pool.progressAnalysis({
+          user: req.user,
+          q: String(req.query.q ?? ""),
+          status: String(req.query.status ?? ""),
+          stage: String(req.query.stage ?? ""),
+          planner: String(req.query.planner ?? ""),
+          segment: String(req.query.segment ?? ""),
+          advancedFilter: String(req.query.advanced_filter ?? ""),
+        }),
+      );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
   // 按负责人查看:按项目成员标签批量取负责人,避免前端逐项目请求成员
   app.post("/api/ops/project-pool/owner-members", requireAuth, requirePlanner, async (req, res) => {
     try {
@@ -115,10 +134,10 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
-  // 回收项目交接人：从 soyoo 用户数据取固定交接账号的名称和头像，避免前端写死展示信息。
+  // 回收项目配置：交接账号从环境变量读取，展示信息从 soyoo 用户数据补齐。
   app.get("/api/ops/recycle-handoff-users", requireAuth, requirePlanner, async (_req, res) => {
     try {
-      res.json({ users: await pool.listRecycleHandoffUsers() });
+      res.json({ ...pool.projectPoolRuntimeOptions(), users: await pool.listRecycleHandoffUsers() });
     } catch (e) {
       soyooErrorResponse(res, e);
     }
@@ -231,6 +250,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     }
   });
 
+  // 转交策划(策划本人/管理员;写回 soyoo 成员关系,再刷新快照)
+  app.post("/api/ops/project-pool/:id/planner", requireAuth, requirePlanner, async (req, res) => {
+    let r;
+    try {
+      r = await pool.changeProjectPlanner({ user: req.user, projectId: req.params.id, toUserId: req.body?.toUserId ?? req.body?.to_user_id, remark: req.body?.remark });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
   // 改客户对接人/需求文档(策划本人/管理员;写回 soyoo 并同步飞书)
   app.post("/api/ops/project-pool/:id/meta", requireAuth, requirePlanner, async (req, res) => {
     let r;
@@ -247,7 +278,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/remark", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark });
+      r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark, field: req.body?.field });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }

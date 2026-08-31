@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { Button, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Tooltip, Typography, Tag } from "antd";
 import { EditOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import { deadlineRemain, fmtStageDate, isInactiveDeadlineProjectRow, nextStageDeadline, stageDescriptionFallback } from "../../deadlineUtils";
@@ -28,20 +28,20 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
 
   if (!items.length) {
     return (
-      <Space size={6}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minWidth: 0, overflow: "hidden" }}>
         <Typography.Text type="secondary">未设置</Typography.Text>
         {edit}
-      </Space>
+      </div>
     );
   }
 
   const next = nextStageDeadline(row.stage, items);
   if (!next) {
     return (
-      <Space size={6}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minWidth: 0, overflow: "hidden" }}>
         <Typography.Text type="secondary">未设置</Typography.Text>
         {edit}
-      </Space>
+      </div>
     );
   }
 
@@ -82,7 +82,7 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
   );
 
   return (
-    <Space size={4} style={{ maxWidth: 282, minWidth: 0, overflow: "hidden" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
       <Tooltip
         title={full}
         placement="topLeft"
@@ -91,14 +91,14 @@ export default function StageDeadlineCell({ row, onEdit }: StageDeadlineCellProp
           root: { maxWidth: "none" },
           container: { width: 280, maxWidth: 280, boxShadow: "0 10px 26px rgba(15, 23, 42, 0.16)", border: "1px solid #e2e8f0" },
         }}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, maxWidth: 250, minWidth: 0, overflow: "hidden" }}>
-          <span style={{ color: "#0f172a", fontWeight: 700, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden" }}>
+          <span style={{ color: "#0f172a", fontWeight: 700, fontVariantNumeric: "tabular-nums", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0, flex: "0 1 auto" }}>
             ({fmtStageDate(next.date)}){next.name || next.key}
           </span>
           {remain ? <span style={{ color: remain.color, fontSize: 13, lineHeight: "18px", fontWeight: isNextOverdue ? 700 : 500, whiteSpace: "nowrap", flexShrink: 0 }}>/ {remain.text}</span> : null}
         </div>
       </Tooltip>
       {edit}
-    </Space>
+    </div>
   );
 }

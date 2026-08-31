@@ -292,6 +292,11 @@ model ops_project_ext {
   stage            String? @db.VarChar(40)
   stage_changed_at String? @db.VarChar(40)
   remark           String? @db.MediumText
+  remark2          String? @db.MediumText
+  remark3          String? @db.MediumText
+  remark4          String? @db.MediumText
+  remark5          String? @db.MediumText
+  remark6          String? @db.MediumText
   updated_at       String? @db.VarChar(40)
 }
 

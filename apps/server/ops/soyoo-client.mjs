@@ -149,6 +149,11 @@ export const soyooClient = {
       method: "POST",
       body: withVersionBody(projectId, { is_urgent: !!isUrgent, ...options }),
     }),
+  transferProjectPlanner: (projectId, toUserId, options = {}) =>
+    callRaw(`/integration/projects/${encodeURIComponent(soyooProjectId(projectId))}/planner/transfer`, {
+      method: "POST",
+      body: withVersionBody(projectId, { to_user_id: Number(soyooId(toUserId)), ...options }),
+    }),
   staleProjects: (body) => callRaw(`/integration/stale-projects`, { method: "POST", body }),
   audioEditSessions: (opts = {}) => {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });

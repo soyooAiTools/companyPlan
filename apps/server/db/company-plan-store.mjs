@@ -544,6 +544,11 @@ async function migrateSchema() {
     .run();
   // 项目备注(ops 自有,富文本;并入流转记录 kind=remark,此列存当前值)
   await ensureColumn("ops_project_ext", "remark", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark2", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark3", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark4", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark5", "MEDIUMTEXT");
+  await ensureColumn("ops_project_ext", "remark6", "MEDIUMTEXT");
 
   // 项目池列表快照:仅服务 table 快速展示;真实数据仍来自 soyoo 项目 + ops 工单/扩展字段,可重建。
   await db

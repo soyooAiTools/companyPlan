@@ -7,7 +7,16 @@ export async function loadProjectExtMap(projectIds) {
   const out = {};
   if (!projectIds.length) return out;
   const rows = await prisma.ops_project_ext.findMany({ where: { project_id: { in: projectIds.map(String) } } });
-  for (const r of rows) out[r.project_id] = { stage: r.stage, stageChangedAt: r.stage_changed_at, remark: r.remark };
+  for (const r of rows) out[r.project_id] = {
+    stage: r.stage,
+    stageChangedAt: r.stage_changed_at,
+    remark: r.remark,
+    remark2: r.remark2,
+    remark3: r.remark3,
+    remark4: r.remark4,
+    remark5: r.remark5,
+    remark6: r.remark6,
+  };
   return out;
 }
 
@@ -207,6 +216,11 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
     stageChangedAt: ext.stageChangedAt ?? null,
     startedAt: (version ? versionValue(version, project, "started_at") : project.started_at) ?? null,
     remark: ext.remark || "",
+    remark2: ext.remark2 || "",
+    remark3: ext.remark3 || "",
+    remark4: ext.remark4 || "",
+    remark5: ext.remark5 || "",
+    remark6: ext.remark6 || "",
     statusChangedAt: statusChangedAt ?? null,
     memberCount,
     members: Array.isArray(project.members) ? project.members : [],

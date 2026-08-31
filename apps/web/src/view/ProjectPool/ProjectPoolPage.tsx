@@ -20,13 +20,13 @@ import StageDeadlineModal from "./components/dialogs/StageDeadlineModal";
 import ProjectPoolExportButton from "./components/export/ProjectPoolExportButton";
 import ProjectPoolColumnConfigButton from "./components/toolbar/ProjectPoolColumnConfigButton";
 import { useProjectPoolColumns } from "./hooks/useProjectPoolColumns";
-import { useProjectPoolColumnVisibility } from "./hooks/useProjectPoolColumnVisibility";
 import { useProjectPoolData } from "./hooks/useProjectPoolData";
 import { useProjectPoolModals } from "./hooks/useProjectPoolModals";
-import { useProjectPoolSheet } from "./hooks/useProjectPoolSheet";
+import { useProjectPoolPreferences, type ProjectPoolPreferenceResetKey } from "./hooks/useProjectPoolPreferences";
 import GroupedProjectSheet from "./sheets/GroupedProjectSheet";
 import ProjectPoolSheetTabs from "./sheets/ProjectPoolSheetTabs";
 import ProjectSheet from "./sheets/ProjectSheet";
+import ProjectProgressAnalysisSheet from "./sheets/progressAnalysis/ProjectProgressAnalysisSheet";
 import type { ProjectPoolSheetKey } from "./sheets/sheetTypes";
 import { flattenProjectPoolRows, groupProjectsByOwner, type ProjectPoolGroup, type ProjectPoolOwnerMember } from "./utils/groupProjectRows";
 import { filterProjectPoolRows } from "./utils/filterProjectPoolRows";
@@ -44,6 +44,8 @@ const OWNER_ROLE_OPTIONS = [
 	{ key: "sound", label: "音效", source: "tags", tags: ["音效"] },
 	{ key: "ta", label: "TA", source: "tags", tags: ["TA"] },
 ] as const;
+
+const PROJECT_PLANNER_TAG = "制片";
 
 function buildOwnerMembersFromProjectPlanners(rows: OpsProjectPoolRow[]): ProjectPoolOwnerMember[] {
 	const members: ProjectPoolOwnerMember[] = [];
@@ -149,17 +151,31 @@ function filterUrgentProjectRows(rows: OpsProjectPoolRow[]): OpsProjectPoolRow[]
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
+function projectPoolColumnKey(column: ColumnsType<OpsProjectPoolRow>[number]) {
+	return String(column.key || ("dataIndex" in column ? column.dataIndex : "") || "");
+}
+
+function applyProjectPoolColumnWidths(columns: ColumnsType<OpsProjectPoolRow>, widths: Record<string, number>) {
+	return columns.map((column) => {
+		const key = projectPoolColumnKey(column);
+		const width = key ? widths[key] : undefined;
+		return width ? { ...column, width } : column;
+	});
+}
+
 type ProjectPoolPageProps = {
 	mine?: boolean;
 	isAdmin?: boolean;
 };
 
 export default function ProjectPoolPage({ mine = false, isAdmin = false }: ProjectPoolPageProps) {
-	const { message } = App.useApp();
-	const [sheet, setSheet] = useProjectPoolSheet(mine);
+	const { message, modal } = App.useApp();
+	const projectPoolPreferences = useProjectPoolPreferences(mine);
+	const { sheet, setSheet } = projectPoolPreferences;
 	const [sheetContentReady, setSheetContentReady] = useState(true);
 	const switchFrameRef = useRef<number | null>(null);
 	const isStaleSheet = !mine && sheet === "stale";
+	const isProgressSheet = !mine && sheet === "progress";
 	const groupMode = !mine && (sheet === "planner" || sheet === "segment" || sheet === "stage" || sheet === "status" || sheet === "owner") ? sheet : null;
 	const {
 		tab,
@@ -194,7 +210,22 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		load,
 		loadAllRows,
 		replaceProjectRows,
-	} = useProjectPoolData(message, { mine, pagedEnabled: mine || !groupMode });
+		setSearch,
+	} = useProjectPoolData(message, {
+		mine,
+		pagedEnabled: mine || !groupMode,
+		initialPreferences: {
+			pageSize: projectPoolPreferences.pageSize,
+			search: projectPoolPreferences.filters.search,
+			statusFilter: projectPoolPreferences.filters.statusFilter,
+			stageFilter: projectPoolPreferences.filters.stageFilter,
+			plannerFilter: projectPoolPreferences.filters.plannerFilter,
+			segmentFilter: projectPoolPreferences.filters.segmentFilter,
+			advancedFilter: projectPoolPreferences.filters.advancedFilter,
+			sortBy: projectPoolPreferences.sort.sortBy,
+			sortOrder: projectPoolPreferences.sort.sortOrder,
+		},
+	});
 	const reloadAfterProjectChange = async (updatedRows: OpsProjectPoolRow[] = []) => {
 		if (updatedRows.length) {
 			replaceProjectRows(updatedRows);
@@ -203,7 +234,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		if (mine || !groupMode) await load();
 		if (!mine && tab === "all") await loadAllRows(true);
 	};
-	const dialogs = useProjectPoolModals(message, reloadAfterProjectChange);
+	const dialogs = useProjectPoolModals(message, reloadAfterProjectChange, { columnLabels: projectPoolPreferences.columnLabels });
 	const toggleUrgent = async (row: OpsProjectPoolRow) => {
 		if (!isAdmin || row.hasVersionChildren) return;
 		const nextUrgent = !row.isUrgent;
@@ -225,22 +256,86 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const [ownerBusinessScopeSearch, setOwnerBusinessScopeSearch] = useState("");
 	const [ownerBusinessScopeOpen, setOwnerBusinessScopeOpen] = useState(false);
 	const [ownerOnlyNew, setOwnerOnlyNew] = useState(false);
-	const [onlyUrgent, setOnlyUrgent] = useState(false);
+	const [onlyUrgent, setOnlyUrgentState] = useState(projectPoolPreferences.onlyUrgent);
 	const [groupCollapseAction, setGroupCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
 	const [groupCollapsed, setGroupCollapsed] = useState(false);
+	const [progressCollapseAction, setProgressCollapseAction] = useState<{ type: "collapse" | "expand"; version: number }>({ type: "expand", version: 0 });
+	const [progressCollapsed, setProgressCollapsed] = useState(false);
 	const [refreshing, setRefreshing] = useState(false);
 	const [createTicketProject, setCreateTicketProject] = useState<OpsProjectPoolRow | null>(null);
 	const [createTicketMember, setCreateTicketMember] = useState<OpsProjectPoolMember | null>(null);
-	const [deadlineSortMode, setDeadlineSortMode] = useState<"date" | "overdue">("date");
-	const { hiddenColumnKeys, hiddenColumnKeySet, setHiddenColumnKeys, columnOrderKeys, setColumnOrderKeys, resetColumnConfig, lockedColumnKeys } = useProjectPoolColumnVisibility();
+	const [deadlineSortMode, setDeadlineSortMode] = useState<"date" | "overdue">(projectPoolPreferences.sort.deadlineSortMode);
+	const {
+		hiddenColumnKeys,
+		hiddenColumnKeySet,
+		setHiddenColumnKeys,
+		columnOrderKeys,
+		setColumnOrderKeys,
+		columnWidths,
+		setColumnWidth,
+		columnLabels,
+		setColumnLabel,
+		resetPreferences,
+		lockedColumnKeys,
+		setFilters: setStoredFilters,
+		setOnlyUrgent: setStoredOnlyUrgent,
+		setPageSize: setStoredPageSize,
+		setSort: setStoredSort,
+	} = projectPoolPreferences;
+	const changeOnlyUrgent = (checked: boolean) => {
+		setOnlyUrgentState(checked);
+		setStoredOnlyUrgent(checked);
+	};
 	const deadlineSortBy: OpsProjectPoolSortBy = deadlineSortMode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
 	const changeDeadlineSortMode = (mode: "date" | "overdue") => {
 		setDeadlineSortMode(mode);
+		setStoredSort({ deadlineSortMode: mode });
 		const nextSortBy: OpsProjectPoolSortBy = mode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
 		if (sortBy === "nextDeadline" || sortBy === "nextDeadlineOverdue") {
 			setSortBy(nextSortBy);
+			setStoredSort({ sortBy: nextSortBy });
 			setPage(1);
 		}
+	};
+	const changeProjectSearch = (value: string) => {
+		setSearch(value);
+		setStoredFilters({ search: value });
+	};
+	const changeStatusFilter = (value: string[]) => {
+		setStatusFilter(value);
+		setStoredFilters({ statusFilter: value });
+		setPage(1);
+	};
+	const changeStageFilter = (value: string[]) => {
+		setStageFilter(value);
+		setStoredFilters({ stageFilter: value });
+		setPage(1);
+	};
+	const changePlannerFilter = (value: string[]) => {
+		setPlannerFilter(value);
+		setStoredFilters({ plannerFilter: value });
+		setPage(1);
+	};
+	const changeSegmentFilter = (value: number[]) => {
+		setSegmentFilter(value);
+		setStoredFilters({ segmentFilter: value });
+		setPage(1);
+	};
+	const changeAdvancedFilter = (value: typeof advancedFilter) => {
+		setAdvancedFilter(value);
+		setStoredFilters({ advancedFilter: value });
+		setPage(1);
+	};
+	const clearProjectFilters = () => {
+		const empty = { match: "any", rules: [] } as typeof advancedFilter;
+		setSearch("");
+		setStatusFilter([]);
+		setStageFilter([]);
+		setPlannerFilter([]);
+		setSegmentFilter([]);
+		setAdvancedFilter(empty);
+		setStoredFilters({ search: "", statusFilter: [], stageFilter: [], plannerFilter: [], segmentFilter: [], advancedFilter: empty });
+		setPage(1);
 	};
 
 	// 表格内部滚动高度:实测「表格区域」高度 − 表头/分页固定占位,做到分页精准贴底(自适应工具栏换行/各种屏高)
@@ -268,15 +363,39 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			});
 		});
 	};
+	const resetProjectPoolPreferences = (keys: ProjectPoolPreferenceResetKey[]) => {
+		const keySet = new Set(keys);
+		resetPreferences(keys);
+		if (keySet.has("filters")) {
+			const empty = { match: "any", rules: [] } as typeof advancedFilter;
+			setSearch("");
+			setStatusFilter([]);
+			setStageFilter([]);
+			setPlannerFilter([]);
+			setSegmentFilter([]);
+			setAdvancedFilter(empty);
+			setPage(1);
+		}
+		if (keySet.has("sort")) {
+			setDeadlineSortMode("date");
+			setSortBy(undefined);
+			setSortOrder(undefined);
+			setPage(1);
+		}
+		if (keySet.has("pagination")) {
+			setPageSize(20);
+			setPage(1);
+		}
+		if (keySet.has("view")) {
+			setOnlyUrgentState(false);
+			if (!mine) changeSheet("project");
+		}
+	};
 
 	const changeOwnerRole = (nextRole: typeof ownerRoleKey) => {
 		if (nextRole === ownerRoleKey) return;
 		setOwnerRoleKey(nextRole);
-		setStatusFilter([]);
-		setStageFilter([]);
-		setPlannerFilter([]);
-		setSegmentFilter([]);
-		setAdvancedFilter({ match: "any", rules: [] });
+		clearProjectFilters();
 		setOwnerSearch("");
 		setOwnerBusinessScopeFilter([]);
 		setOwnerBusinessScopeSearch("");
@@ -304,9 +423,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 
 	useEffect(() => {
 		if (!statusFilter.includes("结算完成")) return;
-		setStatusFilter(statusFilter.filter((status) => status !== "结算完成"));
-		setPage(1);
-	}, [setPage, setStatusFilter, statusFilter]);
+		changeStatusFilter(statusFilter.filter((status) => status !== "结算完成"));
+	}, [statusFilter]);
 
 	useEffect(() => {
 		const nextTab = isStaleSheet ? "stale" : "all";
@@ -317,9 +435,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	}, [isStaleSheet, setPage, setTab, tab]);
 
 	useEffect(() => {
-		if (!mine && !isStaleSheet && (sheet !== "project" || onlyUrgent) && tab === "all") void loadAllRows();
+		if (!mine && !isStaleSheet && !isProgressSheet && (sheet !== "project" || onlyUrgent) && tab === "all") void loadAllRows();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [isStaleSheet, tab, sheet, allRowsSourceKey, mine, onlyUrgent]);
+	}, [isProgressSheet, isStaleSheet, tab, sheet, allRowsSourceKey, mine, onlyUrgent]);
 
 	const filteredGroupRows = useMemo(
 		() =>
@@ -477,6 +595,11 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setGroupCollapsed(nextCollapsed);
 		setGroupCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
 	};
+	const toggleProgressCollapse = () => {
+		const nextCollapsed = !progressCollapsed;
+		setProgressCollapsed(nextCollapsed);
+		setProgressCollapseAction((old) => ({ type: nextCollapsed ? "collapse" : "expand", version: old.version + 1 }));
+	};
 
 	const refreshCurrentSheet = async () => {
 		if (refreshing) return;
@@ -533,26 +656,71 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	}, [projectParam, rows]);
 
 	const plannerOptions = useMemo(() => {
-		const plannersByName = new Map<string, { name: string; avatar?: string }>();
+		const plannersByName = new Map<string, { id?: string; userId?: string; username?: string; name: string; avatar?: string; status?: string }>();
 		const sourceRows = flattenProjectPoolRows(filterOptionRows.length ? filterOptionRows : [...rows, ...allRows]);
 		for (const row of sourceRows) {
-			const planners: { name: string; avatar?: string }[] = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim() })) : [];
+			for (const member of row.members || []) {
+				if (!(member.tags || []).includes(PROJECT_PLANNER_TAG)) continue;
+				const name = (member.name || member.wechatName || member.username || "").trim();
+				if (!name) continue;
+				const current = plannersByName.get(name);
+				if (!current || (!current.id && member.id) || (!current.avatar && member.avatar)) {
+					plannersByName.set(name, { id: member.id, userId: member.id, username: member.username, name, avatar: member.avatar || current?.avatar, status: member.status });
+				}
+			}
+			const planners = row.planners?.length ? row.planners : row.plannerName ? row.plannerName.split(/[、,，/]/).map((name) => ({ name: name.trim(), avatar: "" })) : [];
 			for (const planner of planners) {
 				const name = planner.name?.trim();
 				if (!name) continue;
 				const current = plannersByName.get(name);
 				if (!current || (!current.avatar && planner.avatar)) {
-					plannersByName.set(name, { name, avatar: planner.avatar || current?.avatar });
+					plannersByName.set(name, { ...current, name, avatar: planner.avatar || current?.avatar });
 				}
 			}
 		}
 		return [...plannersByName.values()].sort((a, b) => a.name.localeCompare(b.name, "zh-CN"));
 	}, [allRows, filterOptionRows, rows]);
 
+	const transferPlanner = (row: OpsProjectPoolRow, planner: { id: string; name: string }) => {
+		let transferRemark = "";
+		modal.confirm({
+			title: "确认转交策划？",
+			centered: true,
+			width: 560,
+			content: (
+				<div style={{ display: "grid", gap: 10, paddingBottom: 14 }}>
+					<div>{`确定将「${row.name}」转交给「${planner.name}」吗？`}</div>
+					<Input.TextArea
+						placeholder="转交备注(可选)"
+						autoSize={{ minRows: 4, maxRows: 7 }}
+						maxLength={300}
+						showCount
+						onChange={(event) => {
+							transferRemark = event.target.value;
+						}}
+					/>
+				</div>
+			),
+			okText: "确定转交",
+			cancelText: "取消",
+			onOk: async () => {
+				try {
+					await opsApi.changeProjectPlanner(row.id, planner.id, transferRemark);
+					message.success(`已转交给 ${planner.name}`);
+					await reloadAfterProjectChange();
+				} catch (error) {
+					message.error(error instanceof Error ? error.message : "转交策划失败");
+					throw error;
+				}
+			},
+		});
+	};
+
 	const columns = useProjectPoolColumns(
 		{
 			...dialogs.actions,
 			openCreateTicket: (row) => setCreateTicketProject(row),
+			transferPlanner,
 		},
 		groupMode ? 0 : (page - 1) * pageSize,
 		{
@@ -564,24 +732,19 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			segmentOptions,
 			advancedFilter,
 			onAdvancedFilterChange: (value) => {
-				setAdvancedFilter(value);
-				setPage(1);
+				changeAdvancedFilter(value);
 			},
 			onStatusFilterChange: (value) => {
-				setStatusFilter(value);
-				setPage(1);
+				changeStatusFilter(value);
 			},
 			onStageFilterChange: (value) => {
-				setStageFilter(value);
-				setPage(1);
+				changeStageFilter(value);
 			},
 			onPlannerFilterChange: (value) => {
-				setPlannerFilter(value);
-				setPage(1);
+				changePlannerFilter(value);
 			},
 			onSegmentFilterChange: (value) => {
-				setSegmentFilter(value);
-				setPage(1);
+				changeSegmentFilter(value);
 			},
 		},
 		{
@@ -592,6 +755,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			sortOrder: sortOrder === "asc" ? "ascend" : sortOrder === "desc" ? "descend" : null,
 			deadlineSortMode,
 			onDeadlineSortModeChange: changeDeadlineSortMode,
+			columnLabels,
 		},
 	);
 	const orderedColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
@@ -611,22 +775,26 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		});
 	}, [columnOrderKeys, columns, lockedColumnKeys]);
 	const displayColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
-		const baseColumns = mine ? orderedColumns.filter((column) => !["stage", "stageDeadlines", "remark", "tickets"].includes(String(column.key))) : orderedColumns;
-		return baseColumns.filter((column) => {
+		const baseColumns = mine ? orderedColumns.filter((column) => !["stage", "stageDeadlines", "remark", "remark2", "remark3", "remark4", "remark5", "remark6", "tickets"].includes(String(column.key))) : orderedColumns;
+		const visibleColumns = baseColumns.filter((column) => {
 			const key = String(column.key || ("dataIndex" in column ? column.dataIndex : "") || "");
 			return !key || lockedColumnKeys.has(key) || !hiddenColumnKeySet.has(key);
 		});
-	}, [hiddenColumnKeySet, lockedColumnKeys, mine, orderedColumns]);
+		return applyProjectPoolColumnWidths(visibleColumns, columnWidths);
+	}, [columnWidths, hiddenColumnKeySet, lockedColumnKeys, mine, orderedColumns]);
 
 	const columnConfigButton = (
 		<ProjectPoolColumnConfigButton
 			columns={orderedColumns}
 			hiddenColumnKeys={hiddenColumnKeys}
 			columnOrderKeys={columnOrderKeys}
+			columnWidths={columnWidths}
+			columnLabels={columnLabels}
 			lockedColumnKeys={lockedColumnKeys}
 			onHiddenChange={setHiddenColumnKeys}
 			onOrderChange={setColumnOrderKeys}
-			onReset={resetColumnConfig}
+			onColumnLabelChange={setColumnLabel}
+			onReset={resetProjectPoolPreferences}
 		/>
 	);
 
@@ -656,13 +824,13 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 									}}>
 									<label style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#334155", fontSize: 13, cursor: "pointer", userSelect: "none" }}>
 										<span>只看加急</span>
-										<Switch size="small" checked={onlyUrgent} onChange={setOnlyUrgent} />
+										<Switch size="small" checked={onlyUrgent} onChange={changeOnlyUrgent} />
 									</label>
-									{groupMode ? (
+									{groupMode || isProgressSheet ? (
 										<>
 											<span style={{ width: 1, height: 16, margin: "0 4px 0 10px", background: "#e5e7eb" }} />
-											<Button type="text" size="small" onClick={toggleGroupCollapse}>
-												{groupCollapsed ? "展开全部" : "折叠全部"}
+											<Button type="text" size="small" onClick={isProgressSheet ? toggleProgressCollapse : toggleGroupCollapse}>
+												{(isProgressSheet ? progressCollapsed : groupCollapsed) ? "展开全部" : "折叠全部"}
 											</Button>
 										</>
 									) : null}
@@ -746,6 +914,26 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					<div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: "#fff" }}>
 						<Spin />
 					</div>
+				) : isProgressSheet ? (
+					<ProjectProgressAnalysisSheet
+						enabled={sheetContentReady}
+						height={groupScrollY + 48}
+						onlyUrgent={onlyUrgent}
+						collapseAction={progressCollapseAction}
+						filters={{
+							search,
+							statusFilter,
+							plannerFilter,
+						}}
+						plannerOptions={plannerOptions}
+						onSearchChange={changeProjectSearch}
+						onStatusFilterChange={(value) => {
+							changeStatusFilter(value);
+						}}
+						onPlannerFilterChange={(value) => {
+							changePlannerFilter(value);
+						}}
+					/>
 				) : !isStaleSheet && groupMode ? (
 					<GroupedProjectSheet
 						mode={groupMode}
@@ -763,6 +951,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						}}
 						onOpenGroupDeadlineProjects={(group) => dialogs.actions.openDeadlineOverdueProjects(`交付逾期 · ${group.title}`, group.rows)}
 						onToggleUrgent={isAdmin ? toggleUrgent : undefined}
+						onColumnResize={setColumnWidth}
 					/>
 				) : (
 					<ProjectSheet
@@ -775,13 +964,16 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 						scrollY={scrollY}
 						pagination={onlyUrgent ? false : undefined}
 						deadlineSortBy={deadlineSortBy}
+						onColumnResize={setColumnWidth}
 						onPageChange={(nextPage, nextPageSize) => {
 							setPage(nextPage);
 							setPageSize(nextPageSize);
+							setStoredPageSize(nextPageSize);
 						}}
 						onSortChange={(nextSortBy, nextSortOrder) => {
 							setSortBy(nextSortBy);
 							setSortOrder(nextSortOrder);
+							setStoredSort({ sortBy: nextSortBy, sortOrder: nextSortOrder });
 							setPage(1);
 						}}
 						onOpenLogs={mine ? undefined : dialogs.actions.openLogs}
@@ -809,6 +1001,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			<RemarkModal
 				open={dialogs.remark.open}
 				target={dialogs.remark.target}
+				title={dialogs.remark.title}
 				value={dialogs.remark.value}
 				saving={dialogs.remark.saving}
 				onChange={dialogs.remark.setValue}

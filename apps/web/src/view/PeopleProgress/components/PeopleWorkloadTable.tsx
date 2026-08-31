@@ -25,6 +25,7 @@ const badgeStyle = {
 
 const hasTextSelection = () => window.getSelection()?.toString().trim();
 const hiddenRoleLabels = new Set(["管理员", "外包"]);
+const projectCountRoleKeys = new Set(["program", "level"]);
 const hasRoleLabel = (roles: string[] | undefined, target: string) => (roles || []).some((role) => String(role || "").trim() === target);
 const visibleRoleLabels = (roles: string[] | undefined) => [...new Set((roles || []).map((role) => String(role || "").trim()).filter((role) => role && !hiddenRoleLabels.has(role)))];
 const ratingRank = (rating?: string) => {
@@ -286,7 +287,7 @@ export default function PeopleWorkloadTable({ rows, loading, role, query, onOpen
 					<span style={{ color: "#94a3b8" }}>-</span>
 				),
 		},
-		...(role === "program"
+		...(projectCountRoleKeys.has(role)
 			? [
 					{
 						title: "项目数",

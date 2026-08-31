@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // 按环境加载配置：APP_ENV = dev | test | prod → 加载 .env.dev | .env.test | .env.prod（默认 dev）。
-// 找不到环境专属文件则回退到 .env。Node ≥20.12 内置 process.loadEnvFile，无需 dotenv 依赖。
+// Node ≥20.12 内置 process.loadEnvFile，无需 dotenv 依赖。
 // 必须在读取任何 process.env 之前执行，所以放在配置层最顶部。
 const appEnv = process.env.APP_ENV || "dev";
 for (const name of [`.env.${appEnv}`]) {
@@ -58,6 +58,8 @@ export const opsIntegration = {
   projectMemberLimit: Number(process.env.COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT ?? "0"),
   includeLocalData: process.env.COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA === "1",
   adminUsernames: splitEnvSet(process.env.COMPANYPLAN_OPS_ADMIN_USERNAMES ?? ""),
+  recycleHandoffUsernames: splitEnvList(process.env.COMPANYPLAN_OPS_RECYCLE_HANDOFF_USERNAMES ?? ""),
+  settlementDoneStatus: String(process.env.COMPANYPLAN_OPS_SETTLEMENT_DONE_STATUS ?? "结算完成").trim() || "结算完成",
 };
 // 阿里云 OSS（富文本编辑器图片上传）。凭证放根 .env：OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET。
 export const ossConfig = {
@@ -79,9 +81,13 @@ export const crc32Table = Array.from({ length: 256 }, (_, value) => {
 
 function splitEnvSet(value) {
   return new Set(
-    String(value)
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean)
+    splitEnvList(value)
   );
+}
+
+function splitEnvList(value) {
+  return String(value)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

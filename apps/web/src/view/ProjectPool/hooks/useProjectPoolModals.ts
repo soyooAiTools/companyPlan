@@ -2,12 +2,17 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
-import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
+import type { OpsProjectPoolMember, OpsProjectPoolRow, OpsProjectStageDeadline, OpsProjectStatusLog, OpsSegmentTicket, OpsTicket, OpsTicketEvent, ProjectRemarkField } from "@/api/modules/ops";
 import { inferStageDeadlines, normalizeStageDeadlines, normalizeStageDeadlinesForEdit } from "../deadlineUtils";
 import type { StagePlanTemplateKey } from "../stagePlanTemplates";
 import type { ProjectLogKind } from "../logUtils";
+import { PROJECT_POOL_REMARK_COLUMN_LABELS, type ProjectPoolColumnLabels } from "./useProjectPoolPreferences";
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
+const REMARK_LABELS: Record<ProjectRemarkField, string> = {
+  ...PROJECT_POOL_REMARK_COLUMN_LABELS,
+};
+
 type SegmentTicketWithSource = OpsSegmentTicket & {
   projectId?: string;
   projectName?: string;
@@ -24,7 +29,7 @@ function versionScopedProjectId(row: OpsProjectPoolRow) {
   return row.versionId ? `${baseId}::version-${row.versionId}` : baseId;
 }
 
-export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>) {
+export function useProjectPoolModals(message: MessageApi, reload: () => Promise<void>, options: { columnLabels?: ProjectPoolColumnLabels } = {}) {
   const [chOpen, setChOpen] = useState(false);
   const [chField, setChField] = useState<"status" | "stage">("status");
   const [chTarget, setChTarget] = useState<OpsProjectPoolRow | null>(null);
@@ -41,6 +46,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
 
   const [rmOpen, setRmOpen] = useState(false);
   const [rmTarget, setRmTarget] = useState<OpsProjectPoolRow | null>(null);
+  const [rmField, setRmField] = useState<ProjectRemarkField>("remark");
   const [rmValue, setRmValue] = useState("");
   const [rmSaving, setRmSaving] = useState(false);
 
@@ -131,9 +137,10 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     }
   };
 
-  const openRemark = (row: OpsProjectPoolRow) => {
+  const openRemark = (row: OpsProjectPoolRow, field: ProjectRemarkField = "remark") => {
     setRmTarget(row);
-    setRmValue(row.remark || "");
+    setRmField(field);
+    setRmValue(row[field] || "");
     setRmOpen(true);
   };
 
@@ -141,8 +148,8 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (!rmTarget) return;
     setRmSaving(true);
     try {
-      await opsApi.changeProjectRemark(rmTarget.id, rmValue);
-      message.success("备注已更新");
+      await opsApi.changeProjectRemark(rmTarget.id, rmValue, rmField);
+      message.success(`${options.columnLabels?.[rmField] || REMARK_LABELS[rmField]}已更新`);
       setRmOpen(false);
       await reload();
     } catch (e) {
@@ -386,6 +393,7 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     remark: {
       open: rmOpen,
       target: rmTarget,
+      title: options.columnLabels?.[rmField] || REMARK_LABELS[rmField],
       value: rmValue,
       saving: rmSaving,
       setValue: setRmValue,

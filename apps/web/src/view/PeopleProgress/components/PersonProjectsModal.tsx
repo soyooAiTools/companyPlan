@@ -3,6 +3,8 @@ import { Avatar, Input, Modal, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { SearchOutlined } from "@ant-design/icons";
 import { opsApi, type OpsPeopleProgressProject } from "../../../api/modules/ops";
+import { statusStyle } from "../../Ops/constants";
+import HeaderMultiSelectDropdown from "../../ProjectPool/components/table/HeaderMultiSelectDropdown";
 import { fmtStageDate, nextStageDeadline, stageDeadlineName, stageRangeLabel } from "../../ProjectPool/deadlineUtils";
 import type { PeopleProgressRow } from "../types";
 
@@ -20,10 +22,40 @@ const nextDeadlineText = (project: OpsPeopleProgressProject) => {
 	return `${date}${stageDeadlineName(next)}`;
 };
 
+const versionText = (project: OpsPeopleProgressProject) => {
+	const code = String(project.versionCode || "").trim();
+	const name = String(project.versionName || "").trim();
+	if (!code) return "";
+	if (code.toLowerCase() === "v1" && (!name || name === "默认版本")) return "";
+	return name && name !== "默认版本" ? `${code} · ${name}` : code;
+};
+
+const projectPlanners = (project: OpsPeopleProgressProject) => {
+	const planners = (project.planners || []).filter((planner) => String(planner.name || "").trim());
+	if (planners.length) return planners;
+	return String(project.plannerName || "")
+		.split(/[、,，/]/)
+		.map((name) => ({ name: name.trim(), avatar: "" }))
+		.filter((planner) => planner.name);
+};
+
 export default function PersonProjectsModal({ open, person, role, onClose }: PersonProjectsModalProps) {
 	const [projects, setProjects] = useState<OpsPeopleProgressProject[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [query, setQuery] = useState("");
+	const [statusFilter, setStatusFilter] = useState<string[]>([]);
+
+	const statusFilterOptions = useMemo(() => {
+		const statuses = Array.from(new Set(projects.map((project) => String(project.status || "").trim()).filter(Boolean)));
+		return statuses
+			.sort((a, b) => a.localeCompare(b, "zh-Hans-CN"))
+			.map((status) => ({ label: status, value: status }));
+	}, [projects]);
+
+	const visibleProjects = useMemo(() => {
+		if (!statusFilter.length) return projects;
+		return projects.filter((project) => statusFilter.includes(String(project.status || "").trim()));
+	}, [projects, statusFilter]);
 
 	const loadProjects = async (nextQuery = query) => {
 		if (!person) return;
@@ -40,8 +72,10 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 		if (!open) {
 			setProjects([]);
 			setQuery("");
+			setStatusFilter([]);
 			return;
 		}
+		setStatusFilter([]);
 		void loadProjects("");
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [open, person?.userId, role]);
@@ -64,10 +98,9 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 							{project.name}
 							{project.tenantName ? <span style={{ color: "#64748b", fontSize: 13, fontWeight: 500 }}> - {project.tenantName}</span> : null}
 						</div>
-						{project.versionCode ? (
+						{versionText(project) ? (
 							<div style={{ marginTop: 4, color: "#2563eb", fontSize: 13, fontWeight: 600 }}>
-								{project.versionCode}
-								{project.versionName ? ` · ${project.versionName}` : ""}
+								{versionText(project)}
 							</div>
 						) : null}
 					</div>
@@ -76,8 +109,24 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 			{
 				title: "策划",
 				dataIndex: "plannerName",
-				width: 140,
-				render: (value) => value || <span style={{ color: "#94a3b8" }}>—</span>,
+				width: 180,
+				render: (_, project) => {
+					const planners = projectPlanners(project);
+					return planners.length ? (
+						<Space size={8} wrap>
+							{planners.map((planner) => (
+								<span key={planner.name} style={{ display: "inline-flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+									<Avatar size={22} src={planner.avatar || undefined} style={{ background: "#e2e8f0", color: "#475569", fontSize: 10, flex: "0 0 auto" }}>
+										{planner.name.slice(0, 1)}
+									</Avatar>
+									<span style={{ maxWidth: 86, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{planner.name}</span>
+								</span>
+							))}
+						</Space>
+					) : (
+						<span style={{ color: "#94a3b8" }}>—</span>
+					);
+				},
 			},
 			{
 				title: "当前阶段",
@@ -94,10 +143,14 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 				title: "状态",
 				dataIndex: "status",
 				width: 100,
-				render: (value) => <Tag color={value === "推进中" ? "blue" : value === "待反馈" ? "cyan" : "gold"}>{value || "—"}</Tag>,
+				filtered: statusFilter.length > 0,
+				filterDropdown: ({ close }) => (
+					<HeaderMultiSelectDropdown value={statusFilter} options={statusFilterOptions} onApply={setStatusFilter} close={close} defaultAll />
+				),
+				render: (value) => <Tag style={{ ...statusStyle(value), padding: "2px 10px", borderRadius: 6, border: "none", margin: 0 }}>{value || "—"}</Tag>,
 			},
 		],
-		[],
+		[statusFilter, statusFilterOptions],
 	);
 
 	return (
@@ -129,13 +182,13 @@ export default function PersonProjectsModal({ open, person, role, onClose }: Per
 					onChange={(event) => setQuery(event.target.value)}
 					onPressEnter={() => loadProjects()}
 				/>
-				<span style={{ color: "#64748b", lineHeight: "32px" }}>共 {projects.length} 个项目</span>
+				<span style={{ color: "#64748b", lineHeight: "32px" }}>共 {visibleProjects.length} 个项目</span>
 			</div>
 			<Table
 				rowKey="id"
 				loading={loading}
 				columns={columns}
-				dataSource={projects}
+				dataSource={visibleProjects}
 				size="middle"
 				pagination={false}
 				scroll={{ x: 950, y: 540 }}

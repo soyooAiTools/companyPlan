@@ -6,6 +6,8 @@ import type { SortOrder } from "antd/es/table/interface";
 import { DownOutlined, RightOutlined } from "@ant-design/icons";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import ProjectPoolContextMenu, { type ProjectPoolContextRow } from "../components/table/ProjectPoolContextMenu";
+import ProjectPoolSummaryBar, { PROJECT_POOL_SUMMARY_BAR_HEIGHT } from "../components/table/ProjectPoolSummaryBar";
+import { columnWidthValue, ResizableHeaderCell, tableColumnKey } from "../components/table/resizableColumns";
 import VirtualGroupStickyBar from "../components/table/VirtualGroupStickyBar";
 import { isNextDeadlineOverdue } from "../deadlineUtils";
 import type { ProjectPoolGroup } from "../utils/groupProjectRows";
@@ -20,6 +22,7 @@ type GroupedProjectPoolViewProps = {
 	onOpenGroupTickets: (group: ProjectPoolGroup, mode: "overdue" | "unfinished") => void;
 	onOpenGroupDeadlineProjects: (group: ProjectPoolGroup) => void;
 	onToggleUrgent?: (row: OpsProjectPoolRow) => void;
+	onColumnResize?: (key: string, width: number) => void;
 	collapseAction?: { type: "collapse" | "expand"; version: number };
 	sortResetKey?: string;
 };
@@ -66,12 +69,29 @@ const groupLabel = (
 	hideStats: boolean,
 	onOpenGroupTickets: GroupedProjectPoolViewProps["onOpenGroupTickets"],
 	onOpenGroupDeadlineProjects: GroupedProjectPoolViewProps["onOpenGroupDeadlineProjects"],
-) => (
+) => {
+	const isPersonGroup = !!group.ownerName || !!group.avatar || !!group.hireDate || !!group.rating || !!group.businessScopes?.length;
+	return (
 	<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, width: "100%" }}>
 		<div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, position: "sticky", left: 16, zIndex: 2, background: "#fff", paddingRight: 12 }}>
 			{collapsed ? <RightOutlined style={{ color: "#64748b", fontSize: 11 }} /> : <DownOutlined style={{ color: "#64748b", fontSize: 11 }} />}
 			{group.avatar ? <Avatar size={22} src={group.avatar} /> : null}
-			<span style={{ fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{group.title}</span>
+			<span
+				title={group.title}
+				style={{
+					display: "inline-block",
+					width: isPersonGroup ? "3em" : "auto",
+					maxWidth: isPersonGroup ? "3em" : 220,
+					flex: isPersonGroup ? "0 0 3em" : "0 1 auto",
+					overflow: "hidden",
+					color: "#0f172a",
+					fontWeight: 700,
+					textOverflow: "ellipsis",
+					whiteSpace: "nowrap",
+				}}
+			>
+				{group.title}
+			</span>
 			{group.isNewHire ? (
 				<Tag
 					style={{
@@ -149,9 +169,10 @@ const groupLabel = (
 			</Tag>
 		</div>}
 	</div>
-);
+	);
+};
 
-export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, collapseAction, sortResetKey }: GroupedProjectPoolViewProps) {
+export default function GroupedProjectPoolView({ groups, columns, loading, scrollY, hideStats = false, onOpenLogs, onOpenGroupTickets, onOpenGroupDeadlineProjects, onToggleUrgent, onColumnResize, collapseAction, sortResetKey }: GroupedProjectPoolViewProps) {
 	const [collapsedKeys, setCollapsedKeys] = useState<Set<string>>(() => new Set());
 	// 分组表不走服务端排序,需要自己维护 sorter 状态和表头颜色。
 	const [activeSort, setActiveSort] = useState<{ key: string; order: SortOrder } | null>(null);
@@ -163,9 +184,16 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 		const sorter = column?.sorter;
 		if (typeof sorter !== "function") return groups;
 		const direction = activeSort.order === "descend" ? -1 : 1;
+		const sortRows = (rows: OpsProjectPoolRow[]): OpsProjectPoolRow[] =>
+			[...rows]
+				.sort((a, b) => sorter(a, b, activeSort.order) * direction)
+				.map((row) => {
+					const children = Array.isArray(row.children) ? row.children : [];
+					return children.length ? { ...row, children: sortRows(children) } : row;
+				});
 		return groups.map((group) => ({
 			...group,
-			rows: [...group.rows].sort((a, b) => sorter(a, b, activeSort.order) * direction),
+			rows: sortRows(group.rows),
 		}));
 	}, [activeSort, columns, groups]);
 	const rows = useMemo<ProjectGroupTableRow[]>(() => {
@@ -206,10 +234,12 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 		() =>
 			columns.map((column, columnIndex) => {
 				const projectColumn = column as ColumnType<OpsProjectPoolRow>;
+				const key = tableColumnKey(projectColumn);
+				const width = columnWidthValue(projectColumn.width, columnIndex === 0 ? 280 : 120);
 				const nextColumn: ColumnType<ProjectGroupTableRow> = {
 					title: projectColumn.title as ColumnType<ProjectGroupTableRow>["title"],
 					key: projectColumn.key,
-					width: columnIndex === 0 ? 280 : projectColumn.width,
+					width,
 					align: projectColumn.align,
 					fixed: projectColumn.fixed,
 					className: projectColumn.className,
@@ -217,6 +247,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					filterIcon: projectColumn.filterIcon as ColumnType<ProjectGroupTableRow>["filterIcon"],
 					sorter: projectColumn.sorter ? true : undefined,
 					sortOrder: activeSort?.key === String(projectColumn.key) ? activeSort.order : null,
+					onHeaderCell: () => ({ width, columnKey: key, onColumnResize }),
 					onCell: (row) => {
 						if (row.kind === "group") return { colSpan: columnIndex === 0 ? columns.length : 0 };
 						return projectColumn.onCell?.(row.project, 0) || {};
@@ -244,18 +275,50 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				};
 				return nextColumn;
 			}),
-		[activeSort, collapsedKeys, columns, hideStats, onOpenGroupDeadlineProjects, onOpenGroupTickets],
+		[activeSort, collapsedKeys, columns, hideStats, onColumnResize, onOpenGroupDeadlineProjects, onOpenGroupTickets],
 	);
 	const scrollX = columnWidthSum(groupedColumns);
+	const tableScrollY = Math.max(160, scrollY - PROJECT_POOL_SUMMARY_BAR_HEIGHT);
 
 	return (
-		<>
+		<div className="ops-pool-group-view">
 			<style>{`
+				.ops-pool-group-view {
+					display: flex;
+					flex-direction: column;
+					position: relative;
+					height: 100%;
+					min-height: 0;
+					padding-bottom: ${PROJECT_POOL_SUMMARY_BAR_HEIGHT}px;
+				}
+				.ops-pool-group-view > .ops-pool-group-table-wrap {
+					flex: 1 1 auto;
+					height: auto;
+					min-height: 0;
+				}
 				.ops-pool-group-table .ant-table-thead > tr > th {
 					background: #fff;
 					font-weight: 600;
 					padding-top: 11px;
 					padding-bottom: 11px;
+					overflow: hidden;
+					white-space: nowrap;
+				}
+				.ops-pool-group-table .ant-table-thead .ant-table-cell-content,
+				.ops-pool-group-table .ant-table-thead .ant-table-column-title,
+				.ops-pool-group-table .ant-table-thead .ant-table-column-sorters,
+				.ops-pool-group-table .ant-table-thead .ant-table-filter-column {
+					min-width: 0;
+					overflow: hidden;
+					white-space: nowrap;
+					text-overflow: ellipsis;
+				}
+				.ops-pool-group-table .ant-table-thead .ant-table-column-title {
+					flex: 1 1 auto;
+				}
+				.ops-pool-group-table .ant-table-thead .ant-table-filter-trigger,
+				.ops-pool-group-table .ant-table-thead .ant-table-column-sorter {
+					flex-shrink: 0;
 				}
 				.ops-pool-group-table .ant-table-column-sorter-up.active,
 				.ops-pool-group-table .ant-table-column-sorter-down.active {
@@ -320,7 +383,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					background: #fff !important;
 				}
 				.ops-pool-group-table .ant-table-tbody > tr:not(.ops-pool-stale):not(.ops-pool-group-row):hover > td {
-					background: #f8fafc !important;
+					background: #fff !important;
 					transform: translateY(-1px) scale(1.001);
 				}
 				.ops-pool-group-table .ops-pool-stale > td {
@@ -331,7 +394,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					transform: translateY(-1px) scale(1.001);
 				}
 				.ops-pool-group-table .ant-table-tbody > tr:not(.ops-pool-group-row):hover > td:first-child {
-					box-shadow: inset 3px 0 0 #0f766e, 6px 0 8px -8px rgba(15, 23, 42, 0.18);
+					box-shadow: inset 3px 0 0 #fff, 6px 0 8px -8px rgba(15, 23, 42, 0.18);
 				}
 				.ops-pool-group-table .ant-table-tbody > tr.ops-pool-project-row > td:first-child {
 					padding-left: 16px;
@@ -389,6 +452,28 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					min-width: 0;
 					flex: 1 1 auto;
 				}
+				.ops-pool-group-table .ops-pool-column-resize-handle {
+					position: absolute;
+					top: 0;
+					right: -3px;
+					bottom: 0;
+					width: 8px;
+					cursor: col-resize;
+					z-index: 9;
+				}
+				.ops-pool-group-table .ops-pool-column-resize-handle::after {
+					content: "";
+					position: absolute;
+					top: 9px;
+					bottom: 9px;
+					left: 3px;
+					width: 1px;
+					background: transparent;
+					transition: background-color 120ms ease;
+				}
+				.ops-pool-group-table .ops-pool-column-resize-handle:hover::after {
+					background: #fff;
+				}
 			`}</style>
 			<VirtualGroupStickyBar<ProjectPoolGroup, ProjectGroupTableRow>
 				rows={rows}
@@ -407,6 +492,7 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 				{/* 下版交付时间列排序时,让标题里的「下版时间/逾期时间」跟 sorter 一起标红。 */}
 				<Table<ProjectGroupTableRow>
 					className={`ops-pool-table ops-pool-group-table${activeSort?.key === "stageDeadlines" ? " ops-pool-deadline-sort-active" : ""}`}
+					bordered
 					rowKey="key"
 					loading={loading}
 					dataSource={rows}
@@ -414,7 +500,8 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					size="small"
 					virtual
 					tableLayout="fixed"
-					scroll={{ x: scrollX, y: scrollY }}
+					components={{ header: { cell: ResizableHeaderCell } }}
+					scroll={{ x: scrollX, y: tableScrollY }}
 					pagination={false}
 					onChange={(_pagination, _filters, sorter) => {
 						const active = Array.isArray(sorter) ? sorter[0] : sorter;
@@ -447,7 +534,8 @@ export default function GroupedProjectPoolView({ groups, columns, loading, scrol
 					}}
 				/>
 			</VirtualGroupStickyBar>
+			<ProjectPoolSummaryBar groups={groups} />
 			<ProjectPoolContextMenu contextRow={contextRow} onClose={closeContextMenu} onToggleUrgent={onToggleUrgent} />
-		</>
+		</div>
 	);
 }

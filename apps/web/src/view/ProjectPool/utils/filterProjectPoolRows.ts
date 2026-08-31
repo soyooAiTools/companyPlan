@@ -39,6 +39,16 @@ function rowAdvancedFieldText(row: OpsProjectPoolRow, field: string) {
 			return (row.segments || []).map((segment) => `${segment.id} ${segment.name}`).join(" ");
 		case "remark":
 			return row.remark || "";
+		case "remark2":
+			return row.remark2 || "";
+		case "remark3":
+			return row.remark3 || "";
+		case "remark4":
+			return row.remark4 || "";
+		case "remark5":
+			return row.remark5 || "";
+		case "remark6":
+			return row.remark6 || "";
 		default:
 			return "";
 	}

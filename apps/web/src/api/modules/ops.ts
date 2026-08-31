@@ -242,9 +242,14 @@ export interface OpsProjectPoolRow {
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
 	startedAt: string | null; // soyoo 项目启动时间
-	remark: string; // 项目备注(ops 自有,富文本 HTML;空串=无)
+	remark: string; // 策划备注(ops 自有,富文本 HTML;空串=无)
+	remark2: string; // 项目备注2(ops 自有,富文本 HTML;空串=无)
+	remark3: string; // 项目备注3(ops 自有,富文本 HTML;空串=无)
+	remark4: string; // 项目备注4(ops 自有,富文本 HTML;空串=无)
+	remark5: string; // 项目备注5(ops 自有,富文本 HTML;空串=无)
+	remark6: string; // 项目备注6(ops 自有,富文本 HTML;空串=无)
 	plannerName: string; // 原始串(可能含多个策划,如「牛群、王新丽」),文字展示用
-	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
+	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string; id?: string; userId?: string; username?: string; status?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
 	members?: OpsProjectPoolMember[]; // 项目成员轻量快照,用于按负责人分组和新人标识
 	statusChangedAt: string | null;
 	memberCount: number;
@@ -264,6 +269,7 @@ export interface OpsProjectPoolRow {
 }
 export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd";
 export type OpsProjectPoolSortOrder = "asc" | "desc";
+export type ProjectRemarkField = "remark" | "remark2" | "remark3" | "remark4" | "remark5" | "remark6";
 type OpsProjectPoolListParams = {
 	page?: number;
 	pageSize?: number;
@@ -324,6 +330,11 @@ export interface OpsProjectStatusLog {
 	actorAvatar: string; // 操作人微信头像 URL(无则空)
 	commentHtml: string | null;
 	createdAt: string;
+}
+export interface OpsProjectProgressAnalysis {
+	rows: OpsProjectPoolRow[];
+	total: number;
+	logsByProjectId: Record<string, OpsProjectStatusLog[]>;
 }
 export interface OpsProjectStatusSetting {
 	status: string;
@@ -411,6 +422,7 @@ export interface OpsPeopleProgressProject {
 	name: string;
 	tenantName: string;
 	plannerName: string;
+	planners?: { name: string; avatar?: string }[];
 	status: string;
 	stage: string;
 	stageDeadlines: OpsProjectStageDeadline[];
@@ -436,7 +448,7 @@ export const opsApi = {
 	saveTenantScope: (body: { mode: "all" | "include" | "exclude"; tenantIds: string[] }) =>
 		requestJson<{ scope: OpsTenantScope }>("/api/ops/tenant-scope", { method: "PUT", body: JSON.stringify(body) }),
 	businessUnits: () => requestJson<{ units: OpsBusinessUnit[] }>("/api/ops/business-units"),
-	recycleHandoffUsers: () => requestJson<{ users: OpsRecycleHandoffUser[] }>("/api/ops/recycle-handoff-users"),
+	recycleHandoffUsers: () => requestJson<{ users: OpsRecycleHandoffUser[]; settlementDoneStatus?: string }>("/api/ops/recycle-handoff-users"),
 	projects: (tenantId?: string) => requestJson<{ projects: OpsProject[] }>(`/api/ops/projects${tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : ""}`),
 	segments: () => requestJson<{ segments: OpsSegment[] }>("/api/ops/segments"),
 	createSegment: (name: string) => requestJson<{ segment: OpsSegment }>("/api/ops/segments", { method: "POST", body: JSON.stringify({ name }) }),
@@ -614,6 +626,17 @@ export const opsApi = {
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/stale${s ? `?${s}` : ""}`);
 	},
 	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
+	projectPoolProgressAnalysis: (params: Omit<OpsProjectPoolListParams, "page" | "pageSize" | "sortBy" | "sortOrder"> = {}) => {
+		const qs = new URLSearchParams();
+		if (params.q) qs.set("q", params.q);
+		if (params.status?.length) qs.set("status", params.status.join(","));
+		if (params.stage?.length) qs.set("stage", params.stage.join(","));
+		if (params.segment?.length) qs.set("segment", params.segment.join(","));
+		if (params.planner?.length) qs.set("planner", params.planner.join(","));
+		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		const s = qs.toString();
+		return requestJson<OpsProjectProgressAnalysis>(`/api/ops/project-pool/progress-analysis${s ? `?${s}` : ""}`);
+	},
 	changeProjectStatus: (projectId: string, status: string, commentHtml?: string, options?: { recycleHandoffUsername?: string }) =>
 		requestJson<{ ok: boolean; status: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status`, {
 			method: "POST",
@@ -634,15 +657,20 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ isUrgent }),
 		}),
+	changeProjectPlanner: (projectId: string, toUserId: string, remark = "") =>
+		requestJson<{ ok: boolean; plannerName: string; transferCount: number }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/planner`, {
+			method: "POST",
+			body: JSON.stringify({ toUserId, remark }),
+		}),
 	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string }) =>
 		requestJson<{ ok: boolean; customerContact: string; requirementDoc: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/meta`, {
 			method: "POST",
 			body: JSON.stringify(body),
 		}),
-	changeProjectRemark: (projectId: string, remark: string) =>
+	changeProjectRemark: (projectId: string, remark: string, field: ProjectRemarkField = "remark") =>
 		requestJson<{ ok: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/remark`, {
 			method: "POST",
-			body: JSON.stringify({ remark }),
+			body: JSON.stringify({ remark, field }),
 		}),
 	projectStatusLogs: (projectId: string, options: { includeParent?: boolean } = {}) =>
 		requestJson<{ logs: OpsProjectStatusLog[] }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/status-logs${options.includeParent ? "?include_parent=1" : ""}`),

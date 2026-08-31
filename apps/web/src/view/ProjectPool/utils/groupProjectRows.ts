@@ -132,6 +132,7 @@ export const groupProjectsByPlanner = (rows: OpsProjectPoolRow[]): ProjectPoolGr
       key,
       title: group.title,
       avatar: group.avatar,
+      ownerName: group.title,
       rows: group.rows,
       stats: { ...groupStats(group.rows), projectCount: group.rows.length },
     }))

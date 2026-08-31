@@ -29,24 +29,37 @@ function replaceProjectPoolRows(rows: OpsProjectPoolRow[], updates: OpsProjectPo
   return changed ? nextRows : rows;
 }
 
-export function useProjectPoolData(message: MessageApi, options: { mine?: boolean; pagedEnabled?: boolean } = {}) {
+type ProjectPoolInitialDataPreferences = {
+	pageSize?: number;
+	search?: string;
+	statusFilter?: string[];
+	stageFilter?: string[];
+	plannerFilter?: string[];
+	segmentFilter?: number[];
+	advancedFilter?: AdvancedFilterValue;
+	sortBy?: OpsProjectPoolSortBy;
+	sortOrder?: OpsProjectPoolSortOrder;
+};
+
+export function useProjectPoolData(message: MessageApi, options: { mine?: boolean; pagedEnabled?: boolean; initialPreferences?: ProjectPoolInitialDataPreferences } = {}) {
   const mine = !!options.mine;
   const pagedEnabled = options.pagedEnabled ?? true;
+  const initialPreferences = options.initialPreferences || {};
   const [tab, setTab] = useState<"all" | "stale">("all");
   const [rows, setRows] = useState<OpsProjectPoolRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(initialPreferences.pageSize || 20);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
-  const [debounced, setDebounced] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string[]>([]);
-  const [stageFilter, setStageFilter] = useState<string[]>([]);
-  const [plannerFilter, setPlannerFilter] = useState<string[]>([]);
-  const [segmentFilter, setSegmentFilter] = useState<number[]>([]);
-  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
-  const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>(undefined);
-  const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>(undefined);
+  const [search, setSearch] = useState(initialPreferences.search || "");
+  const [debounced, setDebounced] = useState(initialPreferences.search || "");
+  const [statusFilter, setStatusFilter] = useState<string[]>(initialPreferences.statusFilter || []);
+  const [stageFilter, setStageFilter] = useState<string[]>(initialPreferences.stageFilter || []);
+  const [plannerFilter, setPlannerFilter] = useState<string[]>(initialPreferences.plannerFilter || []);
+  const [segmentFilter, setSegmentFilter] = useState<number[]>(initialPreferences.segmentFilter || []);
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(initialPreferences.advancedFilter || emptyAdvancedFilter);
+  const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>(initialPreferences.sortBy);
+  const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>(initialPreferences.sortOrder);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
   const [allRows, setAllRows] = useState<OpsProjectPoolRow[]>([]);
   const [allRowsLoading, setAllRowsLoading] = useState(false);
@@ -176,15 +189,16 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setFilterOptionRows([]);
     setTotal(0);
     setPage(1);
-    setSearch("");
-    setDebounced("");
-    setStatusFilter([]);
-    setStageFilter([]);
-    setPlannerFilter([]);
-    setSegmentFilter([]);
-    setAdvancedFilter(emptyAdvancedFilter);
-    setSortBy(undefined);
-    setSortOrder(undefined);
+    setPageSize(initialPreferences.pageSize || 20);
+    setSearch(initialPreferences.search || "");
+    setDebounced(initialPreferences.search || "");
+    setStatusFilter(initialPreferences.statusFilter || []);
+    setStageFilter(initialPreferences.stageFilter || []);
+    setPlannerFilter(initialPreferences.plannerFilter || []);
+    setSegmentFilter(initialPreferences.segmentFilter || []);
+    setAdvancedFilter(initialPreferences.advancedFilter || emptyAdvancedFilter);
+    setSortBy(initialPreferences.sortBy);
+    setSortOrder(initialPreferences.sortOrder);
   }, [mine]);
 
   useEffect(() => {

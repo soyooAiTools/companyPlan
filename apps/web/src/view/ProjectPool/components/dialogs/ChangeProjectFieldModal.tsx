@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
-import { Alert, Avatar, Modal, Radio, Select, Space } from "antd";
+import { Alert, Avatar, Modal, Radio, Select, Space, Tag } from "antd";
 import { opsApi, type OpsRecycleHandoffUser } from "@/api/modules/ops";
 import type { OpsProjectPoolRow } from "@/api/modules/ops";
 import RichTextEditor from "@/view/Ops/RichTextEditor";
-import { OPS_EDITABLE_PROJECT_STATUSES, PROJECT_STAGES } from "@/view/Ops/constants";
+import { OPS_EDITABLE_PROJECT_STATUSES, PROJECT_STAGES, statusStyle } from "@/view/Ops/constants";
 import { stageRangeLabel } from "../../deadlineUtils";
 
 type ChangeProjectFieldModalProps = {
@@ -22,11 +22,6 @@ type ChangeProjectFieldModalProps = {
   onConfirm: () => void;
   onCancel: () => void;
 };
-
-const RECYCLE_HANDOFF_USERS = [
-  { username: "miaochuan", name: "苗川", avatar: "" },
-  { username: "jingkun", name: "井昆", avatar: "" },
-];
 
 const SETTLEMENT_DONE_STATUS = "结算完成";
 
@@ -70,22 +65,12 @@ function visibleProjectVersions(target: OpsProjectPoolRow | null, projectRows: O
   return versionRows.length ? versionRows : directChildren;
 }
 
-function StatusOptionLabel({ status, current }: { status: string; current?: string }) {
+function ProjectStatusTag({ status, current }: { status: string; current?: string }) {
   const text = status === current ? `${status}(当前)` : status;
-  if (status === SETTLEMENT_DONE_STATUS) {
-    return (
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#16a34a", fontWeight: 600 }}>
-        <span style={{ width: 7, height: 7, borderRadius: 999, background: "#22c55e", display: "inline-block" }} />
-        <span>{text}</span>
-      </span>
-    );
-  }
-  if (status !== "回收中") return <span>{text}</span>;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#dc2626", fontWeight: 600 }}>
-      <span style={{ width: 7, height: 7, borderRadius: 999, background: "#ef4444", display: "inline-block" }} />
-      <span>{text}</span>
-    </span>
+    <Tag style={{ ...statusStyle(status), margin: 0, padding: "2px 10px", border: "none", borderRadius: 6, fontSize: 13, fontWeight: 700 }}>
+      {text}
+    </Tag>
   );
 }
 
@@ -139,22 +124,31 @@ export default function ChangeProjectFieldModal({
   onCancel,
 }: ChangeProjectFieldModalProps) {
   const current = field === "status" ? target?.status : target?.stage;
-  const statusOptions = field === "status" && isAdmin && current === "回收中" ? [...OPS_EDITABLE_PROJECT_STATUSES, SETTLEMENT_DONE_STATUS] : OPS_EDITABLE_PROJECT_STATUSES;
+  const [recycleHandoffUsers, setRecycleHandoffUsers] = useState<OpsRecycleHandoffUser[]>([]);
+  const [settlementDoneStatus, setSettlementDoneStatus] = useState(SETTLEMENT_DONE_STATUS);
+  const statusOptions =
+    field === "status" && isAdmin && current === "回收中" && settlementDoneStatus
+      ? [...OPS_EDITABLE_PROJECT_STATUSES, settlementDoneStatus].filter((item, index, array) => array.indexOf(item) === index)
+      : OPS_EDITABLE_PROJECT_STATUSES;
   const currentStageIndex = field === "stage" ? PROJECT_STAGES.indexOf(current || "") : -1;
   const isRecyclingChange = field === "status" && current !== "回收中" && value === "回收中";
   const visibleVersionsReady = willAllVisibleVersionsRecycle(target, value, projectRows);
-  const isMultiVersionSettlement = field === "status" && value === SETTLEMENT_DONE_STATUS && visibleProjectVersions(target, projectRows).length > 1;
+  const isMultiVersionSettlement = field === "status" && value === settlementDoneStatus && visibleProjectVersions(target, projectRows).length > 1;
   const showRecycleHandoff = isRecyclingChange && visibleVersionsReady;
   const confirmDisabled = !value || value === current || (showRecycleHandoff && !recycleHandoffUsername);
-  const [recycleHandoffUsers, setRecycleHandoffUsers] = useState<OpsRecycleHandoffUser[]>([]);
+  const shouldLoadRecycleConfig = open && field === "status" && (showRecycleHandoff || (isAdmin && current === "回收中"));
 
   useEffect(() => {
-    if (!showRecycleHandoff) return;
+    if (!shouldLoadRecycleConfig) return;
     let disposed = false;
     opsApi
       .recycleHandoffUsers()
       .then((res) => {
-        if (!disposed) setRecycleHandoffUsers(Array.isArray(res.users) ? res.users : []);
+        if (disposed) return;
+        setRecycleHandoffUsers(Array.isArray(res.users) ? res.users : []);
+        if (typeof res.settlementDoneStatus === "string" && res.settlementDoneStatus.trim()) {
+          setSettlementDoneStatus(res.settlementDoneStatus.trim());
+        }
       })
       .catch(() => {
         if (!disposed) setRecycleHandoffUsers([]);
@@ -162,15 +156,12 @@ export default function ChangeProjectFieldModal({
     return () => {
       disposed = true;
     };
-  }, [showRecycleHandoff]);
+  }, [shouldLoadRecycleConfig]);
 
-  const handoffUsers = RECYCLE_HANDOFF_USERS.map((fallback) => {
-    const remote = recycleHandoffUsers.find((user) => user.username === fallback.username);
-    return remote || fallback;
-  });
+  const titleName = [target?.name, target?.tenantName].filter(Boolean).join(" - ");
   return (
     <Modal
-      title={`${field === "status" ? "修改项目状态" : "修改制作阶段"} · ${target?.name ?? ""}`}
+      title={`${field === "status" ? "修改项目状态" : "修改制作阶段"} · ${titleName}`}
       open={open}
       onOk={onConfirm}
       confirmLoading={saving}
@@ -181,24 +172,27 @@ export default function ChangeProjectFieldModal({
       width={760}
       destroyOnHidden>
       <Space orientation="vertical" style={{ width: "100%" }} size={12}>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
           {target ? (
-            <div style={{ marginBottom: 6, color: "#94a3b8" }}>
-              当前{field === "status" ? "状态" : "阶段"}:{field === "stage" ? stageRangeLabel(current) : current || "未设置"}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "0 0 260px" }}>
+              <span style={{ color: "#1677ff", fontWeight: 600 }}>当前{field === "status" ? "状态" : "阶段"}:</span>
+              {field === "stage" ? <span style={{ fontWeight: 700 }}>{stageRangeLabel(current)}</span> : current ? <ProjectStatusTag status={current} /> : <span style={{ fontWeight: 700 }}>未设置</span>}
             </div>
           ) : null}
-          <span style={{ marginRight: 8 }}>{field === "status" ? "新状态:" : "新阶段:"}</span>
-          <Select
-            value={value || undefined}
-            placeholder={field === "status" ? "选择状态" : "选择阶段"}
-            style={{ width: field === "stage" ? 320 : 200 }}
-            options={(field === "status" ? statusOptions : PROJECT_STAGES).map((s) => ({
-              value: s,
-              label: field === "stage" ? `${stageRangeLabel(s)}${s === current ? "(当前)" : ""}` : <StatusOptionLabel status={s} current={current} />,
-              disabled: field === "stage" ? PROJECT_STAGES.indexOf(s) <= currentStageIndex : s === current,
-            }))}
-            onChange={onValueChange}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "0 0 260px" }}>
+            <span style={{ color: "#16a34a", fontWeight: 600 }}>{field === "status" ? "新状态:" : "新阶段:"}</span>
+            <Select
+              value={value || undefined}
+              placeholder={field === "status" ? "选择状态" : "选择阶段"}
+              style={{ flex: 1, minWidth: 0 }}
+              options={(field === "status" ? statusOptions : PROJECT_STAGES).map((s) => ({
+                value: s,
+                label: field === "stage" ? `${stageRangeLabel(s)}${s === current ? "(当前)" : ""}` : <ProjectStatusTag status={s} current={current} />,
+                disabled: field === "stage" ? PROJECT_STAGES.indexOf(s) <= currentStageIndex : s === current,
+              }))}
+              onChange={onValueChange}
+            />
+          </div>
         </div>
         {isRecyclingChange && !visibleVersionsReady ? <Alert type="warning" showIcon message="该项目还有其他版本未回收，最后一个版本回收时再选择交接人。" /> : null}
         {showRecycleHandoff ? (
@@ -209,7 +203,7 @@ export default function ChangeProjectFieldModal({
                 value={recycleHandoffUsername || undefined}
                 onChange={(event) => onRecycleHandoffUserChange(event.target.value || "")}>
                 <Space size={14} wrap>
-                  {handoffUsers.map((user) => (
+                  {recycleHandoffUsers.map((user) => (
                     <Radio key={user.username} value={user.username}>
                       <Space size={6}>
                         <Avatar size={22} src={user.avatar || undefined} style={{ background: "#e2e8f0", color: "#475569", fontSize: 12 }}>
@@ -222,13 +216,14 @@ export default function ChangeProjectFieldModal({
                   ))}
                 </Space>
               </Radio.Group>
+              {recycleHandoffUsers.length === 0 ? <Alert type="warning" showIcon message="未配置回收交接人，请先检查 OPS 环境变量。" /> : null}
             </Space>
           </div>
         ) : null}
         {isRecyclingChange ? (
           <AttentionNotice>注意：这是版本回收操作，请确认该版本确实不再继续推进。</AttentionNotice>
         ) : null}
-        {field === "status" && value === SETTLEMENT_DONE_STATUS ? (
+        {field === "status" && value === settlementDoneStatus ? (
           <AttentionNotice tone="success">
             {isMultiVersionSettlement
               ? "注意：这是多版本项目的项目级结算完成操作，确认后整个项目会同步为已完成，并从 OPS 项目池隐藏。请确认该项目所有版本均已回收。"

@@ -1,10 +1,11 @@
 import { remainingBusinessHours } from "../business-hours.mjs";
 import { prisma } from "../prisma.mjs";
-import { EXCLUDED_CLIENT_NAMES } from "../project-pool-constants.mjs";
+import { EXCLUDED_CLIENT_NAMES, PLANNER_TAG } from "../project-pool-constants.mjs";
 import { soyooClient } from "../soyoo-client.mjs";
 
 const DONE_STATUS = "已完成";
 const ACTIVE_STATUSES = new Set(["排队中", "进行中", "阻塞"]);
+const PROJECT_COUNT_ROLE_KEYS = new Set(["program", "level"]);
 const ROLE_DEFS = [
   { key: "all", label: "全部", keywords: [], memberTags: [] },
   { key: "program", label: "程序", keywords: ["程序", "unity", "cocos", "开发"], memberTags: ["unity开发", "cocos开发"] },
@@ -241,7 +242,8 @@ function memberIdentityKeys(member) {
   return [
     normalizePersonId(member?.userId),
     normalizePersonId(member?.user_id),
-    // member.id 在旧快照里可能是 project_version_members.id，不能作为用户身份匹配。
+    // 新快照里 member.id 是用户 ID；老快照如果没有 userId/user_id，也用它兜底匹配。
+    normalizePersonId(member?.id),
     String(member?.username || "").trim(),
     String(member?.name || "").trim(),
     String(member?.wechatName || member?.wechat_name || "").trim(),
@@ -265,6 +267,29 @@ function memberMatchesRole(member, roleKey) {
   return tags.length ? tags.some((label) => memberRoleLabelMatches(label, roleKey)) : true;
 }
 
+function projectPlanners(projectRow, snapshot) {
+  const byName = new Map();
+  const add = (planner) => {
+    const name = String(planner?.name || planner?.wechatName || planner?.wechat_name || planner?.username || "").trim();
+    if (!name) return;
+    const current = byName.get(name);
+    byName.set(name, {
+      name,
+      avatar: current?.avatar || planner?.avatar || planner?.wechat_avatar_url || planner?.wechat_avatar || "",
+      hireDate: current?.hireDate || planner?.hireDate || planner?.hire_date || "",
+    });
+  };
+  for (const planner of Array.isArray(projectRow?.planners) ? projectRow.planners : []) add(planner);
+  for (const planner of Array.isArray(snapshot?.planners) ? snapshot.planners : []) add(planner);
+  for (const member of Array.isArray(projectRow?.members) ? projectRow.members : []) {
+    if (memberIsActive(member) && memberTags(member).includes(PLANNER_TAG)) add(member);
+  }
+  for (const member of Array.isArray(snapshot?.members) ? snapshot.members : []) {
+    if (memberIsActive(member) && memberTags(member).includes(PLANNER_TAG)) add(member);
+  }
+  return [...byName.values()];
+}
+
 async function personIdentityKeys(userId) {
   const normalized = normalizePersonId(userId);
   const keys = new Set([String(userId || "").trim(), normalized, normalized ? `ops-user-${normalized}` : ""].filter(Boolean));
@@ -281,7 +306,7 @@ async function personIdentityKeys(userId) {
 }
 
 async function loadProjectCountsByMemberId(roleKey = "all") {
-  if (roleKey !== "program") return new Map();
+  if (!PROJECT_COUNT_ROLE_KEYS.has(roleKey)) return new Map();
   const rows = await prisma.$queryRaw`
     SELECT project_id, row_json, member_ids_json, tenant_name
     FROM ops_project_pool_snapshot
@@ -310,7 +335,7 @@ async function loadProjectCountsByMemberId(roleKey = "all") {
 }
 
 async function loadProjectsByMemberId(userId, roleKey = "program") {
-  if (roleKey !== "program") return [];
+  if (!PROJECT_COUNT_ROLE_KEYS.has(roleKey)) return [];
   const targetKeys = await personIdentityKeys(userId);
   if (!targetKeys.size) return [];
   const rows = await prisma.$queryRaw`
@@ -342,6 +367,7 @@ async function loadProjectsByMemberId(userId, roleKey = "program") {
         name: snapshot?.name || projectRow?.name || "",
         tenantName: projectRow?.tenantName || snapshot?.tenantName || row.tenant_name || "",
         plannerName: projectRow?.plannerName || snapshot?.plannerName || "",
+        planners: projectPlanners(projectRow, snapshot),
         status: projectRow?.status || snapshot?.status || "",
         stage: projectRow?.stage || snapshot?.stage || "",
         stageDeadlines: Array.isArray(projectRow?.stageDeadlines) ? projectRow.stageDeadlines : Array.isArray(snapshot?.stageDeadlines) ? snapshot.stageDeadlines : [],
