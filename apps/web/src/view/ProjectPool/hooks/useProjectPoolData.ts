@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import type { App } from "antd";
 import { opsApi } from "@/api/modules/ops";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsProjectPoolSortOrder, OpsSegment } from "@/api/modules/ops";
-import { emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
+import { compactAdvancedFilter, emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
+
+const REMARK_FIELDS = new Set(["remark", "remark2", "remark3", "remark4", "remark5", "remark6"]);
+
+function withoutRemarkRules(value?: AdvancedFilterValue): AdvancedFilterValue {
+	const compacted = compactAdvancedFilter(value);
+	return { ...compacted, rules: compacted.rules.filter((rule) => !REMARK_FIELDS.has(rule.field)) };
+}
 
 type MessageApi = ReturnType<typeof App.useApp>["message"];
 
@@ -57,7 +64,9 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [stageFilter, setStageFilter] = useState<string[]>(initialPreferences.stageFilter || []);
   const [plannerFilter, setPlannerFilter] = useState<string[]>(initialPreferences.plannerFilter || []);
   const [segmentFilter, setSegmentFilter] = useState<number[]>(initialPreferences.segmentFilter || []);
-  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(initialPreferences.advancedFilter || emptyAdvancedFilter);
+  // 左侧高级筛选不管理备注字段；备注列使用独立状态，避免两个表头串台。
+  const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(withoutRemarkRules(initialPreferences.advancedFilter));
+  const [remarkFilter, setRemarkFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
   const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>(initialPreferences.sortBy);
   const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>(initialPreferences.sortOrder);
   const [segmentOptions, setSegmentOptions] = useState<OpsSegment[]>([]);
@@ -67,7 +76,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [filterOptionRows, setFilterOptionRows] = useState<OpsProjectPoolRow[]>([]);
   const allRowsRequestRef = useRef<Promise<OpsProjectPoolRow[]> | null>(null);
   const advancedFilterParam = stringifyAdvancedFilter(advancedFilter);
-  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), advancedFilterParam || ""].join("|");
+  const remarkFilterParam = stringifyAdvancedFilter(remarkFilter);
+  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), advancedFilterParam || "", remarkFilterParam || ""].join("|");
   const allRowsSourceKey = mine ? "mine" : "all";
 
   const load = async () => {
@@ -77,10 +87,10 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     try {
       const result =
         tab === "stale"
-          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder })
+          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder })
           : mine
-            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder })
-            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, sortBy, sortOrder });
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder });
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
@@ -196,7 +206,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setStageFilter(initialPreferences.stageFilter || []);
     setPlannerFilter(initialPreferences.plannerFilter || []);
     setSegmentFilter(initialPreferences.segmentFilter || []);
-    setAdvancedFilter(initialPreferences.advancedFilter || emptyAdvancedFilter);
+    setAdvancedFilter(withoutRemarkRules(initialPreferences.advancedFilter));
+    setRemarkFilter(emptyAdvancedFilter);
     setSortBy(initialPreferences.sortBy);
     setSortOrder(initialPreferences.sortOrder);
   }, [mine]);
@@ -210,7 +221,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, advancedFilterParam, sortBy, sortOrder, debounced]);
+  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, advancedFilterParam, remarkFilterParam, sortBy, sortOrder, debounced]);
 
   useEffect(() => {
     opsApi
@@ -249,6 +260,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setSegmentFilter,
     advancedFilter,
     setAdvancedFilter,
+    remarkFilter,
+    setRemarkFilter,
     sortBy,
     setSortBy,
     sortOrder,

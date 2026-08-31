@@ -33,6 +33,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
           startedFrom: String(req.query.started_from ?? ""),
           startedTo: String(req.query.started_to ?? ""),
           endedFrom: String(req.query.ended_from ?? ""),
@@ -60,6 +61,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""), // 策划多选(逗号分隔)
           segment: String(req.query.segment ?? ""), // 环节多选(逗号分隔):只看包含这些未完成环节工单的项目
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -83,6 +85,7 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           planner: String(req.query.planner ?? ""),
           segment: String(req.query.segment ?? ""),
           advancedFilter: String(req.query.advanced_filter ?? ""),
+				remarkFilter: String(req.query.remark_filter ?? ""),
           sortBy: String(req.query.sortBy ?? ""),
           sortOrder: String(req.query.sortOrder ?? ""),
         }),
@@ -294,7 +297,13 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
   app.post("/api/ops/project-pool/:id/meta", requireAuth, requirePlanner, async (req, res) => {
     let r;
     try {
-      r = await pool.changeProjectMeta({ user: req.user, projectId: req.params.id, customerContact: req.body?.customerContact, requirementDoc: req.body?.requirementDoc });
+      r = await pool.changeProjectMeta({
+        user: req.user,
+        projectId: req.params.id,
+        versionId: req.body?.versionId,
+        customerContact: req.body?.customerContact,
+        requirementDoc: req.body?.requirementDoc,
+      });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }

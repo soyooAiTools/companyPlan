@@ -200,6 +200,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setSegmentFilter,
 		advancedFilter,
 		setAdvancedFilter,
+		remarkFilter,
+		setRemarkFilter,
 		sortBy,
 		setSortBy,
 		sortOrder,
@@ -328,6 +330,10 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setStoredFilters({ advancedFilter: value });
 		setPage(1);
 	};
+	const changeRemarkFilter = (value: typeof remarkFilter) => {
+		setRemarkFilter(value);
+		setPage(1);
+	};
 	const clearProjectFilters = () => {
 		const empty = { match: "any", rules: [] } as typeof advancedFilter;
 		setSearch("");
@@ -336,6 +342,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setPlannerFilter([]);
 		setSegmentFilter([]);
 		setAdvancedFilter(empty);
+		setRemarkFilter(empty);
 		setStoredFilters({ search: "", statusFilter: [], stageFilter: [], plannerFilter: [], segmentFilter: [], advancedFilter: empty });
 		setPage(1);
 	};
@@ -376,6 +383,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setPlannerFilter([]);
 			setSegmentFilter([]);
 			setAdvancedFilter(empty);
+			setRemarkFilter(empty);
 			setPage(1);
 		}
 		if (keySet.has("sort")) {
@@ -450,8 +458,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 				planner: plannerFilter,
 				segment: segmentFilter,
 				advancedFilter,
+				remarkFilter,
 			}),
-		[advancedFilter, allRows, plannerFilter, search, segmentFilter, stageFilter, statusFilter],
+		[advancedFilter, allRows, plannerFilter, remarkFilter, search, segmentFilter, stageFilter, statusFilter],
 	);
 	const visibleGroupRows = useMemo(() => (onlyUrgent ? filterUrgentProjectRows(filteredGroupRows) : filteredGroupRows), [filteredGroupRows, onlyUrgent]);
 	const visibleProjectRows = useMemo(() => (onlyUrgent ? filterUrgentProjectRows(allRows) : rows), [allRows, onlyUrgent, rows]);
@@ -735,8 +744,12 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					segmentFilter,
 					segmentOptions,
 					advancedFilter,
+					remarkFilter,
 					onAdvancedFilterChange: (value) => {
 						changeAdvancedFilter(value);
+					},
+					onRemarkFilterChange: (value) => {
+						changeRemarkFilter(value);
 					},
 					onStatusFilterChange: (value) => {
 						changeStatusFilter(value);

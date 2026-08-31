@@ -12,6 +12,7 @@ export type ProjectPoolLocalFilters = {
 	planner?: string[];
 	segment?: number[];
 	advancedFilter?: AdvancedFilterValue;
+	remarkFilter?: AdvancedFilterValue;
 };
 
 // 项目池“分组 sheet”使用的本地筛选。
@@ -110,6 +111,11 @@ function matchProjectPoolRow(row: OpsProjectPoolRow, filters: ProjectPoolLocalFi
 	if (advanced.rules.length) {
 		const results = advanced.rules.map((rule) => matchAdvancedRule(row, rule));
 		if (!(advanced.match === "all" ? results.every(Boolean) : results.some(Boolean))) return false;
+	}
+	const remark = compactAdvancedFilter(filters.remarkFilter);
+	if (remark.rules.length) {
+		const results = remark.rules.map((rule) => matchAdvancedRule(row, rule));
+		if (!(remark.match === "all" ? results.every(Boolean) : results.some(Boolean))) return false;
 	}
 
 	return true;

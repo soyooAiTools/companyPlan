@@ -106,7 +106,11 @@ export function useProjectPoolModals(message: MessageApi, reload: () => Promise<
     if (!metaTarget) return;
     setMetaSaving(true);
     try {
-      await opsApi.changeProjectMeta(metaTarget.id, { customerContact: metaCustomerContact, requirementDoc: metaRequirementDoc });
+      await opsApi.changeProjectMeta(metaTarget.projectId || metaTarget.id, {
+        customerContact: metaCustomerContact,
+        requirementDoc: metaRequirementDoc,
+        versionId: metaTarget.versionId || undefined,
+      });
       message.success("客户信息已更新");
       setMetaOpen(false);
       await reload();

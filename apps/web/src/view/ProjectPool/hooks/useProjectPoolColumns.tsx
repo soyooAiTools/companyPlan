@@ -34,11 +34,13 @@ export type ProjectPoolColumnFilters = {
 	segmentFilter: number[];
 	segmentOptions: OpsSegment[];
 	advancedFilter: AdvancedFilterValue;
+	remarkFilter: AdvancedFilterValue;
 	onStatusFilterChange: (value: string[]) => void;
 	onStageFilterChange: (value: string[]) => void;
 	onPlannerFilterChange: (value: string[]) => void;
 	onSegmentFilterChange: (value: number[]) => void;
 	onAdvancedFilterChange: (value: AdvancedFilterValue) => void;
+	onRemarkFilterChange: (value: AdvancedFilterValue) => void;
 };
 
 const headerTip = (text: string, tip: string) => (
@@ -368,7 +370,7 @@ export function useProjectPoolColumns(
 		width: 180,
 		filterDropdown: filters
 			? ({ close }: { close: () => void }) => {
-					let keyword = advancedFieldFilterValue(filters.advancedFilter, field);
+					let keyword = advancedFieldFilterValue(filters.remarkFilter, field);
 					return (
 						<div style={{ width: 220, padding: 10 }} onClick={(event) => event.stopPropagation()}>
 							<Input
@@ -380,7 +382,7 @@ export function useProjectPoolColumns(
 									keyword = event.target.value;
 								}}
 								onPressEnter={() => {
-									filters.onAdvancedFilterChange(withAdvancedContainsFilter(filters.advancedFilter, field, keyword));
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, keyword));
 									close();
 								}}
 							/>
@@ -388,7 +390,7 @@ export function useProjectPoolColumns(
 								<Button
 									size="small"
 									onClick={() => {
-										filters.onAdvancedFilterChange(withAdvancedContainsFilter(filters.advancedFilter, field, ""));
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, ""));
 										close();
 									}}
 								>
@@ -398,7 +400,7 @@ export function useProjectPoolColumns(
 									type="primary"
 									size="small"
 									onClick={() => {
-										filters.onAdvancedFilterChange(withAdvancedContainsFilter(filters.advancedFilter, field, keyword));
+									filters.onRemarkFilterChange(withAdvancedContainsFilter(filters.remarkFilter, field, keyword));
 										close();
 									}}
 								>
@@ -409,7 +411,7 @@ export function useProjectPoolColumns(
 					);
 				}
 			: undefined,
-		filterIcon: filters ? () => filterIcon(!!advancedFieldFilterValue(filters.advancedFilter, field), "#dc2626") : undefined,
+		filterIcon: filters ? () => filterIcon(!!advancedFieldFilterValue(filters.remarkFilter, field), "#dc2626") : undefined,
 		render: (_: unknown, row: OpsProjectPoolRow) => {
 			const value = row[field] || "";
 			const text = remarkPreview(value);

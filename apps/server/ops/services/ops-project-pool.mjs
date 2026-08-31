@@ -170,7 +170,7 @@ function rowSearchText(row) {
   return [row.name, row.tenantName, row.plannerName, row.versionCode, row.versionName, versionText].map((value) => String(value || "").toLowerCase()).join(" ");
 }
 
-function matchProjectPoolRow(row, { q = "", statusSet, stageSet, plannerNames, segmentSet, advancedFilter = "" }) {
+function matchProjectPoolRow(row, { q = "", statusSet, stageSet, plannerNames, segmentSet, advancedFilter = "", remarkFilter = "" }) {
   const kw = String(q || "").trim().toLowerCase();
   if (kw && !rowSearchText(row).includes(kw)) return false;
   if (statusSet.size && !statusSet.has(row.status)) return false;
@@ -183,10 +183,10 @@ function matchProjectPoolRow(row, { q = "", statusSet, stageSet, plannerNames, s
     const segments = row.segments || [];
     if (!(segments.some((item) => segmentSet.has(Number(item.id))) || (segmentSet.has(NO_SEGMENT_FILTER_VALUE) && segments.length === 0))) return false;
   }
-  return applyAdvancedFilter([row], advancedFilter).length > 0;
+	return applyAdvancedFilter([row], advancedFilter).length > 0 && applyAdvancedFilter([row], remarkFilter).length > 0;
 }
 
-function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "" }) {
+function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "" }) {
   const statusSet = new Set(
     String(status || "")
       .split(",")
@@ -215,10 +215,10 @@ function filterProjectPoolRows(rows, { q = "", status = "", stage = "", planner 
   return rows
     .map((row) => {
       const children = rowChildren(row);
-      const parentMatched = matchProjectPoolRow(row, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter });
+		const parentMatched = matchProjectPoolRow(row, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter, remarkFilter });
       if (!children.length) return parentMatched ? row : null;
       if (parentMatched) return row;
-      const matchedChildren = children.filter((child) => matchProjectPoolRow(child, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter }));
+		const matchedChildren = children.filter((child) => matchProjectPoolRow(child, { q, statusSet, stageSet, plannerNames, segmentSet, advancedFilter, remarkFilter }));
       return matchedChildren.length ? { ...row, children: matchedChildren } : null;
     })
     .filter(Boolean);
@@ -341,7 +341,7 @@ function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   }).map(sortChildren);
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "", onlyMine = false, paginate = true, timer = null }) {
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "", onlyMine = false, paginate = true, timer = null }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
@@ -360,7 +360,7 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
     rows = filterProjectPoolRows(rows, { status: [...statusSet].join(",") });
   }
   timer?.mark("过滤项目状态", { rows: rows.length });
-  rows = filterProjectPoolRows(rows, { q, stage, planner: effectivePlanner, segment, advancedFilter });
+	rows = filterProjectPoolRows(rows, { q, stage, planner: effectivePlanner, segment, advancedFilter, remarkFilter });
   timer?.mark("应用筛选条件", { rows: rows.length });
 
   rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
@@ -380,10 +380,10 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -539,10 +539,10 @@ export async function progressAnalysis({ user, q = "", status = "", stage = "", 
 }
 
 // ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
-export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, userId: meId(user) });
   try {
-    const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, sortBy, sortOrder, onlyMine: true, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, onlyMine: true, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -1028,15 +1028,17 @@ export async function changeProjectPlanner({ user, projectId, toUserId, remark =
   return { ok: true, plannerName: toPlanner, transferCount: Number(data.transfer_count || 0) };
 }
 
-// ---- 改客户对接信息:写 soyoo projects.customer_contact/requirement_doc → 同步飞书 → 刷新快照 ----
-export async function changeProjectMeta({ user, projectId, customerContact, requirementDoc }) {
-  const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
+// ---- 改客户对接信息:版本行优先写该版本,项目行才写项目级字段 → 同步飞书 → 刷新快照 ----
+export async function changeProjectMeta({ user, projectId, versionId, customerContact, requirementDoc }) {
+  const baseProjectId = soyooProjectId(projectId);
+  const targetProjectRef = versionId ? `${baseProjectId}::version-${versionId}` : projectId;
+  const { project } = await getProjectAndMembersForOps(targetProjectRef);
   if (!project) return { error: "项目不存在", code: 404 };
   const oldContact = String(project.customer_contact ?? "");
   const oldDoc = String(project.requirement_doc ?? "");
   const nextContact = String(customerContact ?? "").trim();
   const nextDoc = String(requirementDoc ?? "").trim();
-  const r = await soyooClient.setProjectMeta(projectId, { customer_contact: nextContact, requirement_doc: nextDoc });
+  const r = await soyooClient.setProjectMeta(targetProjectRef, { customer_contact: nextContact, requirement_doc: nextDoc });
   if (oldContact !== nextContact || oldDoc !== nextDoc) {
     const html = [
       `<div>客户对接人：${escapeHtml(oldContact || "空")} → ${escapeHtml(nextContact || "空")}</div>`,
@@ -1044,7 +1046,7 @@ export async function changeProjectMeta({ user, projectId, customerContact, requ
     ].join("");
     await prisma.ops_project_status_logs.create({
       data: {
-        project_id: String(projectId),
+        project_id: String(baseProjectId),
         project_name: project.name,
         kind: "remark",
         from_status: null,
@@ -1285,7 +1287,7 @@ async function stageOverdueProjectsForNotify() {
     .filter(Boolean);
 }
 
-export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
     // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
@@ -1298,7 +1300,7 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
     }
     const idSet = new Set(extraIds);
     const scopedRows = filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user));
-    const allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter })
+		const allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter, remarkFilter })
       .map((row) => {
         const children = rowChildren(row);
         if (!children.length) return idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;

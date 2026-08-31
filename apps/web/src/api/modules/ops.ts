@@ -280,6 +280,7 @@ type OpsProjectPoolListParams = {
 	segment?: number[];
 	planner?: string[];
 	advancedFilter?: string;
+	remarkFilter?: string;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
 };
@@ -583,6 +584,7 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(",")); // 环节多选 → 逗号分隔
 		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -600,6 +602,7 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -629,6 +632,7 @@ export const opsApi = {
 		if (params.segment?.length) qs.set("segment", params.segment.join(","));
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
+		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -694,7 +698,7 @@ export const opsApi = {
 			method: "POST",
 			body: JSON.stringify({ toUserId, remark }),
 		}),
-	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string }) =>
+	changeProjectMeta: (projectId: string, body: { customerContact: string; requirementDoc: string; versionId?: string }) =>
 		requestJson<{ ok: boolean; customerContact: string; requirementDoc: string }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/meta`, {
 			method: "POST",
 			body: JSON.stringify(body),
