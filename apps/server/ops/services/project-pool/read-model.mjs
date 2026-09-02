@@ -6,7 +6,8 @@ import { businessHoursBetween } from "../../business-hours.mjs";
 export async function loadProjectExtMap(projectIds) {
   const out = {};
   if (!projectIds.length) return out;
-  const rows = await prisma.ops_project_ext.findMany({ where: { project_id: { in: projectIds.map(String) } } });
+  const ids = projectIds.map(String);
+  const rows = await prisma.$queryRawUnsafe(`SELECT project_id, stage, stage_changed_at, remark, remark2, remark3, remark4, remark5, remark6, asset_recycle_status FROM ops_project_ext WHERE project_id IN (${ids.map(() => "?").join(",")})`, ...ids);
   for (const r of rows) out[r.project_id] = {
     stage: r.stage,
     stageChangedAt: r.stage_changed_at,
@@ -16,6 +17,7 @@ export async function loadProjectExtMap(projectIds) {
     remark4: r.remark4,
     remark5: r.remark5,
     remark6: r.remark6,
+    assetRecycleStatus: r.asset_recycle_status,
   };
   return out;
 }
@@ -92,6 +94,21 @@ function normalizePlanners(p) {
   if (Array.isArray(p.planners) && p.planners.length) return p.planners.map((x) => ({ name: x.name ?? "", avatar: x.avatar ?? "", hireDate: x.hireDate ?? x.hire_date ?? "" }));
   if (p.planner_avatar) return [{ name: p.planner_name ?? "", avatar: p.planner_avatar }];
   return [];
+}
+
+function normalizeRecycleState(value) {
+  const state = String(value || "").trim();
+  return ["success", "pending", "failed"].includes(state) ? state : "";
+}
+
+function normalizeRecycleStatus(recycleStatus, assetStatus) {
+  const source = recycleStatus?.source || {};
+  const channel = recycleStatus?.channel || {};
+  return {
+    source: normalizeRecycleState(source.state),
+    channel: normalizeRecycleState(channel.state),
+    asset: normalizeRecycleState(assetStatus),
+  };
 }
 
 function normalizeBusinessScopes(scopes) {
@@ -221,6 +238,7 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
     remark4: ext.remark4 || "",
     remark5: ext.remark5 || "",
     remark6: ext.remark6 || "",
+    recycleStatus: normalizeRecycleStatus(version?.recycle_status, ext.assetRecycleStatus),
     statusChangedAt: statusChangedAt ?? null,
     memberCount,
     members: Array.isArray(project.members) ? project.members : [],

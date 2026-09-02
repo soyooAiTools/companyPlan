@@ -43,6 +43,51 @@ export function snapshotMemberIds(row) {
   return parseJson(row.member_ids_json, []);
 }
 
+function flattenSnapshotRows(row) {
+  if (!row) return [];
+  const children = Array.isArray(row.children) ? row.children.flatMap(flattenSnapshotRows) : [];
+  return [row, ...children];
+}
+
+function recycleStateText(state) {
+  if (state === "success") return "已回收";
+  if (state === "failed") return "回收失败";
+  if (state === "pending") return "回收中";
+  return "待回收";
+}
+
+function recycleTargetText(target) {
+  return target === "channel" ? "渠道" : "源码";
+}
+
+async function writeRecycleStatusLogs(previousRow, nextRow) {
+  const previousById = new Map(flattenSnapshotRows(previousRow).map((row) => [String(row.id), row]));
+  const logs = [];
+  for (const row of flattenSnapshotRows(nextRow)) {
+    const rowId = String(row.id || "");
+    if (!rowId) continue;
+    const previous = previousById.get(rowId);
+    for (const target of ["source", "channel"]) {
+      const fromState = String(previous?.recycleStatus?.[target] || "");
+      const toState = String(row?.recycleStatus?.[target] || "");
+      if (!toState || fromState === toState) continue;
+      const label = recycleTargetText(target);
+      logs.push({
+        project_id: rowId,
+        project_name: row.name || "",
+        kind: "recycle",
+        from_status: `${label}${recycleStateText(fromState)}`,
+        to_status: `${label}${recycleStateText(toState)}`,
+        actor_id: "system",
+        actor_name: "系统",
+        comment_html: `<p>${label}回收：${recycleStateText(fromState)} -> ${recycleStateText(toState)}</p>`,
+        created_at: nowIso(),
+      });
+    }
+  }
+  if (logs.length) await prisma.ops_project_status_logs.createMany({ data: logs });
+}
+
 async function deleteProjectPoolSnapshot(projectId, reason) {
   const pid = String(projectId || "");
   if (!pid) return;
@@ -62,7 +107,7 @@ function projectVersions(project) {
 
 function isProjectLifecycleHidden(project) {
   const lifecycle = String(project?.project_lifecycle_status || project?.lifecycle_status || "").trim();
-  return lifecycle === "已完成" || lifecycle === "已回收" || lifecycle === "客户暂停";
+  return lifecycle === "已完成" || lifecycle === "结算完成" || lifecycle === "已回收" || lifecycle === "客户暂停";
 }
 
 function isProjectLifecycleActive(row) {
@@ -184,6 +229,8 @@ async function mapConcurrent(items, limit, mapper) {
 
 async function writeProjectPoolSnapshot(row, memberIds, { invalidateCache = true } = {}) {
   await ensureProjectPoolSnapshotTable();
+  const previousRows = await prisma.$queryRaw`SELECT row_json FROM ops_project_pool_snapshot WHERE project_id = ${String(row.id)} LIMIT 1`;
+  const previousRow = previousRows.length ? snapshotDbRowToPoolRow(previousRows[0]) : null;
   const now = nowIso();
   const version = BigInt(Date.now());
   await prisma.$executeRaw`
@@ -201,6 +248,7 @@ async function writeProjectPoolSnapshot(row, memberIds, { invalidateCache = true
       updated_at = VALUES(updated_at),
       version = VALUES(version)
   `;
+  await writeRecycleStatusLogs(previousRow, row);
   if (invalidateCache) await invalidateProjectPoolSnapshotRowsCache("project_snapshot_changed");
 }
 
@@ -255,7 +303,7 @@ export async function refreshProjectPoolSnapshotsByMember(userId) {
 async function fetchAllSoyooProjectsForSnapshot() {
   const out = [];
   for (let page = 1; page <= 100; page += 1) {
-    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "已完成,已回收,客户暂停" });
+    const r = await soyooClient.projectsList({ page, limit: 100, exclude: "已完成,结算完成,已回收,客户暂停" });
     const projects = Array.isArray(r?.data) ? r.data : [];
     out.push(...projects);
     const total = Number(r?.total ?? out.length);

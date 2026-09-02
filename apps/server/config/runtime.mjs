@@ -60,6 +60,7 @@ export const opsIntegration = {
   adminUsernames: splitEnvSet(process.env.COMPANYPLAN_OPS_ADMIN_USERNAMES ?? ""),
   recycleHandoffUsernames: splitEnvList(process.env.COMPANYPLAN_OPS_RECYCLE_HANDOFF_USERNAMES ?? ""),
   settlementDoneStatus: String(process.env.COMPANYPLAN_OPS_SETTLEMENT_DONE_STATUS ?? "结算完成").trim() || "结算完成",
+  assetRecycleToken: String(process.env.COMPANYPLAN_OPS_ASSET_RECYCLE_TOKEN ?? "").trim(),
 };
 // 阿里云 OSS（富文本编辑器图片上传）。凭证放根 .env：OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET。
 export const ossConfig = {

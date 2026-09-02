@@ -10,6 +10,7 @@ import { opsIntegration } from "../../config/runtime.mjs";
 import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
+import { loadProjectExtMap } from "./project-pool/read-model.mjs";
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 import { logger } from "../../core/logger.mjs";
 import { getUserTenantScope } from "./tenant-scope.mjs";
@@ -59,7 +60,7 @@ const PROJECT_REMARK_LABELS = { remark: "策划备注", remark2: "备注2", rema
 const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "plannerName", "planner", "status", "stage", "segment", ...PROJECT_REMARK_FIELDS, "versionCode", "versionName"]);
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
 const NO_SEGMENT_FILTER_VALUE = 0;
-const ARCHIVE_PROJECT_STATUSES = ["已完成", "回收中"];
+const ARCHIVE_PROJECT_STATUSES = ["结算完成", "已完成", "回收中"];
 
 function parseAdvancedFilter(input) {
   if (!input) return null;
@@ -401,6 +402,7 @@ function archiveProjectRow(project) {
     tenantId: String(project.tenant_id ?? ""),
     tenantName: project.tenant_name ?? "",
     status: project.project_lifecycle_status || project.lifecycle_status || project.status || "",
+    versionCount: Number(project.version_count || 0),
     plannerName: project.planner_name ?? "",
     planners: Array.isArray(project.planners)
       ? project.planners.map((planner) => ({ name: planner?.name ?? "", avatar: planner?.avatar ?? "" })).filter((planner) => planner.name)
@@ -424,6 +426,31 @@ function archiveProjectRow(project) {
     ticketTotal: 0,
     atRisk: 0,
     overdue: 0,
+  };
+}
+
+export async function archivedProjectVersions({ user, projectId }) {
+  const project = await soyooClient.project(projectId);
+  if (!project?.id) return { error: "项目不存在", code: 404 };
+  if (!isAdmin(user)) {
+    const allowedPlanner = currentPlannerFilterName(user);
+    const plannerText = String(project.planner_name || project.plannerName || "");
+    const planners = Array.isArray(project.planners) ? project.planners.map((item) => item?.name).filter(Boolean) : [];
+    if (allowedPlanner && !plannerText.includes(allowedPlanner) && !planners.includes(allowedPlanner)) {
+      return { error: "无权查看该项目版本", code: 403 };
+    }
+  }
+  const versions = Array.isArray(project.versions) ? project.versions : [];
+  return {
+    versions: versions.map((version) => ({
+      id: String(version.id ?? ""),
+      code: String(version.code || ""),
+      name: String(version.name || ""),
+      status: String(version.status || project.status || ""),
+      statusChangedAt: version.status_changed_at || version.statusChangedAt || null,
+      isDefault: version.is_default === true || version.isDefault === true,
+      sortOrder: Number(version.sort_order ?? version.sortOrder ?? 0),
+    })),
   };
 }
 
@@ -849,6 +876,59 @@ const STATUS_AUTO_TICKET = {
   打包中: { title: "催打包", note: "项目状态改为打包中后自动生成" },
 };
 
+function readSoyooProjectLifecycle(project) {
+  return String(project?.lifecycle_status || project?.project_lifecycle_status || project?.status || "").trim();
+}
+
+function readSoyooProjectStatus(project) {
+  return String(project?.status || project?.lifecycle_status || project?.project_lifecycle_status || "").trim();
+}
+
+function versionStatusesOf(project) {
+  const versions = Array.isArray(project?.versions) ? project.versions : [];
+  return versions.map((version) => String(version?.status || "").trim()).filter(Boolean);
+}
+
+async function assertSettlementVersionSyncedToSoyoo({ projectId, baseProjectId, settlementDoneStatus, helperResult }) {
+  const latest = await soyooClient.project(baseProjectId);
+  const projectStatus = readSoyooProjectStatus(latest);
+  const lifecycleStatus = readSoyooProjectLifecycle(latest);
+  const versions = Array.isArray(latest?.versions) ? latest.versions : [];
+  const targetVersionId = soyooVersionId(projectId);
+  const targetVersion = targetVersionId ? versions.find((version) => String(version?.id ?? "") === String(targetVersionId)) : null;
+  const versionStatuses = versions.map((version) => String(version?.status || "").trim()).filter(Boolean);
+  const targetVersionStatus = String(targetVersion?.status || helperResult?.data?.status || "").trim();
+  const targetVersionOk = targetVersionId ? targetVersionStatus === settlementDoneStatus : true;
+  const projectSettled = projectStatus === settlementDoneStatus || lifecycleStatus === settlementDoneStatus;
+  const allVersionsSettled = versionStatuses.length > 0 && versionStatuses.every((item) => item === settlementDoneStatus);
+  const helperData = helperResult?.data || {};
+  const helperStatus = String(helperData?.status || "").trim();
+  const helperLifecycle = String(helperData?.lifecycle_status || helperData?.project_lifecycle_status || "").trim();
+
+  logger.info("project-pool settlement sync checked", {
+    projectId: String(baseProjectId),
+    requestedProjectId: String(projectId),
+    targetVersionId,
+    targetVersionStatus,
+    helperStatus,
+    helperLifecycle,
+    projectStatus,
+    lifecycleStatus,
+    versionStatuses,
+    targetVersionOk,
+    allVersionsSettled,
+    projectSettled,
+  });
+
+  if (targetVersionOk && (!allVersionsSettled || projectSettled)) return latest;
+
+  const err = new Error(
+    `helper 未确认版本已同步为${settlementDoneStatus}，请刷新后重试。当前项目状态=${projectStatus || "-"}，生命周期=${lifecycleStatus || "-"}，目标版本状态=${targetVersionStatus || "-"}，版本状态=${versionStatuses.join(",") || "-"}`
+  );
+  err.status = 502;
+  throw err;
+}
+
 // ---- 改状态:路由已限制策划/管理员;这里不再按版本成员二次拦截,避免多版本成员不同步导致误判 ----
 export async function changeProjectStatus({ user, projectId, status, commentHtml, force = false, recycleHandoffUsername }) {
   const settlementDoneStatus = opsIntegration.settlementDoneStatus;
@@ -858,17 +938,18 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   const from = project.status;
   if (status === settlementDoneStatus) {
     if (!isAdmin(user)) return { error: "仅管理员可结算完成项目", code: 403 };
-    await soyooClient.setProjectStatus(baseProjectId, settlementDoneStatus, { operator_id: Number(meId(user)) || undefined });
+    const helperResult = await soyooClient.setProjectStatus(projectId, settlementDoneStatus, { operator_id: Number(meId(user)) || undefined });
+    await assertSettlementVersionSyncedToSoyoo({ projectId, baseProjectId, settlementDoneStatus, helperResult });
     await prisma.ops_project_status_logs.create({
       data: {
-        project_id: String(baseProjectId),
+        project_id: String(projectId),
         project_name: project.name,
         kind: "status",
-        from_status: from === "回收中" ? from : "回收中",
+        from_status: from || null,
         to_status: settlementDoneStatus,
         actor_id: meId(user),
         actor_name: user?.name || user?.username || "",
-        comment_html: commentHtml && !isBlankRich(commentHtml) ? sanitizeRichHtml(commentHtml) : "<p>结算完成，项目状态同步为已完成。</p>",
+        comment_html: commentHtml && !isBlankRich(commentHtml) ? sanitizeRichHtml(commentHtml) : "<p>当前版本状态同步为结算完成；项目会在所有版本结算完成后自动结算完成。</p>",
         created_at: nowIso(),
       },
     });
@@ -997,6 +1078,51 @@ export async function changeProjectUrgent({ user, projectId, isUrgent }) {
   });
   await refreshProjectPoolSnapshot(baseProjectId);
   return { ok: true, isUrgent: savedUrgent };
+}
+
+function recycleStateLabel(state) {
+  if (state === "success") return "已回收";
+  if (state === "failed") return "回收失败";
+  if (state === "pending") return "回收中";
+  return "待回收";
+}
+
+export async function updateAssetRecycleStatus({ user, projectId, status = "success", actor = "" }) {
+  const pid = String(projectId || "").trim();
+  if (!pid) return { error: "缺少项目", code: 400 };
+  const nextStatus = status == null ? "success" : String(status).trim();
+  if (!["", "pending", "success", "failed"].includes(nextStatus)) return { error: "无效的资产回收状态", code: 400 };
+  const baseProjectId = soyooProjectId(pid);
+  const { project } = await getProjectAndMembersForOps(pid);
+  if (!project) return { error: "项目不存在", code: 404 };
+  const rows = await prisma.$queryRaw`SELECT asset_recycle_status FROM ops_project_ext WHERE project_id = ${pid} LIMIT 1`;
+  const from = String(rows?.[0]?.asset_recycle_status || "");
+  if (from === nextStatus) return { ok: true, status: nextStatus };
+  const now = nowIso();
+  const savedStatus = nextStatus || null;
+  const isSystemActor = String(actor || "").trim() === "system";
+  const actorId = isSystemActor ? "system" : meId(user);
+  const actorName = isSystemActor ? "系统" : (user?.name || user?.username || "系统");
+  await prisma.$executeRaw`
+    INSERT INTO ops_project_ext (project_id, asset_recycle_status, updated_at)
+    VALUES (${pid}, ${savedStatus}, ${now})
+    ON DUPLICATE KEY UPDATE asset_recycle_status = VALUES(asset_recycle_status), updated_at = VALUES(updated_at)
+  `;
+  await prisma.ops_project_status_logs.create({
+    data: {
+      project_id: pid,
+      project_name: project.name,
+      kind: "recycle",
+      from_status: `资产${recycleStateLabel(from)}`,
+      to_status: `资产${recycleStateLabel(nextStatus)}`,
+      actor_id: actorId,
+      actor_name: actorName,
+      comment_html: `<p>资产回收：${recycleStateLabel(from)} -> ${recycleStateLabel(nextStatus)}</p>`,
+      created_at: now,
+    },
+  });
+  await refreshProjectPoolSnapshot(baseProjectId);
+  return { ok: true, status: nextStatus };
 }
 
 // ---- 转交策划:写回 soyoo 项目/版本成员关系 → 写 ops 流转日志 → 刷新快照 ----
@@ -1254,7 +1380,7 @@ async function loadProjectsByIds(projectIds) {
       page: 1,
       limit: 100,
       projectIds: batch,
-      exclude: "已完成,回收中,已回收,客户暂停",
+      exclude: "已完成,结算完成,回收中,已回收,客户暂停",
       excludeTenants: EXCLUDED_CLIENT_NAMES,
     });
     out.push(...(Array.isArray(r?.data) ? r.data : []));
@@ -1362,4 +1488,68 @@ export async function loadSegmentsWithTagIds(segmentIds) {
     bySeg.get(l.segment_id).push({ id: l.tag_id });
   }
   return segments.map((s) => ({ id: s.id, name: s.name, tags: bySeg.get(s.id) ?? [] }));
+}
+
+function externalAssetRecycleVersion(project, version) {
+  return {
+    projectId: String(project.id ?? ""),
+    projectName: String(project.name ?? ""),
+    tenantName: String(project.tenant_name ?? project.tenantName ?? ""),
+    versionRowId: version?.id ? `${project.id}::version-${version.id}` : String(project.id ?? ""),
+    versionId: version?.id ? String(version.id) : "",
+    versionCode: String(version?.code ?? ""),
+    versionName: String(version?.name ?? ""),
+    isDefault: !!(version?.is_default ?? version?.isDefault),
+    status: String(version?.status ?? project.status ?? ""),
+    svnRepoName: String(version?.svn_repo_name ?? version?.svnRepoName ?? ""),
+    svnUrl: String(version?.svn_url ?? version?.svnUrl ?? ""),
+    svnStatus: String(version?.svn_status ?? version?.svnStatus ?? ""),
+  };
+}
+
+export async function listExternalAssetRecycleProjects({ keyword = "", page = 1, pageSize = 20 }) {
+  const safePage = Math.max(1, Math.floor(Number(page) || 1));
+  const safePageSize = Math.min(100, Math.max(1, Math.floor(Number(pageSize) || 20)));
+  const body = await soyooClient.projectsList({
+    keyword,
+    page: safePage,
+    limit: safePageSize,
+    exclude: "__none",
+  });
+  const projects = Array.isArray(body?.data) ? body.data : [];
+  const extIds = [];
+  for (const project of projects) {
+    const versions = Array.isArray(project.versions) ? project.versions : [];
+    if (versions.length) {
+      for (const version of versions) extIds.push(`${project.id}::version-${version.id}`);
+    } else {
+      extIds.push(String(project.id ?? ""));
+    }
+  }
+  const extMap = await loadProjectExtMap(extIds);
+  const rows = projects.map((project) => {
+    const versions = Array.isArray(project.versions) && project.versions.length ? project.versions : [null];
+    const versionRows = versions.map((version) => {
+      const item = externalAssetRecycleVersion(project, version);
+      return {
+        ...item,
+        assetRecycleStatus: extMap[item.versionRowId]?.assetRecycleStatus || "",
+      };
+    });
+    return {
+      projectId: String(project.id ?? ""),
+      projectName: String(project.name ?? ""),
+      tenantName: String(project.tenant_name ?? project.tenantName ?? ""),
+      status: String(project.status ?? ""),
+      lifecycleStatus: String(project.project_lifecycle_status ?? project.lifecycle_status ?? ""),
+      versionCount: versionRows.length,
+      versions: versionRows,
+    };
+  });
+  return {
+    rows,
+    total: Number(body?.total ?? rows.length),
+    page: Number(body?.page ?? safePage),
+    pageSize: Number(body?.limit ?? safePageSize),
+  };
 }

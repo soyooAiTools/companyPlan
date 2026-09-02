@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import dayjs from "dayjs";
 import "dayjs/locale/zh-cn";
-import { App, Button, Checkbox, Input, Radio, Select, Spin, Switch } from "antd";
+import { App, Button, Checkbox, Form, Input, Radio, Select, Space, Spin, Switch } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow, type OpsProjectPoolSortBy } from "@/api/modules/ops";
+import { opsApi, type OpsBusinessUnit, type OpsProjectPoolMember, type OpsProjectPoolOwnerMember as RemoteProjectPoolOwnerMember, type OpsProjectPoolRow, type OpsProjectPoolSortBy, type OpsRecycleState } from "@/api/modules/ops";
 import ChangeProjectFieldModal from "./components/dialogs/ChangeProjectFieldModal";
 import DeadlineOverdueProjectsModal from "./components/dialogs/DeadlineOverdueProjectsModal";
 import MembersModal from "./components/dialogs/MembersModal";
@@ -171,6 +171,7 @@ type ProjectPoolPageProps = {
 
 export default function ProjectPoolPage({ mine = false, isAdmin = false }: ProjectPoolPageProps) {
 	const { message, modal } = App.useApp();
+	const [assetRecycleForm] = Form.useForm<{ assetStatus: OpsRecycleState }>();
 	const projectPoolPreferences = useProjectPoolPreferences(mine);
 	const { sheet, setSheet } = projectPoolPreferences;
 	const [sheetContentReady, setSheetContentReady] = useState(true);
@@ -727,11 +728,48 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		});
 	};
 
+	const saveAssetRecycle = async (row: OpsProjectPoolRow, status: OpsRecycleState) => {
+		try {
+			await opsApi.changeProjectAssetRecycle(row.id, status);
+			message.success("资产回收状态已更新");
+			await reloadAfterProjectChange();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "修改资产回收状态失败");
+			throw error;
+		}
+	};
+
+	const changeAssetRecycle = (row: OpsProjectPoolRow) => {
+		assetRecycleForm.setFieldsValue({ assetStatus: row.recycleStatus?.asset === "success" ? "success" : "" });
+		modal.confirm({
+			title: <span style={{ fontWeight: 500 }}>{row.name}</span>,
+			content: (
+				<Form form={assetRecycleForm} layout="horizontal" style={{ paddingTop: 12, paddingBottom: 22 }}>
+					<Form.Item label="资产文件" name="assetStatus" style={{ marginBottom: 0 }}>
+						<Radio.Group>
+							<Space size={18}>
+								<Radio value="">未回收</Radio>
+								<Radio value="success">已回收</Radio>
+							</Space>
+						</Radio.Group>
+					</Form.Item>
+				</Form>
+			),
+			okText: "确定",
+			cancelText: "取消",
+			closable: true,
+			maskClosable: true,
+			icon: null,
+			onOk: () => saveAssetRecycle(row, assetRecycleForm.getFieldValue("assetStatus") || ""),
+		});
+	};
+
 	const columns = useProjectPoolColumns(
 		{
 			...dialogs.actions,
 			openCreateTicket: (row) => setCreateTicketProject(row),
 			transferPlanner,
+			changeAssetRecycle,
 		},
 		groupMode ? 0 : (page - 1) * pageSize,
 		isArchiveSheet
