@@ -1494,6 +1494,7 @@ function externalAssetRecycleVersion(project, version) {
   return {
     projectId: String(project.id ?? ""),
     projectName: String(project.name ?? ""),
+    tenantId: String(project.tenant_id ?? project.tenantId ?? ""),
     tenantName: String(project.tenant_name ?? project.tenantName ?? ""),
     versionRowId: version?.id ? `${project.id}::version-${version.id}` : String(project.id ?? ""),
     versionId: version?.id ? String(version.id) : "",
@@ -1539,6 +1540,7 @@ export async function listExternalAssetRecycleProjects({ keyword = "", page = 1,
     return {
       projectId: String(project.id ?? ""),
       projectName: String(project.name ?? ""),
+      tenantId: String(project.tenant_id ?? project.tenantId ?? ""),
       tenantName: String(project.tenant_name ?? project.tenantName ?? ""),
       status: String(project.status ?? ""),
       lifecycleStatus: String(project.project_lifecycle_status ?? project.lifecycle_status ?? ""),
