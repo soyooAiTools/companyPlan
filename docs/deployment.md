@@ -54,6 +54,9 @@ COMPANYPLAN_OPS_CONCURRENCY=8
 COMPANYPLAN_OPS_PROJECT_MEMBER_LIMIT=0
 COMPANYPLAN_OPS_INCLUDE_LOCAL_DATA=0
 COMPANYPLAN_OPS_ADMIN_USERNAMES=
+COMPANYPLAN_PLAYABLE_FEEDBACK_SERVICE_ID=soyoo-playable-helper
+COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET=<与反馈后端一致的高强度随机密钥>
+COMPANYPLAN_PLAYABLE_FEEDBACK_MAX_CLOCK_SKEW_SECONDS=300
 ```
 
 Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS is terminated by a reverse proxy, keep `X-Forwarded-Proto` configured correctly because the server trusts one proxy hop.
@@ -63,6 +66,8 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 ## soyoo Authentication And Realtime Integration
 
 `POST /api/auth/login` forwards the submitted username and password to `${COMPANYPLAN_OPS_BASE_URL}/tools/login`. An invalid credential response is returned immediately: it must not trigger a full directory sync, user lookup, local upsert, or session creation. Upstream timeout/unavailability is returned as `502`, not disguised as a bad password.
+
+反馈系统通过 `/api/internal/playable-feedback/*` 调用 companyPlan。该路由不接受浏览器会话，而是校验服务 ID、毫秒/秒时间戳、一次性 nonce 和请求原文 HMAC-SHA256。生产环境必须配置共享密钥；未配置时接口返回 `503`。同一 `sourceAssignmentId` 只能映射一张工单，重复请求返回原工单，内容不同则返回 `409`。
 
 After successful authentication only, companyPlan enriches the returned identity when tags are absent, upserts the `people` row, and creates the session. `is_admin`/`管理员` maps to `roleKey=admin`; the exact soyoo tag `制片` maps to `roleKey=producer`; all other accounts map to `member`. Session responses expose `username` and `roleKey` so downstream role-gated applications can admit only administrators and producers.
 

@@ -22,6 +22,7 @@ import {
   upsertPersonFromSoyoo,
 } from "./db/company-plan-store.mjs";
 import { clearSessionCache, clearSessionCookie, createAuthMiddleware, setSessionCookie } from "./middleware/auth.mjs";
+import { createPlayableFeedbackServiceAuth } from "./middleware/playable-feedback-service-auth.mjs";
 import { securityHeaders, validateWriteOrigin } from "./middleware/security.mjs";
 import { registerCompanyPlanRoutes } from "./router/company-plan-routes.mjs";
 import { registerOpsRoutes } from "./ops/ops-routes.mjs";
@@ -29,6 +30,7 @@ import { registerProjectPoolRoutes } from "./ops/project-pool-routes.mjs";
 import { registerPeopleProgressRoutes } from "./ops/people-progress-routes.mjs";
 import { registerNotificationRoutes } from "./ops/notification-routes.mjs";
 import { registerAudioEditRoutes } from "./ops/audio-edit-routes.mjs";
+import { registerPlayableFeedbackIntegrationRoutes } from "./ops/playable-feedback-integration-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
@@ -49,7 +51,12 @@ const { attachSession, requireAuth, requireAdmin } = createAuthMiddleware();
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "16mb" }));
+app.use(express.json({
+  limit: "16mb",
+  verify: (request, _response, buffer) => {
+    request.rawBody = Buffer.from(buffer);
+  },
+}));
 app.use(jsonGzip);
 app.use(securityHeaders);
 app.use(validateWriteOrigin);
@@ -76,6 +83,9 @@ registerProjectPoolRoutes(app, { requireAuth, requireAdmin });
 registerPeopleProgressRoutes(app, { requireAuth, requireAdmin });
 registerNotificationRoutes(app, { requireAuth, requireAdmin });
 registerAudioEditRoutes(app, { requireAuth, requireAdmin });
+registerPlayableFeedbackIntegrationRoutes(app, {
+  requireServiceAuth: createPlayableFeedbackServiceAuth(),
+});
 
 const distDir = join(repoRoot, "apps", "web", "dist");
 if (existsSync(distDir)) {

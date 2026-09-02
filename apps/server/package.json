@@ -9,6 +9,7 @@
     "dev:api:test": "APP_ENV=test node index.mjs",
     "dev:api:prod": "APP_ENV=prod node index.mjs",
     "test:auth": "node --test test/*auth.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "start": "node index.mjs",
     "start:test": "APP_ENV=test node index.mjs",
     "start:prod": "APP_ENV=prod node index.mjs"

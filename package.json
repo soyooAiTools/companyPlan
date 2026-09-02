@@ -11,6 +11,7 @@
     "dev:api:prod": "pnpm --filter @companyplan/server dev:api:prod",
     "build": "pnpm --filter @companyplan/web build",
     "test:auth": "pnpm --filter @companyplan/server test:auth",
+    "test": "pnpm --filter @companyplan/server test",
     "start": "pnpm --filter @companyplan/server start",
     "start:test": "pnpm --filter @companyplan/server start:test",
     "start:prod": "pnpm --filter @companyplan/server start:prod",

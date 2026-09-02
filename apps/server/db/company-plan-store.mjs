@@ -218,6 +218,23 @@ async function initializeSchema() {
       created_at VARCHAR(40) NOT NULL,
       KEY idx_te_ticket (ticket_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    -- 反馈系统指派与 OPS 工单的一对一来源映射。source_assignment_id 是跨系统幂等键。
+    CREATE TABLE IF NOT EXISTS ops_ticket_source_links (
+      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+      source_system VARCHAR(40) NOT NULL,
+      source_batch_id VARCHAR(64) NOT NULL,
+      source_assignment_id VARCHAR(64) NOT NULL,
+      source_review_id VARCHAR(64) NOT NULL,
+      source_feedback_id VARCHAR(160) NOT NULL,
+      ticket_id VARCHAR(64) NOT NULL,
+      payload_sha256 VARCHAR(64) NOT NULL,
+      source_url VARCHAR(500),
+      created_at VARCHAR(40) NOT NULL,
+      UNIQUE KEY uniq_otsl_source_assignment (source_system, source_assignment_id),
+      UNIQUE KEY uniq_otsl_ticket (ticket_id),
+      KEY idx_otsl_feedback (source_review_id, source_feedback_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await ensureIndex("idx_tickets_project", "tickets", "project_id");
   await ensureIndex("idx_tickets_project_tag_status", "tickets", "project_id, tag_name, status");

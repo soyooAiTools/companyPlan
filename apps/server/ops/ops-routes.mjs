@@ -149,7 +149,7 @@ async function logTicketEvent({ ticketId, user, action, fromStatus = null, toSta
 }
 
 // 环节列表 + 各自绑定的标签(id 为 INT → JS number)
-async function loadSegments() {
+export async function loadSegments() {
   const segments = await prisma.ops_segments.findMany({ orderBy: [{ sort_order: "asc" }, { name: "asc" }] });
   const links = await prisma.ops_segment_tags.findMany();
   // 标签名实时查 soyoo(本地不再存 tags);失败则回退 tag_id
@@ -178,7 +178,7 @@ async function loadSegmentTags(segmentId) {
   return links.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) }));
 }
 
-async function prepareTicketCreate({ user, body }) {
+export async function prepareTicketCreate({ user, body }) {
   const projectId = body.projectId ? String(body.projectId) : "";
   const segmentId = Number(body.segmentId);
   const ownerId = body.ownerId ? String(body.ownerId) : "";
@@ -196,7 +196,7 @@ async function prepareTicketCreate({ user, body }) {
 
   let built;
   try {
-    built = await buildTicketSnapshot({ projectId, ownerId, requesterUserId: meId(user), segTags });
+    built = await buildTicketSnapshot({ projectId, projectVersionId: body.projectVersionId, ownerId, requesterUserId: meId(user), segTags });
   } catch (e) {
     return { soyooError: e };
   }

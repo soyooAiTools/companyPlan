@@ -150,6 +150,18 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 | `discipline` | 用户选择的任务环节，且必须和负责人岗位一致。 |
 | 附件、审计、状态、甘特 | 仍由 companyPlan 自己存储和鉴权。 |
 
+## 反馈系统指派建单
+
+试玩反馈后端使用服务签名调用 `/api/internal/playable-feedback`，浏览器不会直接持有共享密钥。
+
+| 接口 | 用途 |
+|---|---|
+| `GET /projects/:id/responsibles?versionId=` | 按项目版本、OPS 环节标签返回可指派制作人员。 |
+| `POST /tickets/batch` | 一次校验 1–20 位负责人，并为每人创建一张独立工单。 |
+| `POST /tickets/status` | 按反馈系统的 assignment ID 批量读取工单状态。 |
+
+来源映射保存在 `ops_ticket_source_links`。`(source_system, source_assignment_id)` 是唯一键，保证网络重试和重复点击不会重复建单；`payload_sha256` 用来拒绝“同一幂等键、不同负责人或内容”的错误重放。建单仍使用现有项目成员和环节标签校验，成功后沿用 companyPlan 的站内通知与 SSE 推送。
+
 ## 当前待审核缺口
 
 | 缺口 | 当前处理方式 |

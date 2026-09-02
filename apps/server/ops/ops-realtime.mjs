@@ -172,10 +172,12 @@ export async function getResponsibles(projectId, segments) {
 
 // 建单快照:实时查 soyoo,验证 owner 属于该项目该环节,返回要写进工单的快照字段(或 {error})。
 // segTags:[{id,name}] 该环节绑定的标签(来自本地 ops_segment_tags + 名字)。
-export async function buildTicketSnapshot({ projectId, ownerId, requesterUserId, segTags }) {
+export async function buildTicketSnapshot({ projectId, projectVersionId = "", ownerId, requesterUserId, segTags }) {
   const segTagIds = effectiveSegmentTagIds(segTags);
   if (!segTagIds.length) return { error: "该环节未绑定任何标签" };
-  const { project, members } = await getProjectWithMembers(projectId);
+  const baseProjectId = String(projectId || "").split("::version-")[0];
+  const memberProjectRef = withVersionProjectId(baseProjectId, projectVersionId);
+  const { project, members } = await getProjectWithMembers(memberProjectRef);
   if (!project) return { error: "项目不存在" };
   const member = members.find((m) => m.id === String(ownerId));
   if (!member) return { error: "负责人不在该项目" };
@@ -184,7 +186,7 @@ export async function buildTicketSnapshot({ projectId, ownerId, requesterUserId,
   const requesterUser = await getUser(requesterUserId);
   return {
     snapshot: {
-      project_id: String(projectId),
+      project_id: baseProjectId,
       project_name: project.name,
       project_status: project.status,
       client_id: project.clientId,

@@ -61,6 +61,11 @@ export const opsIntegration = {
   recycleHandoffUsernames: splitEnvList(process.env.COMPANYPLAN_OPS_RECYCLE_HANDOFF_USERNAMES ?? ""),
   settlementDoneStatus: String(process.env.COMPANYPLAN_OPS_SETTLEMENT_DONE_STATUS ?? "结算完成").trim() || "结算完成",
 };
+export const playableFeedbackIntegration = {
+  serviceId: String(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_SERVICE_ID ?? "soyoo-playable-helper").trim(),
+  sharedSecret: String(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET ?? ""),
+  maxClockSkewSeconds: Math.max(30, Number(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_MAX_CLOCK_SKEW_SECONDS ?? "300") || 300),
+};
 // 阿里云 OSS（富文本编辑器图片上传）。凭证放根 .env：OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET。
 export const ossConfig = {
   accessKeyId: process.env.OSS_ACCESS_KEY_ID ?? "",

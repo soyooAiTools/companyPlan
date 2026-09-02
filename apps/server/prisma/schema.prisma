@@ -249,6 +249,22 @@ model ticket_events {
   @@index([ticket_id], map: "idx_te_ticket")
 }
 
+model ops_ticket_source_links {
+  id                   BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  source_system        String @db.VarChar(40)
+  source_batch_id      String @db.VarChar(64)
+  source_assignment_id String @db.VarChar(64)
+  source_review_id     String @db.VarChar(64)
+  source_feedback_id   String @db.VarChar(160)
+  ticket_id            String @unique(map: "uniq_otsl_ticket") @db.VarChar(64)
+  payload_sha256       String @db.VarChar(64)
+  source_url           String? @db.VarChar(500)
+  created_at           String @db.VarChar(40)
+
+  @@unique([source_system, source_assignment_id], map: "uniq_otsl_source_assignment")
+  @@index([source_review_id, source_feedback_id], map: "idx_otsl_feedback")
+}
+
 model ops_sync_state {
   k String @id @db.VarChar(64)
   v BigInt @default(0)
