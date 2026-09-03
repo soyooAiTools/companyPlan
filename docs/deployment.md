@@ -77,6 +77,12 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 
 现有部署若暂未增加专用密钥，会兼容回退到 `COMPANYPLAN_EXTERNAL_USERS_API_TOKEN`；helper 对应回退到 `external_api.token`。两端现有 token 必须一致。新部署仍应使用独立的 `COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET`，便于单独轮换和撤销。
 
+正式 OPS API 通过 GitHub Actions 手动部署时，仓库 Actions Secret
+`COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET` 会在 SSH 会话中写入服务器的
+`.env.prod`，并将文件权限设为 `0600`，随后才热重载 `companyplan-ops-api`。工作流会先保留带时间戳的
+`.env.prod.backup-*` 备份；密钥不得写入仓库文件、工作流日志或 PM2 参数。部署后必须用服务签名实际请求
+`/api/internal/playable-feedback/projects/:id/responsibles`，不能只以 `/api/health` 正常作为集成成功依据。
+
 After successful authentication only, companyPlan enriches the returned identity when tags are absent, upserts the `people` row, and creates the session. `is_admin`/`管理员` maps to `roleKey=admin`; the exact soyoo tag `制片` maps to `roleKey=producer`; all other accounts map to `member`. Session responses expose `username` and `roleKey` so downstream role-gated applications can admit only administrators and producers.
 
 Passwords are neither persisted nor written to logs/audit metadata. The local `password_hash` remains a schema placeholder for login-created rows and is not used to validate production login.
