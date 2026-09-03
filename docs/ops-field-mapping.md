@@ -162,6 +162,8 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 
 来源映射保存在 `ops_ticket_source_links`。`(source_system, source_assignment_id)` 是唯一键，保证网络重试和重复点击不会重复建单；`payload_sha256` 用来拒绝“同一幂等键、不同负责人或内容”的错误重放。建单仍使用现有项目成员和环节标签校验，成功后沿用 companyPlan 的站内通知与 SSE 推送。
 
+服务鉴权优先使用独立的 playable-feedback 共享密钥；为兼容既有部署，未配置时可回退到原有 external-users API token。浏览器端始终不会接触这两类服务凭证。
+
 ## 当前待审核缺口
 
 | 缺口 | 当前处理方式 |

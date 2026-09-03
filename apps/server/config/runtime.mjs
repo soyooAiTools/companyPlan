@@ -61,9 +61,17 @@ export const opsIntegration = {
   recycleHandoffUsernames: splitEnvList(process.env.COMPANYPLAN_OPS_RECYCLE_HANDOFF_USERNAMES ?? ""),
   settlementDoneStatus: String(process.env.COMPANYPLAN_OPS_SETTLEMENT_DONE_STATUS ?? "结算完成").trim() || "结算完成",
 };
+
+export function resolvePlayableFeedbackSharedSecret(environment = process.env) {
+  const dedicated = String(environment.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET ?? "").trim();
+  if (dedicated) return dedicated;
+  // 兼容现有部署：旧环境已经与 helper 共享 external-users token。
+  return String(environment.COMPANYPLAN_EXTERNAL_USERS_API_TOKEN ?? "").trim();
+}
+
 export const playableFeedbackIntegration = {
   serviceId: String(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_SERVICE_ID ?? "soyoo-playable-helper").trim(),
-  sharedSecret: String(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET ?? ""),
+  sharedSecret: resolvePlayableFeedbackSharedSecret(),
   maxClockSkewSeconds: Math.max(30, Number(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_MAX_CLOCK_SKEW_SECONDS ?? "300") || 300),
 };
 // 阿里云 OSS（富文本编辑器图片上传）。凭证放根 .env：OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET。

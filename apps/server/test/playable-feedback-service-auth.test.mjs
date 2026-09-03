@@ -6,6 +6,7 @@ import {
   createPlayableFeedbackServiceAuth,
   createPlayableFeedbackSignature,
 } from "../middleware/playable-feedback-service-auth.mjs";
+import { resolvePlayableFeedbackSharedSecret } from "../config/runtime.mjs";
 
 function invoke(middleware, { headers, rawBody }) {
   const result = { status: 200, body: null, next: false };
@@ -31,6 +32,18 @@ test("playable feedback HMAC signs the exact raw JSON bytes", () => {
   assert.equal(signature, "sha256=0d091e1a2ee8cb11d19d4bde3cb340bfb6a4d47ca981e4758d916f9fd9c62ad3");
   assert.notEqual(signature, createPlayableFeedbackSignature({ timestamp: "1700000000000", nonce: "abcdefghijklmnop", rawBody: Buffer.from('{"a":1,"b":2}'), secret: "test-secret" }));
   assert.equal(bodySha256(rawBody).length, 64);
+});
+
+test("playable feedback credential prefers a dedicated secret and supports the deployed legacy token", () => {
+  assert.equal(resolvePlayableFeedbackSharedSecret({
+    COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET: " dedicated-secret ",
+    COMPANYPLAN_EXTERNAL_USERS_API_TOKEN: "legacy-token",
+  }), "dedicated-secret");
+  assert.equal(resolvePlayableFeedbackSharedSecret({
+    COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET: "",
+    COMPANYPLAN_EXTERNAL_USERS_API_TOKEN: " legacy-token ",
+  }), "legacy-token");
+  assert.equal(resolvePlayableFeedbackSharedSecret({}), "");
 });
 
 test("playable feedback middleware accepts a current valid signature and rejects replay", () => {

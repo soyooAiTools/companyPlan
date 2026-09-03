@@ -53,18 +53,18 @@ function validateBatchBody(body) {
   return "";
 }
 
-async function findSourceLinks(assignmentIds) {
+async function findSourceLinks(assignmentIds, database = prisma) {
   if (!assignmentIds.length) return [];
-  return prisma.ops_ticket_source_links.findMany({
+  return database.ops_ticket_source_links.findMany({
     where: { source_system: SOURCE_SYSTEM, source_assignment_id: { in: assignmentIds } },
   });
 }
 
-async function loadTicketMappings(assignmentIds) {
+async function loadTicketMappings(assignmentIds, database = prisma) {
   if (!assignmentIds.length) return [];
-  const links = await findSourceLinks(assignmentIds);
+  const links = await findSourceLinks(assignmentIds, database);
   if (!links.length) return [];
-  const tickets = await prisma.tickets.findMany({
+  const tickets = await database.tickets.findMany({
     where: { id: { in: links.map((item) => item.ticket_id) } },
     select: { id: true, owner_id: true, status: true, updated_at: true, status_updated_at: true },
   });
@@ -82,16 +82,23 @@ async function loadTicketMappings(assignmentIds) {
   });
 }
 
-export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceAuth }) {
+export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceAuth, dependencies = {} }) {
   const base = "/api/internal/playable-feedback";
+  const database = dependencies.prisma || prisma;
+  const getResponsiblesForProject = dependencies.getResponsibles || getResponsibles;
+  const getRequester = dependencies.getUser || getUser;
+  const loadTicketSegments = dependencies.loadSegments || loadSegments;
+  const prepareTicket = dependencies.prepareTicketCreate || prepareTicketCreate;
+  const notifyTicketAssigned = dependencies.notifyTicketAssigned || notif.notifyTicketAssigned;
+  const refreshProject = dependencies.refreshProjectPoolSnapshot || refreshProjectPoolSnapshot;
 
   app.get(`${base}/projects/:id/responsibles`, requireServiceAuth, async (request, response) => {
     const projectId = clip(request.params.id, 64).trim();
     const versionId = clip(request.query?.versionId, 64).trim();
     if (!projectId) return response.status(400).json({ error: "缺少项目" });
     try {
-      const segments = await loadSegments();
-      const result = await getResponsibles(versionProjectRef(projectId, versionId), segments);
+      const segments = await loadTicketSegments();
+      const result = await getResponsiblesForProject(versionProjectRef(projectId, versionId), segments);
       return response.json({ projectId, versionId, ...result });
     } catch (error) {
       return response.status(error?.status || 502).json({ error: error?.soyooError || error?.message || "读取项目制作人员失败" });
@@ -101,7 +108,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
   app.post(`${base}/tickets/status`, requireServiceAuth, async (request, response) => {
     const assignmentIds = [...new Set((request.body?.assignmentIds || []).map((id) => clip(id, 64).trim()).filter(Boolean))].slice(0, 100);
     if (!assignmentIds.length) return response.status(400).json({ error: "缺少指派编号" });
-    return response.json({ assignments: await loadTicketMappings(assignmentIds) });
+    return response.json({ assignments: await loadTicketMappings(assignmentIds, database) });
   });
 
   app.post(`${base}/tickets/batch`, requireServiceAuth, async (request, response) => {
@@ -111,7 +118,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
 
     let requester;
     try {
-      requester = await getUser(body.requesterUserId);
+      requester = await getRequester(body.requesterUserId);
     } catch (error) {
       return response.status(error?.status || 502).json({ error: error?.soyooError || error?.message || "校验指派发起人失败" });
     }
@@ -144,7 +151,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
     }));
 
     const assignmentIds = normalized.map((item) => item.sourceAssignmentId);
-    const existing = await findSourceLinks(assignmentIds);
+    const existing = await findSourceLinks(assignmentIds, database);
     const existingById = new Map(existing.map((item) => [item.source_assignment_id, item]));
     const prepared = [];
     for (let index = 0; index < normalized.length; index += 1) {
@@ -156,7 +163,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
         if (hit.payload_sha256 !== hash) return response.status(409).json({ error: `指派 ${item.sourceAssignmentId} 的幂等内容不一致` });
         continue;
       }
-      const result = await prepareTicketCreate({
+      const result = await prepareTicket({
         user,
         body: {
           ...item,
@@ -173,7 +180,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
     }
 
     try {
-      const created = await prisma.$transaction(async (tx) => {
+      const created = await database.$transaction(async (tx) => {
         const rows = [];
         for (const entry of prepared) {
           const ticket = await tx.tickets.create({ data: entry.result.data });
@@ -206,11 +213,11 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
         }
         return rows;
       });
-      for (const ticket of created) await notif.notifyTicketAssigned(ticket, requester.id);
-      if (created.length) await refreshProjectPoolSnapshot(projectId).catch(() => null);
+      for (const ticket of created) await notifyTicketAssigned(ticket, requester.id);
+      if (created.length) await refreshProject(projectId).catch(() => null);
     } catch (error) {
       // 并发重试可能在唯一键处相撞。若全部来源映射已存在，就按幂等成功返回。
-      const links = await findSourceLinks(assignmentIds);
+      const links = await findSourceLinks(assignmentIds, database);
       const byId = new Map(links.map((item) => [item.source_assignment_id, item]));
       const allMatch = normalized.every((item) => {
         const link = byId.get(item.sourceAssignmentId);
@@ -219,7 +226,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       if (!allMatch) throw error;
     }
 
-    const assignments = await loadTicketMappings(assignmentIds);
+    const assignments = await loadTicketMappings(assignmentIds, database);
     const byAssignment = new Map(assignments.map((item) => [item.assignmentId, item]));
     return response.status(prepared.length ? 201 : 200).json({
       assignments: assignmentIds.map((id) => byAssignment.get(id)).filter(Boolean),
