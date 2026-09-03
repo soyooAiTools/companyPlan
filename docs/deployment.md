@@ -150,6 +150,8 @@ X-Forwarded-For: <client-ip>
 Host: <public-host>
 ```
 
+When companyPlan shares a host with other applications, proxy both `/api/ops/` and `/api/internal/playable-feedback/` to port `4174` before the host's catch-all location. The latter is required for Helper → OPS candidate lookup and ticket creation; leaving it on the catch-all returns unrelated HTML instead of JSON.
+
 ## Verification
 
 Before deployment:
