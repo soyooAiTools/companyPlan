@@ -21,7 +21,6 @@ jobs:
           port: ${{ secrets.SSH_PORT || '22' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
-          script_stop: true
           script: |
             set -euo pipefail
             source ~/.bashrc 2>/dev/null || true
