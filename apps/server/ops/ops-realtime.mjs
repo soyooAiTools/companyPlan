@@ -155,7 +155,15 @@ export async function getResponsibles(projectId, segments) {
     const segMembers = active
       .filter((m) => m.tags.some((t) => tagIds.includes(t.id)))
       .map((m) => ({ id: m.id, username: m.username, name: m.name, wechatName: m.wechatName, wechatAvatar: m.avatar }));
-    if (segMembers.length) segList.push({ id: seg.id, name: seg.name, members: segMembers });
+    if (segMembers.length) {
+      segList.push({
+        id: seg.id,
+        name: seg.name,
+        defaultDeliveryHours: seg.defaultDeliveryHours,
+        riskWarningHours: seg.riskWarningHours,
+        members: segMembers,
+      });
+    }
   }
   const allMembers = [];
   for (const m of active) {

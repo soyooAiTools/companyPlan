@@ -201,6 +201,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       summary: clip(item.summary, 2000),
       priority: PRIORITIES.has(item.priority) ? item.priority : "普通",
       needType: clip(item.needType, 120),
+      dueInHours: item.dueInHours == null || item.dueInHours === "" ? undefined : Number(item.dueInHours),
     }));
 
     const assignmentIds = normalized.map((item) => item.sourceAssignmentId);
@@ -215,6 +216,9 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
     for (let index = 0; index < normalized.length; index += 1) {
       const item = normalized[index];
       if (!item.ownerId || !Number.isInteger(item.segmentId)) return response.status(400).json({ error: `工单 ${index + 1} 缺少负责人或环节` });
+      if (item.dueInHours !== undefined && (!Number.isInteger(item.dueInHours) || item.dueInHours < 1 || item.dueInHours > 720)) {
+        return response.status(400).json({ error: `工单 ${index + 1} 的期望完成时长须为 1 至 720 小时的整数` });
+      }
       const hash = sourcePayloadHash({ projectId, projectVersionId, source, ticket: item });
       const hit = existingById.get(item.sourceAssignmentId);
       if (hit) {

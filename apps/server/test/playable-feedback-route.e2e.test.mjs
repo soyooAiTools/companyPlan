@@ -91,6 +91,7 @@ async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
   const database = createFakeDatabase({ staleSourceLinkClient });
   const notifications = [];
   const responsibleCalls = [];
+  const preparedTicketBodies = [];
   let nextTicket = 1;
   const app = express();
   app.use(express.json({
@@ -106,24 +107,27 @@ async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
     }),
     dependencies: {
       prisma: database,
-      loadSegments: async () => [{ id: 2, name: "程序", tags: [{ id: "programmer", name: "程序" }] }],
+      loadSegments: async () => [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, tags: [{ id: "programmer", name: "程序" }] }],
       getResponsibles: async (projectRef) => {
         responsibleCalls.push(projectRef);
         return {
-          segments: [{ id: 2, name: "程序", members: [{ id: "8", name: "开发李四", wechatAvatar: "avatar.png" }] }],
+          segments: [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, members: [{ id: "8", name: "开发李四", wechatAvatar: "avatar.png" }] }],
           members: [{ id: "8", name: "开发李四", segmentIds: [2] }],
         };
       },
       getUser: async () => ({ id: "7", username: "producer", name: "制片张三", status: "active", isAdmin: false, tags: [{ name: "制片" }] }),
-      prepareTicketCreate: async ({ body }) => ({
-        data: {
-          id: `ticket-${nextTicket++}`,
-          owner_id: body.ownerId,
-          status: "排队中",
-          updated_at: "2026-09-03T02:00:00.000Z",
-          status_updated_at: "2026-09-03T02:00:00.000Z",
-        },
-      }),
+      prepareTicketCreate: async ({ body }) => {
+        preparedTicketBodies.push(body);
+        return {
+          data: {
+            id: `ticket-${nextTicket++}`,
+            owner_id: body.ownerId,
+            status: "排队中",
+            updated_at: "2026-09-03T02:00:00.000Z",
+            status_updated_at: "2026-09-03T02:00:00.000Z",
+          },
+        };
+      },
       notifyTicketAssigned: async (ticket) => notifications.push(ticket.id),
       refreshProjectPoolSnapshot: async () => {},
     },
@@ -137,6 +141,7 @@ async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
     database,
     notifications,
     responsibleCalls,
+    preparedTicketBodies,
     baseUrl: `http://127.0.0.1:${server.address().port}`,
   };
 }
@@ -170,6 +175,7 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
   assert.equal(optionsResponse.status, 200);
   const options = await optionsResponse.json();
   assert.equal(options.segments[0].members[0].name, "开发李四");
+  assert.equal(options.segments[0].defaultDeliveryHours, 24);
   assert.deepEqual(runtime.responsibleCalls, ["10::version-20"]);
 
   const payload = {
@@ -178,8 +184,8 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
     projectVersionId: "20",
     source: { batchId: "batch-1", reviewId: "review-1", feedbackId: "feedback-1", url: "https://preview.example/review-1" },
     tickets: [
-      { sourceAssignmentId: "assignment-1", ownerId: "8", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈" },
-      { sourceAssignmentId: "assignment-2", ownerId: "9", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈" },
+      { sourceAssignmentId: "assignment-1", ownerId: "8", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
+      { sourceAssignmentId: "assignment-2", ownerId: "9", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
     ],
   };
   const createResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
@@ -190,6 +196,7 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
   assert.equal(runtime.database.state.sourceLinks.length, 2);
   assert.equal(runtime.database.state.ticketEvents.length, 2);
   assert.deepEqual(runtime.notifications, ["ticket-1", "ticket-2"]);
+  assert.deepEqual(runtime.preparedTicketBodies.map((body) => body.dueInHours), [18, 18]);
 
   const replayResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
   assert.equal(replayResponse.status, 200);

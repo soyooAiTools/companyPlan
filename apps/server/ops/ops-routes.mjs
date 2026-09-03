@@ -191,6 +191,13 @@ export async function prepareTicketCreate({ user, body }) {
 
   const segment = await prisma.ops_segments.findUnique({ where: { id: segmentId } });
   if (!segment) return { error: "环节不存在" };
+  const requestedDueInHours = body.dueInHours;
+  const dueInHours = requestedDueInHours == null || requestedDueInHours === ""
+    ? segment.default_delivery_hours
+    : Number(requestedDueInHours);
+  if (!Number.isInteger(dueInHours) || dueInHours < 1 || dueInHours > 720) {
+    return { error: "期望完成时长须为 1 至 720 小时的整数" };
+  }
   const segTags = await loadSegmentTags(segmentId);
   if (!segTags.length) return { error: "该环节未绑定任何标签" };
 
@@ -203,7 +210,7 @@ export async function prepareTicketCreate({ user, body }) {
   if (built.error) return { error: built.error };
   const s = built.snapshot;
   const now = nowIso();
-  const dueAt = addBusinessHours(now, segment.default_delivery_hours);
+  const dueAt = addBusinessHours(now, dueInHours);
   const warnAt = addBusinessHours(now, segment.risk_warning_hours);
   const id = crypto.randomUUID();
 
@@ -237,7 +244,9 @@ export async function prepareTicketCreate({ user, body }) {
       status: "排队中",
       priority: PRIORITIES.has(body.priority) ? body.priority : "普通",
       start_at: now,
-      due_in_hours: segment.default_delivery_hours,
+      due_in_days: Math.max(1, Math.ceil(dueInHours / 24)),
+      due_in_hours: dueInHours,
+      timeline_span_hours: Math.max(4, dueInHours),
       risk_warning_hours: segment.risk_warning_hours,
       due_at: dueAt,
       warn_at: warnAt,
