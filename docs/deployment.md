@@ -157,12 +157,12 @@ When companyPlan shares a host with other applications, proxy both `/api/ops/` a
 Before deployment:
 
 ```bash
-npm run build
-npm run test:scenarios
+pnpm build
+pnpm test
 git diff --check
 ```
 
-`test:scenarios` starts an isolated production server on `COMPANYPLAN_SCENARIO_PORT` or `4274` with a temporary upload directory and isolated MySQL database name. It sets `COMPANYPLAN_OPS_ENABLED=0` for deterministic seeded fixtures, then verifies real login, scoped rows, persisted tickets, seeded attachment open, admin `所属项目`/type-hour configuration, user-entered `项目名称` persistence, attachment upload/open/download, audit logging, read-only programmer gantt access, and admin-only gantt movement plus timeline length resizing. Set `COMPANY_PLAN_URL` only when intentionally testing an existing server.
+`pnpm test` runs the current Node integration suite. It covers external-login behavior, role projection, playable-feedback HMAC validation and replay rejection, assignment-candidate loading, custom completion hours, one-ticket-per-person creation, notifications, idempotency, status synchronization, and the stale Prisma Client fallback. Production browser smoke checks remain manual and must not be reported as automated scenario coverage.
 
 Manual smoke checks:
 
