@@ -57,6 +57,8 @@ COMPANYPLAN_OPS_ADMIN_USERNAMES=
 COMPANYPLAN_PLAYABLE_FEEDBACK_SERVICE_ID=soyoo-playable-helper
 COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET=<与反馈后端一致的高强度随机密钥>
 COMPANYPLAN_PLAYABLE_FEEDBACK_MAX_CLOCK_SKEW_SECONDS=300
+# 部署机必须通过 HTTP(S) 代理访问 helperapi 时启用（Node 24+）
+NODE_USE_ENV_PROXY=1
 ```
 
 Set `COMPANYPLAN_COOKIE_SECURE=1` when the app is served through HTTPS. If TLS is terminated by a reverse proxy, keep `X-Forwarded-Proto` configured correctly because the server trusts one proxy hop.
@@ -69,6 +71,10 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 
 反馈系统通过 `/api/internal/playable-feedback/*` 调用 companyPlan。该路由不接受浏览器会话，而是校验服务 ID、毫秒/秒时间戳、一次性 nonce 和请求原文 HMAC-SHA256。生产环境必须存在专用或兼容共享凭证；两者都缺失时接口返回 `503`。同一 `sourceAssignmentId` 只能映射一张工单，重复请求返回原工单，内容不同则返回 `409`。
 
+如果部署机设置了 `HTTP_PROXY` / `HTTPS_PROXY` 且不能直连 `helperapi.soyootech.com`，还必须设置 `NODE_USE_ENV_PROXY=1`，否则 Node 原生 `fetch` 不会使用系统代理，候选人查询会返回 `fetch failed`。
+
+仅在连接正式数据库的备用联调实例中设置 `COMPANYPLAN_OPS_CHANGE_CONSUMER_ENABLED=0`，避免两个进程同时消费 Ops outbox；正式进程保持默认开启。
+
 现有部署若暂未增加专用密钥，会兼容回退到 `COMPANYPLAN_EXTERNAL_USERS_API_TOKEN`；helper 对应回退到 `external_api.token`。两端现有 token 必须一致。新部署仍应使用独立的 `COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET`，便于单独轮换和撤销。
 
 After successful authentication only, companyPlan enriches the returned identity when tags are absent, upserts the `people` row, and creates the session. `is_admin`/`管理员` maps to `roleKey=admin`; the exact soyoo tag `制片` maps to `roleKey=producer`; all other accounts map to `member`. Session responses expose `username` and `roleKey` so downstream role-gated applications can admit only administrators and producers.
@@ -79,7 +85,7 @@ The retired full-directory synchronizer must not be added back to the login path
 
 The field-level mapping contract is maintained in `docs/ops-field-mapping.md`. Update that document whenever Ops source fields, ticket field semantics, or imported directory behavior change.
 
-The current production host keeps these values in `/srv/companyplan/companyplan.env` with `0600` permissions. PM2 starts `/srv/companyplan/start-companyplan.sh`, which sources that env file and then runs `node server/index.mjs`; this keeps database credentials out of PM2 command arguments.
+The current production host keeps these values in `/srv/companyplan/companyplan.env` with `0600` permissions. PM2 starts `/srv/companyplan/start-companyplan.sh`, which sources that env file and then runs `node apps/server/index.mjs`; this keeps database credentials out of PM2 command arguments.
 
 Production MySQL currently runs as a local Podman container:
 

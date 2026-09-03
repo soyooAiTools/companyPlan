@@ -139,8 +139,13 @@ async function poll(logger) {
 
 // 启动消费者:定时拉 + 启动先拉一次。间隔可配 COMPANYPLAN_OPS_PULL_INTERVAL_MS(默认 30s)。
 export function startOpsChangeConsumer({ logger } = {}) {
+  if (process.env.COMPANYPLAN_OPS_CHANGE_CONSUMER_ENABLED === "0") {
+    logger?.info?.("[ops-outbox] change consumer disabled");
+    return null;
+  }
   const intervalMs = Number(process.env.COMPANYPLAN_OPS_PULL_INTERVAL_MS ?? "30000");
-  setInterval(() => void poll(logger), intervalMs);
+  const timer = setInterval(() => void poll(logger), intervalMs);
   void poll(logger);
   logger?.info?.("[ops-outbox] change consumer started", { intervalMs });
+  return timer;
 }

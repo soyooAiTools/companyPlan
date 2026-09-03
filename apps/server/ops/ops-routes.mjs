@@ -25,6 +25,13 @@ import { filterByTenantScope, getUserTenantScope, getUserTenantScopePayload, sav
 
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
 const STATUSES = ["排队中", "进行中", "阻塞", "已完成"];
+const DEFAULT_SEGMENT_TAG_NAMES = new Map([
+  ["程序", new Set(["程序", "cocos开发", "unity开发"])],
+  ["美术", new Set(["模型", "动画", "UI"])],
+  ["策划", new Set(["制片"])],
+  ["地编", new Set(["地编"])],
+  ["外包", new Set(["外包"])],
+]);
 
 // 富文本 sanitize / 纯文本派生 / 空判断 / 大小上限 → 公用模块 ../utils/rich-html.mjs(提单正文与项目备注共用)
 
@@ -148,12 +155,32 @@ async function logTicketEvent({ ticketId, user, action, fromStatus = null, toSta
   });
 }
 
+async function backfillDefaultSegmentTags(segments, links, liveTags) {
+  // Older production databases already contain the default segments but have
+  // no links because tags moved from the local snapshot to the realtime soyoo
+  // API. Only backfill a completely empty mapping so an administrator's later
+  // per-segment configuration is never overwritten.
+  if (links.length || !liveTags.length) return links;
+  const rows = [];
+  for (const segment of segments) {
+    const names = DEFAULT_SEGMENT_TAG_NAMES.get(String(segment.name || "").trim());
+    if (!names) continue;
+    for (const tag of liveTags) {
+      if (names.has(String(tag.name || "").trim())) rows.push({ segment_id: segment.id, tag_id: String(tag.id) });
+    }
+  }
+  if (!rows.length) return links;
+  await prisma.ops_segment_tags.createMany({ data: rows, skipDuplicates: true });
+  return prisma.ops_segment_tags.findMany();
+}
+
 // 环节列表 + 各自绑定的标签(id 为 INT → JS number)
 export async function loadSegments() {
   const segments = await prisma.ops_segments.findMany({ orderBy: [{ sort_order: "asc" }, { name: "asc" }] });
-  const links = await prisma.ops_segment_tags.findMany();
+  let links = await prisma.ops_segment_tags.findMany();
   // 标签名实时查 soyoo(本地不再存 tags);失败则回退 tag_id
   const liveTags = await listTags().catch(() => []);
+  links = await backfillDefaultSegmentTags(segments, links, liveTags);
   const tagNameById = new Map(liveTags.map((t) => [String(t.id), t.name]));
   const bySeg = new Map();
   for (const l of links) {

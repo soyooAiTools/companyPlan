@@ -237,12 +237,15 @@ async function initializeSchema() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await ensureIndex("idx_tickets_project", "tickets", "project_id");
-  await ensureIndex("idx_tickets_project_tag_status", "tickets", "project_id, tag_name, status");
   await ensureIndex("idx_tickets_requester", "tickets", "requester_id");
   await ensureIndex("idx_tickets_owner", "tickets", "owner_id");
   await ensureIndex("idx_sessions_person", "sessions", "person_id");
   await ensureIndex("idx_audit_entity", "audit_events", "entity_type, entity_id");
   await migrateSchema();
+  // Legacy production databases receive tag_name inside migrateSchema().
+  // Creating this index before the column migration prevents the server from
+  // starting, so keep every index that depends on migrated columns afterwards.
+  await ensureIndex("idx_tickets_project_tag_status", "tickets", "project_id, tag_name, status");
   await seedDefaultSegments();
 }
 
