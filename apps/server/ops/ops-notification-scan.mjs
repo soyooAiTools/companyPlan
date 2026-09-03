@@ -61,6 +61,10 @@ async function runOnce(logger) {
 
 // 自重排:每轮跑完读最新间隔再排下一轮(后台改间隔即时生效)。首轮启动 5s 后跑。unref 不让定时器独自吊住进程。
 export function startNotificationScan({ logger } = {}) {
+  if (process.env.COMPANYPLAN_NOTIFICATION_SCAN_ENABLED === "0") {
+    logger?.info?.("[notif-scan] disabled");
+    return null;
+  }
   const loop = async () => {
     await runOnce(logger);
     let min = 15;
@@ -71,5 +75,7 @@ export function startNotificationScan({ logger } = {}) {
     }
     setTimeout(loop, Math.max(10, min) * 60 * 1000).unref?.(); // 下限 10 分钟
   };
-  setTimeout(loop, 5000).unref?.();
+  const timer = setTimeout(loop, 5000);
+  timer.unref?.();
+  return timer;
 }

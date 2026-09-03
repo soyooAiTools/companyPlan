@@ -73,7 +73,7 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 
 如果部署机设置了 `HTTP_PROXY` / `HTTPS_PROXY` 且不能直连 `helperapi.soyootech.com`，还必须设置 `NODE_USE_ENV_PROXY=1`，否则 Node 原生 `fetch` 不会使用系统代理，候选人查询会返回 `fetch failed`。
 
-仅在连接正式数据库的备用联调实例中设置 `COMPANYPLAN_OPS_CHANGE_CONSUMER_ENABLED=0`，避免两个进程同时消费 Ops outbox；正式进程保持默认开启。
+仅在连接正式数据库的备用联调实例中设置 `COMPANYPLAN_OPS_CHANGE_CONSUMER_ENABLED=0` 和 `COMPANYPLAN_NOTIFICATION_SCAN_ENABLED=0`，避免两个进程同时消费 Ops outbox 或重复发送超时通知；正式进程保持默认开启。
 
 现有部署若暂未增加专用密钥，会兼容回退到 `COMPANYPLAN_EXTERNAL_USERS_API_TOKEN`；helper 对应回退到 `external_api.token`。两端现有 token 必须一致。新部署仍应使用独立的 `COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET`，便于单独轮换和撤销。
 
