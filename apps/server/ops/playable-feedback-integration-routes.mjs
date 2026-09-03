@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { logger } from "../core/logger.mjs";
 import { prisma } from "./prisma.mjs";
 import { getResponsibles, getUser } from "./ops-realtime.mjs";
 import { loadSegments, prepareTicketCreate } from "./ops-routes.mjs";
@@ -55,9 +56,57 @@ function validateBatchBody(body) {
 
 async function findSourceLinks(assignmentIds, database = prisma) {
   if (!assignmentIds.length) return [];
-  return database.ops_ticket_source_links.findMany({
-    where: { source_system: SOURCE_SYSTEM, source_assignment_id: { in: assignmentIds } },
-  });
+  // The source-link model was added with the feedback integration. Keep the
+  // endpoint usable when an operator has pulled the server code and restarted
+  // it without regenerating an older Prisma Client. initializeSchema() creates
+  // the table at startup, so a parameterized raw query is a safe compatibility
+  // path until the next full deploy runs `prisma generate`.
+  if (database.ops_ticket_source_links?.findMany) {
+    return database.ops_ticket_source_links.findMany({
+      where: { source_system: SOURCE_SYSTEM, source_assignment_id: { in: assignmentIds } },
+    });
+  }
+  if (typeof database.$queryRawUnsafe !== "function") {
+    throw new Error("OPS feedback source-link storage is unavailable");
+  }
+  const placeholders = assignmentIds.map(() => "?").join(", ");
+  return database.$queryRawUnsafe(
+    `SELECT source_system, source_batch_id, source_assignment_id, source_review_id,
+            source_feedback_id, ticket_id, payload_sha256, source_url, created_at
+       FROM ops_ticket_source_links
+      WHERE source_system = ? AND source_assignment_id IN (${placeholders})`,
+    SOURCE_SYSTEM,
+    ...assignmentIds,
+  );
+}
+
+async function createSourceLink(database, data) {
+  if (database.ops_ticket_source_links?.create) {
+    return database.ops_ticket_source_links.create({ data });
+  }
+  if (typeof database.$executeRawUnsafe !== "function") {
+    throw new Error("OPS feedback source-link storage is unavailable");
+  }
+  return database.$executeRawUnsafe(
+    `INSERT INTO ops_ticket_source_links (
+       source_system, source_batch_id, source_assignment_id, source_review_id,
+       source_feedback_id, ticket_id, payload_sha256, source_url, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    data.source_system,
+    data.source_batch_id,
+    data.source_assignment_id,
+    data.source_review_id,
+    data.source_feedback_id,
+    data.ticket_id,
+    data.payload_sha256,
+    data.source_url,
+    data.created_at,
+  );
+}
+
+function storageUnavailable(response, error) {
+  logger.error(error, { scope: "playable-feedback", operation: "ticket-storage" });
+  return response.status(503).json({ error: "OPS 工单存储尚未就绪，请重新部署或重启 OPS 服务后重试" });
 }
 
 async function loadTicketMappings(assignmentIds, database = prisma) {
@@ -108,7 +157,11 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
   app.post(`${base}/tickets/status`, requireServiceAuth, async (request, response) => {
     const assignmentIds = [...new Set((request.body?.assignmentIds || []).map((id) => clip(id, 64).trim()).filter(Boolean))].slice(0, 100);
     if (!assignmentIds.length) return response.status(400).json({ error: "缺少指派编号" });
-    return response.json({ assignments: await loadTicketMappings(assignmentIds, database) });
+    try {
+      return response.json({ assignments: await loadTicketMappings(assignmentIds, database) });
+    } catch (error) {
+      return storageUnavailable(response, error);
+    }
   });
 
   app.post(`${base}/tickets/batch`, requireServiceAuth, async (request, response) => {
@@ -151,7 +204,12 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
     }));
 
     const assignmentIds = normalized.map((item) => item.sourceAssignmentId);
-    const existing = await findSourceLinks(assignmentIds, database);
+    let existing;
+    try {
+      existing = await findSourceLinks(assignmentIds, database);
+    } catch (error) {
+      return storageUnavailable(response, error);
+    }
     const existingById = new Map(existing.map((item) => [item.source_assignment_id, item]));
     const prepared = [];
     for (let index = 0; index < normalized.length; index += 1) {
@@ -196,18 +254,16 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
               created_at: nowIso(),
             },
           });
-          await tx.ops_ticket_source_links.create({
-            data: {
-              source_system: SOURCE_SYSTEM,
-              source_batch_id: source.batchId,
-              source_assignment_id: entry.item.sourceAssignmentId,
-              source_review_id: source.reviewId,
-              source_feedback_id: source.feedbackId,
-              ticket_id: ticket.id,
-              payload_sha256: entry.hash,
-              source_url: source.url || null,
-              created_at: nowIso(),
-            },
+          await createSourceLink(tx, {
+            source_system: SOURCE_SYSTEM,
+            source_batch_id: source.batchId,
+            source_assignment_id: entry.item.sourceAssignmentId,
+            source_review_id: source.reviewId,
+            source_feedback_id: source.feedbackId,
+            ticket_id: ticket.id,
+            payload_sha256: entry.hash,
+            source_url: source.url || null,
+            created_at: nowIso(),
           });
           rows.push(ticket);
         }
@@ -223,10 +279,15 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
         const link = byId.get(item.sourceAssignmentId);
         return link && link.payload_sha256 === sourcePayloadHash({ projectId, projectVersionId, source, ticket: item });
       });
-      if (!allMatch) throw error;
+      if (!allMatch) return storageUnavailable(response, error);
     }
 
-    const assignments = await loadTicketMappings(assignmentIds, database);
+    let assignments;
+    try {
+      assignments = await loadTicketMappings(assignmentIds, database);
+    } catch (error) {
+      return storageUnavailable(response, error);
+    }
     const byAssignment = new Map(assignments.map((item) => [item.assignmentId, item]));
     return response.status(prepared.length ? 201 : 200).json({
       assignments: assignmentIds.map((id) => byAssignment.get(id)).filter(Boolean),

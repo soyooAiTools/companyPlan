@@ -31,6 +31,15 @@ pnpm install --filter @companyplan/server --prod=false
 echo "[deploy] prisma generate"
 ( cd apps/server && npx --no-install prisma generate )
 
+# 避免“代码已更新、Prisma Client 仍是旧版”导致反馈派单在运行时才 500。
+echo "[deploy] verify playable feedback Prisma model"
+( cd apps/server && node --input-type=module -e '
+  import("./ops/prisma.mjs").then(async ({ prisma }) => {
+    if (!prisma.ops_ticket_source_links) throw new Error("Prisma Client 缺少 ops_ticket_source_links，请重新执行 prisma generate");
+    await prisma.$disconnect();
+  });
+' )
+
 # 3) PM2 启动或热重载(--update-env 重新读取 env)
 echo "[deploy] pm2 startOrReload"
 pm2 startOrReload deploy/ecosystem.config.cjs --update-env

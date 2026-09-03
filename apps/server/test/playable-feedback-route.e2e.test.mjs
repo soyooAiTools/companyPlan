@@ -7,7 +7,7 @@ import {
 } from "../middleware/playable-feedback-service-auth.mjs";
 import { registerPlayableFeedbackIntegrationRoutes } from "../ops/playable-feedback-integration-routes.mjs";
 
-function createFakeDatabase() {
+function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
   const tickets = [];
   const sourceLinks = [];
   const ticketEvents = [];
@@ -25,36 +25,70 @@ function createFakeDatabase() {
         return data;
       },
     },
-    ops_ticket_source_links: {
+    async $executeRawUnsafe(_sql, ...values) {
+      const [
+        source_system,
+        source_batch_id,
+        source_assignment_id,
+        source_review_id,
+        source_feedback_id,
+        ticket_id,
+        payload_sha256,
+        source_url,
+        created_at,
+      ] = values;
+      sourceLinks.push({
+        source_system,
+        source_batch_id,
+        source_assignment_id,
+        source_review_id,
+        source_feedback_id,
+        ticket_id,
+        payload_sha256,
+        source_url,
+        created_at,
+      });
+      return 1;
+    },
+  };
+  if (!staleSourceLinkClient) {
+    tx.ops_ticket_source_links = {
       async create({ data }) {
         sourceLinks.push({ ...data });
         return data;
       },
-    },
-  };
-  return {
+    };
+  }
+  const database = {
     tickets: {
       async findMany({ where }) {
         const ids = new Set(where.id.in);
         return tickets.filter((item) => ids.has(item.id));
       },
     },
-    ops_ticket_source_links: {
-      async findMany({ where }) {
-        const ids = new Set(where.source_assignment_id.in);
-        return sourceLinks.filter((item) => item.source_system === where.source_system && ids.has(item.source_assignment_id));
-      },
+    async $queryRawUnsafe(_sql, sourceSystem, ...assignmentIds) {
+      const ids = new Set(assignmentIds);
+      return sourceLinks.filter((item) => item.source_system === sourceSystem && ids.has(item.source_assignment_id));
     },
     async $transaction(callback) {
       return callback(tx);
     },
     state: { tickets, sourceLinks, ticketEvents },
   };
+  if (!staleSourceLinkClient) {
+    database.ops_ticket_source_links = {
+      async findMany({ where }) {
+        const ids = new Set(where.source_assignment_id.in);
+        return sourceLinks.filter((item) => item.source_system === where.source_system && ids.has(item.source_assignment_id));
+      },
+    };
+  }
+  return database;
 }
 
-async function startIntegrationServer() {
+async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
   const secret = "route-e2e-shared-secret";
-  const database = createFakeDatabase();
+  const database = createFakeDatabase({ staleSourceLinkClient });
   const notifications = [];
   const responsibleCalls = [];
   let nextTicket = 1;
@@ -188,4 +222,29 @@ test("feedback assignment route rejects an invalid service signature", async (t)
   const response = await signedRequest(runtime, "/api/internal/playable-feedback/projects/10/responsibles", { signature: "sha256=invalid" });
   assert.equal(response.status, 401);
   assert.equal(runtime.responsibleCalls.length, 0);
+});
+
+test("feedback assignment remains usable with a stale Prisma Client", async (t) => {
+  const runtime = await startIntegrationServer({ staleSourceLinkClient: true });
+  t.after(() => new Promise((resolve) => runtime.server.close(resolve)));
+
+  const payload = {
+    requesterUserId: "7",
+    projectId: "10",
+    projectVersionId: "20",
+    source: { batchId: "batch-stale", reviewId: "review-stale", feedbackId: "feedback-stale", url: "https://preview.example/review-stale" },
+    tickets: [
+      { sourceAssignmentId: "assignment-stale", ownerId: "8", segmentId: 2, title: "反馈 #2", contentHtml: "<p>修正动效</p>", summary: "修正动效", priority: "普通", needType: "试玩反馈" },
+    ],
+  };
+
+  const createResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
+  assert.equal(createResponse.status, 201);
+  assert.equal((await createResponse.json()).assignments[0].ticketId, "ticket-1");
+  assert.equal(runtime.database.state.sourceLinks.length, 1);
+
+  const replayResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
+  assert.equal(replayResponse.status, 200);
+  assert.equal((await replayResponse.json()).idempotent, true);
+  assert.equal(runtime.database.state.tickets.length, 1);
 });
