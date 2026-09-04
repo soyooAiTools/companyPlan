@@ -30,8 +30,10 @@ jobs:
           port: ${{ secrets.SSH_PORT || '22' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
+          capture_stdout: true
           script: |
-            set -eu
+            bash -se <<'DEPLOY_SCRIPT'
+            set -euo pipefail
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
             cd ${{ secrets.DEPLOY_PATH }}
@@ -59,3 +61,4 @@ jobs:
             ls -la
             ls -la deploy
             bash deploy/deploy.sh
+            DEPLOY_SCRIPT
