@@ -172,7 +172,7 @@ pnpm test
 git diff --check
 ```
 
-`pnpm test` runs the current Node integration suite. It covers external-login behavior, role projection, playable-feedback HMAC validation and replay rejection, assignment-candidate loading, custom completion hours, one-ticket-per-person creation, notifications, idempotency, status synchronization, and the stale Prisma Client fallback. Production browser smoke checks remain manual and must not be reported as automated scenario coverage.
+`pnpm test` runs the current Node integration suite. It covers external-login behavior, role projection, playable-feedback HMAC validation and replay rejection, assignment-candidate loading, custom completion hours, one-ticket-per-person creation (including a Helper-consolidated ticket containing multiple feedback items), notifications, idempotency, status synchronization, and the stale Prisma Client fallback. Production browser smoke checks remain manual and must not be reported as automated scenario coverage.
 
 Manual smoke checks:
 

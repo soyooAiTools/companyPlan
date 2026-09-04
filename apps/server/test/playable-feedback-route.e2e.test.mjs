@@ -223,6 +223,44 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
   assert.equal((await statusResponse.json()).assignments.length, 2);
 });
 
+test("accepts one person-level ticket containing several consolidated feedback items", async (t) => {
+  const runtime = await startIntegrationServer();
+  t.after(() => new Promise((resolve) => runtime.server.close(resolve)));
+
+  const contentHtml = "<p><strong>本工单共包含 3 条反馈</strong></p><p>反馈 #1：按钮偏移</p><p>反馈 #2：音效延迟</p><p>反馈 #3：结束页缺失</p>";
+  const payload = {
+    requesterUserId: "7",
+    projectId: "10",
+    projectVersionId: "20",
+    source: {
+      batchId: "batch-grouped",
+      reviewId: "review-grouped",
+      feedbackId: "feedback-1",
+      feedbackIds: ["feedback-1", "feedback-2", "feedback-3"],
+      url: "https://preview.example/review-grouped",
+    },
+    tickets: [{
+      sourceAssignmentId: "assignment-grouped-8",
+      ownerId: "8",
+      segmentId: 2,
+      title: "3 条反馈 · 试玩项目",
+      contentHtml,
+      summary: "#1 按钮偏移；#2 音效延迟；#3 结束页缺失",
+      priority: "优先",
+      needType: "试玩反馈",
+      dueInHours: 12,
+    }],
+  };
+
+  const response = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).assignments.length, 1);
+  assert.equal(runtime.database.state.tickets.length, 1);
+  assert.equal(runtime.preparedTicketBodies.length, 1);
+  assert.equal(runtime.preparedTicketBodies[0].dueInHours, 12);
+  assert.equal(runtime.preparedTicketBodies[0].contentHtml, contentHtml);
+});
+
 test("feedback assignment route rejects an invalid service signature", async (t) => {
   const runtime = await startIntegrationServer();
   t.after(() => new Promise((resolve) => runtime.server.close(resolve)));

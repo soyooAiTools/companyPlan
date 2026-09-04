@@ -157,12 +157,12 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 | 接口 | 用途 |
 |---|---|
 | `GET /projects/:id/responsibles?versionId=` | 按项目版本、OPS 环节标签返回可指派制作人员。 |
-| `POST /tickets/batch` | 一次校验 1–20 位负责人，并为每人创建一张独立工单。 |
+| `POST /tickets/batch` | 一次校验 1–20 位负责人，并为每个 `sourceAssignmentId` 创建一张独立工单；反馈 Helper 在调用前已按人员聚合，同一人只提交一张包含其全部反馈的工单。 |
 | `POST /tickets/status` | 按反馈系统的 assignment ID 批量读取工单状态。 |
 
 来源映射保存在 `ops_ticket_source_links`。`(source_system, source_assignment_id)` 是唯一键，保证网络重试和重复点击不会重复建单；`payload_sha256` 用来拒绝“同一幂等键、不同负责人或内容”的错误重放。建单仍使用现有项目成员和环节标签校验，成功后沿用 companyPlan 的站内通知与 SSE 推送。
 
-候选环节同时返回 `defaultDeliveryHours` 和 `riskWarningHours`。反馈端可以为每条反馈填写 `dueInHours`（1–720 个工作小时）；OPS 建单后以该值覆盖环节默认交付时长，并据此写入 `due_in_hours`、截止时间和甘特条长度。旧客户端不传该字段时仍使用环节默认值。
+候选环节同时返回 `defaultDeliveryHours` 和 `riskWarningHours`。反馈端可以为每条反馈填写 `dueInHours`（1–720 个工作小时）；同一负责人有多条反馈时，Helper 只发送一张合并工单，并把其中最短的时长作为该工单的 `dueInHours`，各反馈原始时长保留在工单正文。OPS 建单后以该值覆盖环节默认交付时长，并据此写入 `due_in_hours`、截止时间和甘特条长度。旧客户端不传该字段时仍使用环节默认值。
 
 服务鉴权优先使用独立的 playable-feedback 共享密钥；为兼容既有部署，未配置时可回退到原有 external-users API token。浏览器端始终不会接触这两类服务凭证。
 
