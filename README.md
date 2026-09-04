@@ -1,4 +1,4 @@
-# companyPlan
+# OPS
 
 Playable ad production SaaS for demand-ticket, project, permission, warning, attachment, audit, and gantt workflows.
 

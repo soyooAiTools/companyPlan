@@ -1,17 +1,26 @@
-name: Deploy OPS API
+name: ops-prod-api
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/server/**"
+      - "deploy/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
   workflow_dispatch:
 
 concurrency:
-  group: deploy-api-prod
+  group: ops-prod-api
   cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: deploy back
+      - name: Deploy OPS API
         uses: appleboy/ssh-action@v1
         env:
           COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET: ${{ secrets.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET }}
@@ -46,6 +55,7 @@ jobs:
             mv -f -- "$temp_file" .env.prod
             trap - EXIT
             unset COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
-
             GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
-            pnpm run deploy
+            ls -la
+            ls -la deploy
+            bash deploy/deploy.sh
