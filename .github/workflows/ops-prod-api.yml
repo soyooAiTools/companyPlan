@@ -23,5 +23,8 @@ jobs:
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
             cd ${{ secrets.DEPLOY_PATH }}
+            pwd
             GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
-            ./deploy/deploy.sh
+            ls -la
+            ls -la deploy
+            bash deploy/deploy.sh
