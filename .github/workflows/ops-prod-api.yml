@@ -1,6 +1,15 @@
 name: ops-prod-api
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/server/**"
+      - "deploy/**"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
   workflow_dispatch:
 
 concurrency:
