@@ -1,10 +1,19 @@
 name: ops-prod-web
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/web/**"
+      - "scripts/deploy-oss.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
   workflow_dispatch:
 
 concurrency:
-  group: deploy-web-prod
+  group: ops-prod-web
   cancel-in-progress: false
 
 jobs:
@@ -13,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4  
+      - uses: pnpm/action-setup@v4
 
       - uses: actions/setup-node@v4
         with:
@@ -32,4 +41,4 @@ jobs:
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           OSS_REGION: oss-cn-beijing
-          OSS_BUCKET: soyoo-ops-web     
+          OSS_BUCKET: soyoo-ops-web
