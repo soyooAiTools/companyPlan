@@ -31,7 +31,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
           script: |
-            set -euo pipefail
+            set -eu
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
             cd ${{ secrets.DEPLOY_PATH }}
