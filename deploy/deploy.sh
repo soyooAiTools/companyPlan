@@ -11,6 +11,22 @@ cd "$ROOT"
 echo "[deploy] 仓库根: $ROOT"
 echo "[deploy] 仅部署后端 API,跳过前端 build"
 
+# GitHub Actions 通过 SSH 执行时不是交互 shell,不会自动加载 nvm/pnpm。
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$NVM_DIR/nvm.sh"
+  nvm use 20 >/dev/null
+fi
+export PNPM_HOME="${PNPM_HOME:-$HOME/.local/share/pnpm}"
+export PATH="$PNPM_HOME:$HOME/.nvm/versions/node/v20.20.0/bin:$PATH"
+if ! command -v pnpm >/dev/null 2>&1; then
+  corepack enable
+  corepack prepare pnpm@10.32.1 --activate
+fi
+echo "[deploy] node: $(node -v)"
+echo "[deploy] pnpm: $(pnpm -v)"
+
 # 0) 生产配置校验:.env.prod 已 gitignore,不随 git 同步,必须在服务器上手动放到「仓库根目录」
 if [ ! -f "$ROOT/.env.prod" ]; then
   echo "[deploy][ERROR] 缺少 $ROOT/.env.prod" >&2
