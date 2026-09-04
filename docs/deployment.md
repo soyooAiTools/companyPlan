@@ -83,6 +83,10 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 `.env.prod.backup-*` 备份；密钥不得写入仓库文件、工作流日志或 PM2 参数。部署后必须用服务签名实际请求
 `/api/internal/playable-feedback/projects/:id/responsibles`，不能只以 `/api/health` 正常作为集成成功依据。
 
+自动部署先拉取最新 `main`，再调用 `deploy/inject-playable-feedback-secret.sh` 更新凭证，最后执行
+`deploy/deploy.sh`。密钥注入保持在独立 Bash 脚本中，避免 SSH Action 的默认远端 shell 对 heredoc、
+`source` 或 `pipefail` 的兼容差异导致部署在重启前中断。
+
 After successful authentication only, companyPlan enriches the returned identity when tags are absent, upserts the `people` row, and creates the session. `is_admin`/`管理员` maps to `roleKey=admin`; the exact soyoo tag `制片` maps to `roleKey=producer`; all other accounts map to `member`. Session responses expose `username` and `roleKey` so downstream role-gated applications can admit only administrators and producers.
 
 Passwords are neither persisted nor written to logs/audit metadata. The local `password_hash` remains a schema placeholder for login-created rows and is not used to validate production login.

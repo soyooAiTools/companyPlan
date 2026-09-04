@@ -30,35 +30,13 @@ jobs:
           port: ${{ secrets.SSH_PORT || '22' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
-          capture_stdout: true
           script: |
-            bash -se <<'DEPLOY_SCRIPT'
-            set -euo pipefail
+            set -e
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
             cd ${{ secrets.DEPLOY_PATH }}
-
-            if [ -z "${COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET:-}" ]; then
-              echo "[deploy][ERROR] GitHub Actions secret COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET is empty" >&2
-              exit 1
-            fi
-            if [ ! -f .env.prod ]; then
-              echo "[deploy][ERROR] missing $(pwd)/.env.prod" >&2
-              exit 1
-            fi
-
-            backup_file=".env.prod.backup-$(date +%Y%m%d-%H%M%S)"
-            temp_file="$(mktemp "$PWD/.env.prod.XXXXXX")"
-            trap 'rm -f -- "$temp_file"' EXIT
-            cp -p -- .env.prod "$backup_file"
-            awk '!/^COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET=/' .env.prod > "$temp_file"
-            printf 'COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET=%s\n' "$COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET" >> "$temp_file"
-            chmod 600 "$temp_file"
-            mv -f -- "$temp_file" .env.prod
-            trap - EXIT
-            unset COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
             GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
             ls -la
             ls -la deploy
+            bash deploy/inject-playable-feedback-secret.sh
             bash deploy/deploy.sh
-            DEPLOY_SCRIPT
