@@ -1,6 +1,6 @@
 kind: pipeline
 type: exec
-name: deploy-api-prod
+name: deploy
 
 platform:
   os: linux
@@ -10,8 +10,26 @@ clone:
   disable: true
 
 steps:
+  - name: check-target
+    commands:
+      - |
+        case "$DEPLOY_TARGET" in
+          api|web)
+            echo "DEPLOY_TARGET=$DEPLOY_TARGET"
+            ;;
+          *)
+            echo "Please set DEPLOY_TARGET to api or web"
+            exit 1
+            ;;
+        esac
+
   - name: deploy-api
     commands:
+      - |
+        if [ "$DEPLOY_TARGET" != "api" ]; then
+          echo "Skip API deploy"
+          exit 0
+        fi
       - export HOME=/root
       - export NVM_DIR=/root/.nvm
       - if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
@@ -19,30 +37,8 @@ steps:
       - export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
       - cd /home/companyPlan
       - GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
-      - npm config set registry https://registry.npmmirror.com
-      - command -v pnpm >/dev/null 2>&1 || npm install -g pnpm@10.32.1
-      - pnpm config set registry https://registry.npmmirror.com
-      - pnpm run deploy
+      - ./deploy/deploy.sh
 
-trigger:
-  branch:
-    - main
-  event:
-    - custom
-
----
-kind: pipeline
-type: exec
-name: deploy-web-prod
-
-platform:
-  os: linux
-  arch: amd64
-
-clone:
-  disable: true
-
-steps:
   - name: deploy-web
     environment:
       OSS_ACCESS_KEY_ID:
@@ -52,6 +48,11 @@ steps:
       OSS_REGION: oss-cn-beijing
       OSS_BUCKET: soyoo-ops-web
     commands:
+      - |
+        if [ "$DEPLOY_TARGET" != "web" ]; then
+          echo "Skip Web deploy"
+          exit 0
+        fi
       - export HOME=/root
       - export NVM_DIR=/root/.nvm
       - if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
