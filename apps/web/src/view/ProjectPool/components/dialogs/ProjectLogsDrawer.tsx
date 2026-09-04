@@ -22,7 +22,7 @@ export default function ProjectLogsDrawer({ open, project, logs, loading, logKin
   const titleName = project?.isVersionRow && project.versionName ? `${project.name} - ${project.versionName}` : project?.name ?? "";
 
   return (
-    <Drawer title={`项目名称:${titleName}`} open={open} onClose={onClose} size={460}>
+    <Drawer title={`项目名称:${titleName}`} open={open} onClose={onClose} width={560}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontWeight: 600, fontSize: 15, color: "#0f172a" }}>项目流转记录</span>
         <SegmentedTabs
@@ -33,6 +33,7 @@ export default function ProjectLogsDrawer({ open, project, logs, loading, logKin
             { label: "状态", value: "status" },
             { label: "阶段", value: "stage" },
             { label: "交付", value: "deadline" },
+            { label: "回收", value: "recycle" },
             { label: "备注", value: "remark" },
           ]}
         />
@@ -48,14 +49,14 @@ export default function ProjectLogsDrawer({ open, project, logs, loading, logKin
             children: (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                  <Avatar size={28} src={lg.actorAvatar || undefined} style={{ flexShrink: 0, background: "#e2e8f0", color: "#475569", fontSize: 13 }}>
+                  <Avatar size={24} src={lg.actorAvatar || undefined} style={{ flexShrink: 0, background: "#e2e8f0", color: "#475569", fontSize: 11 }}>
                     {(lg.actorName || "系").slice(0, 1)}
                   </Avatar>
                   <span style={{ fontWeight: 600 }}>{lg.actorName || "系统"}</span>
                   <Tag color={projectLogKindColor(lg.kind, lg.toStatus)} style={{ marginInlineEnd: 0 }}>
                     {projectLogKindLabel(lg.kind)}
                   </Tag>
-                  {(lg.kind === "status" || lg.kind === "stage") && (
+                  {(lg.kind === "status" || lg.kind === "stage" || lg.kind === "recycle") && (
                     <span style={{ color: "#64748b" }}>
                       {`${lg.fromStatus ? `「${cleanStatusText(lg.fromStatus)}」→ ` : ""}「${cleanStatusText(lg.toStatus)}」`}
                     </span>

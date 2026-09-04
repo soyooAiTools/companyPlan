@@ -4,7 +4,7 @@ import { Button, Avatar, Dropdown, Input, Popover, Space, Tag, Tooltip, Typograp
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
 import { DownOutlined, EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
-import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsSegment, ProjectRemarkField } from "@/api/modules/ops";
+import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsRecycleState, OpsSegment, ProjectRemarkField } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
@@ -24,6 +24,7 @@ export type ProjectPoolColumnActions = {
 	openMembers: (row: OpsProjectPoolRow) => void;
 	openCreateTicket?: (row: OpsProjectPoolRow) => void;
 	transferPlanner?: (row: OpsProjectPoolRow, planner: { id: string; name: string }) => void;
+	changeAssetRecycle?: (row: OpsProjectPoolRow) => void;
 };
 
 export type ProjectPoolColumnFilters = {
@@ -71,6 +72,42 @@ const ticketSummaryCell = (row: OpsProjectPoolRow) => {
 };
 
 const filterIcon = (active: boolean, activeColor = "#dc2626") => <FilterFilled style={{ color: active ? activeColor : "#94a3b8" }} />;
+
+const recycleColor = (state?: string) => {
+	if (state === "success") return { background: "#f6ffed", color: "#389e0d", borderColor: "#b7eb8f" };
+	if (state === "failed") return { background: "#fff1f0", color: "#cf1322", borderColor: "#ffa39e" };
+	return { background: "#f8fafc", color: "#64748b", borderColor: "#cbd5e1" };
+};
+
+function RecycleTag({
+	label,
+	state,
+	onClick,
+}: {
+	label: string;
+	state?: string;
+	onClick?: () => void;
+}) {
+	return (
+		<Tag
+			style={{
+				...recycleColor(state),
+				marginInlineEnd: 0,
+				borderRadius: 4,
+				fontSize: 12,
+				lineHeight: "20px",
+				padding: "0 6px",
+				cursor: onClick ? "pointer" : "default",
+			}}
+			onClick={(event) => {
+				event.stopPropagation();
+				onClick?.();
+			}}
+		>
+			{label}
+		</Tag>
+	);
+}
 
 function advancedFieldFilterValue(value: AdvancedFilterValue, field: string) {
 	const rule = (value.rules || []).find((item) => item.field === field && item.operator === "contains");
@@ -660,6 +697,22 @@ export function useProjectPoolColumns(
 					</Tag>
 				</Space>
 			),
+		},
+		{
+			title: "回收状态",
+			key: "recycleStatus",
+			width: 170,
+			render: (_: unknown, row) => {
+				if (row.status !== "回收中") return null;
+				const status = row.recycleStatus || {};
+				return (
+					<Space size={4} wrap>
+						<RecycleTag label="项目源码" state={status.source} />
+						<RecycleTag label="项目渠道" state={status.channel} />
+						<RecycleTag label="资产文件" state={status.asset} onClick={options.readonly ? undefined : () => actions.changeAssetRecycle?.(row)} />
+					</Space>
+				);
+			},
 		},
 		remarkColumn("remark", remarkLabel("remark", "策划备注")),
 		remarkColumn("remark2", remarkLabel("remark2", "备注2")),

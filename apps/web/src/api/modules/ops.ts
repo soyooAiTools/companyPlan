@@ -45,7 +45,16 @@ export interface OpsProjectVersion {
 	id: string;
 	code: string;
 	name: string;
+	status?: string;
+	statusChangedAt?: string | null;
 	isDefault?: boolean;
+	sortOrder?: number;
+}
+export type OpsRecycleState = "" | "pending" | "success" | "failed";
+export interface OpsProjectRecycleStatus {
+	source?: OpsRecycleState;
+	channel?: OpsRecycleState;
+	asset?: OpsRecycleState;
 }
 export interface OpsSegmentTag {
 	id: string;
@@ -229,6 +238,7 @@ export interface OpsProjectPoolRow {
 	parentId?: string;
 	isVersionRow?: boolean;
 	hasVersionChildren?: boolean;
+	versionCount?: number;
 	projectLifecycleStatus?: string;
 	sortOrder?: number;
 	children?: OpsProjectPoolRow[];
@@ -238,6 +248,7 @@ export interface OpsProjectPoolRow {
 	customerContact?: string; // 客户侧具体对接人,对应飞书「客户」列
 	requirementDoc?: string; // 客户需求文档链接,对应飞书「需求文档」列
 	status: string;
+	recycleStatus?: OpsProjectRecycleStatus;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
 	stageDeadlines: { key: string; name: string; description?: string; date: string }[]; // soyoo 项目阶段计划交付日期
 	stageChangedAt: string | null;
@@ -335,7 +346,7 @@ export interface OpsSegmentTicket {
 }
 export interface OpsProjectStatusLog {
 	id: number;
-	kind: "status" | "stage" | "remark" | "deadline"; // 状态变更 / 阶段变更 / 备注修改 / 下版交付时间修改(同一时间线区分)
+	kind: "status" | "stage" | "remark" | "deadline" | "recycle"; // 状态/阶段/备注/交付/回收(同一时间线区分)
 	fromStatus: string | null;
 	toStatus: string;
 	actorName: string | null;
@@ -661,6 +672,8 @@ export const opsApi = {
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/archive${s ? `?${s}` : ""}`);
 	},
+	projectPoolArchiveVersions: (projectId: string) =>
+		requestJson<{ versions: OpsProjectVersion[] }>(`/api/ops/project-pool/archive/${encodeURIComponent(projectId)}/versions`),
 	projectPoolStaleCount: () => requestJson<{ count: number }>("/api/ops/project-pool/stale-count"),
 	projectPoolProgressAnalysis: (params: Omit<OpsProjectPoolListParams, "page" | "pageSize" | "sortBy" | "sortOrder"> = {}) => {
 		const qs = new URLSearchParams();
@@ -692,6 +705,11 @@ export const opsApi = {
 		requestJson<{ ok: boolean; isUrgent: boolean }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/urgent`, {
 			method: "POST",
 			body: JSON.stringify({ isUrgent }),
+		}),
+	changeProjectAssetRecycle: (projectId: string, status: OpsRecycleState) =>
+		requestJson<{ ok: boolean; status: OpsRecycleState }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/asset-recycle`, {
+			method: "POST",
+			body: JSON.stringify({ status }),
 		}),
 	changeProjectPlanner: (projectId: string, toUserId: string, remark = "") =>
 		requestJson<{ ok: boolean; plannerName: string; transferCount: number }>(`/api/ops/project-pool/${encodeURIComponent(projectId)}/planner`, {

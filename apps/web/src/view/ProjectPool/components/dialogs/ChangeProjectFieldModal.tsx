@@ -226,8 +226,8 @@ export default function ChangeProjectFieldModal({
         {field === "status" && value === settlementDoneStatus ? (
           <AttentionNotice tone="success">
             {isMultiVersionSettlement
-              ? "注意：这是多版本项目的项目级结算完成操作，确认后整个项目会同步为已完成，并从 OPS 项目池隐藏。请确认该项目所有版本均已回收。"
-              : "注意：这是结算完成操作，确认后项目会同步为已完成，并从 OPS 项目池隐藏。"}
+              ? "注意：这是多版本项目的项目级结算完成操作，确认后整个项目会同步为结算完成，并从 OPS 项目池隐藏。请确认该项目所有版本均已回收。"
+              : "注意：这是结算完成操作，确认后项目会同步为结算完成，并从 OPS 项目池隐藏。"}
           </AttentionNotice>
         ) : null}
         <div>
