@@ -1,0 +1,72 @@
+kind: pipeline
+type: exec
+name: deploy-api-prod
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  disable: true
+
+steps:
+  - name: deploy-api
+    commands:
+      - export HOME=/root
+      - export NVM_DIR=/root/.nvm
+      - if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
+      - nvm use 20.20.0
+      - export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+      - cd /home/companyPlan
+      - GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
+      - npm config set registry https://registry.npmmirror.com
+      - command -v pnpm >/dev/null 2>&1 || npm install -g pnpm@10.32.1
+      - pnpm config set registry https://registry.npmmirror.com
+      - pnpm run deploy
+
+trigger:
+  branch:
+    - main
+  event:
+    - custom
+
+---
+kind: pipeline
+type: exec
+name: deploy-web-prod
+
+platform:
+  os: linux
+  arch: amd64
+
+clone:
+  disable: true
+
+steps:
+  - name: deploy-web
+    environment:
+      OSS_ACCESS_KEY_ID:
+        from_secret: oss_access_key_id
+      OSS_ACCESS_KEY_SECRET:
+        from_secret: oss_access_key_secret
+      OSS_REGION: oss-cn-beijing
+      OSS_BUCKET: soyoo-ops-web
+    commands:
+      - export HOME=/root
+      - export NVM_DIR=/root/.nvm
+      - if [ -s "$NVM_DIR/nvm.sh" ]; then . "$NVM_DIR/nvm.sh"; fi
+      - nvm use 20.20.0
+      - export PATH=/usr/local/bin:/usr/bin:/bin:$PATH
+      - cd /home/companyPlan
+      - GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
+      - npm config set registry https://registry.npmmirror.com
+      - command -v pnpm >/dev/null 2>&1 || npm install -g pnpm@10.32.1
+      - pnpm config set registry https://registry.npmmirror.com
+      - pnpm install --frozen-lockfile
+      - pnpm run deploy:web
+
+trigger:
+  branch:
+    - main
+  event:
+    - custom
