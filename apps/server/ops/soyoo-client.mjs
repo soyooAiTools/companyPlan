@@ -97,7 +97,7 @@ async function callAllPages(path) {
 
 // 客户/标签这类小而稳的列表做短缓存,减少重复请求
 const cache = new Map();
-const ACTIVE_PROJECT_EXCLUDE = "已完成,回收中,已回收,客户暂停";
+const ACTIVE_PROJECT_EXCLUDE = "已完成,结算完成,回收中,已回收,客户暂停";
 async function cached(key, fn) {
   const hit = cache.get(key);
   if (hit && Date.now() - hit.t < CACHE_MS) return hit.v;

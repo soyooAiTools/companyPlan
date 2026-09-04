@@ -1,5 +1,6 @@
 // 项目池路由:只注册 + 调 service(分层)。挂 /api/ops/*。可见=策划(制片)或管理员。
 import * as pool from "./services/ops-project-pool.mjs";
+import { opsIntegration } from "../config/runtime.mjs";
 import { isAdmin, isPlanner, meId, soyooErrorResponse } from "./ops-helpers.mjs";
 
 const PROJECT_POOL_MAX_PAGE_SIZE = 500;
@@ -18,7 +19,43 @@ async function requirePlanner(req, res, next) {
   return res.status(403).json({ error: "无权访问项目池(仅策划或管理员)" });
 }
 
+function integrationToken(req) {
+  const auth = String(req.headers.authorization || "");
+  if (auth.toLowerCase().startsWith("bearer ")) return auth.slice(7).trim();
+  return String(req.headers["x-ops-integration-token"] || "").trim();
+}
+
+function requireAssetRecycleIntegration(req, res, next) {
+  const expected = String(opsIntegration.assetRecycleToken || "").trim();
+  if (!expected) return res.status(503).json({ error: "未配置资产回收集成 token" });
+  if (integrationToken(req) !== expected) return res.status(401).json({ error: "无效的资产回收集成 token" });
+  return next();
+}
+
 export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
+  app.get("/api/ops/integration/asset-recycle/projects", requireAssetRecycleIntegration, async (req, res) => {
+    try {
+      res.json(await pool.listExternalAssetRecycleProjects({
+        keyword: String(req.query.keyword ?? ""),
+        page: Number(req.query.page) || 1,
+        pageSize: projectPoolPageSize(req.query.pageSize, 20),
+      }));
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+  });
+
+  app.post("/api/ops/integration/asset-recycle/status", requireAssetRecycleIntegration, async (req, res) => {
+    let r;
+    try {
+      r = await pool.updateAssetRecycleStatus({ user: null, projectId: req.body?.versionRowId || req.body?.projectId, status: req.body?.status, actor: "system" });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
   // 我的项目:当前登录人参与的项目,所有登录用户可访问
   app.get("/api/ops/my-projects", requireAuth, async (req, res) => {
     try {
@@ -114,6 +151,16 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
           advancedFilter: String(req.query.advanced_filter ?? ""),
         }),
       );
+    } catch (e) {
+      soyooErrorResponse(res, e);
+    }
+  });
+
+  app.get("/api/ops/project-pool/archive/:id/versions", requireAuth, requirePlanner, async (req, res) => {
+    try {
+      const result = await pool.archivedProjectVersions({ user: req.user, projectId: req.params.id });
+      if (result.error) return res.status(result.code || 400).json({ error: result.error });
+      res.json(result);
     } catch (e) {
       soyooErrorResponse(res, e);
     }
@@ -316,6 +363,18 @@ export function registerProjectPoolRoutes(app, { requireAuth, requireAdmin }) {
     let r;
     try {
       r = await pool.changeProjectRemark({ user: req.user, projectId: req.params.id, remark: req.body?.remark, field: req.body?.field });
+    } catch (e) {
+      return soyooErrorResponse(res, e);
+    }
+    if (r.error) return res.status(r.code || 400).json({ error: r.error });
+    res.json(r);
+  });
+
+  // 资产回收状态(ops 手动确认;按项目/版本行记录,并写入流转记录)
+  app.post("/api/ops/project-pool/:id/asset-recycle", requireAuth, requirePlanner, async (req, res) => {
+    let r;
+    try {
+      r = await pool.updateAssetRecycleStatus({ user: req.user, projectId: req.params.id, status: req.body?.status, actor: req.body?.actor });
     } catch (e) {
       return soyooErrorResponse(res, e);
     }

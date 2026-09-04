@@ -313,6 +313,7 @@ model ops_project_ext {
   remark4          String? @db.MediumText
   remark5          String? @db.MediumText
   remark6          String? @db.MediumText
+  asset_recycle_status String? @db.VarChar(20)
   updated_at       String? @db.VarChar(40)
 }
 

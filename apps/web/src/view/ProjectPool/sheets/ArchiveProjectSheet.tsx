@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
-import { App, Avatar, Button, DatePicker, Space, Tag } from "antd";
+import { App, Avatar, Button, DatePicker, Modal, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { FilterFilled } from "@ant-design/icons";
-import { opsApi, type OpsProjectPoolRow, type OpsProjectPoolSortBy, type OpsProjectPoolSortOrder } from "@/api/modules/ops";
+import { opsApi, type OpsProjectPoolRow, type OpsProjectPoolSortBy, type OpsProjectPoolSortOrder, type OpsProjectVersion } from "@/api/modules/ops";
 import { statusStyle } from "@/view/Ops/constants";
 import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
 import ProjectSheet from "./ProjectSheet";
 import AdvancedFilterBuilder, { compactAdvancedFilter, emptyAdvancedFilter, stringifyAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 
-const ARCHIVE_STATUSES = ["已完成", "回收中"];
+const ARCHIVE_STATUSES = ["结算完成", "已完成", "回收中"];
 
 type ArchiveProjectSheetProps = {
 	scrollY: number;
@@ -41,6 +41,12 @@ function formatProjectDate(value?: string | null) {
 	if (!value) return "—";
 	const parsed = dayjs(value);
 	return parsed.isValid() ? parsed.format("YYYY/MM/DD") : value;
+}
+
+function formatProjectDateTime(value?: string | null) {
+	if (!value) return "—";
+	const parsed = dayjs(value);
+	return parsed.isValid() ? parsed.format("YYYY/MM/DD HH:mm") : value;
 }
 
 function rowPlanners(row: OpsProjectPoolRow) {
@@ -77,6 +83,10 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 	const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
 	const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy>();
 	const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder>();
+	const [versionModalOpen, setVersionModalOpen] = useState(false);
+	const [versionModalTitle, setVersionModalTitle] = useState("");
+	const [versionRows, setVersionRows] = useState<OpsProjectVersion[]>([]);
+	const [versionsLoading, setVersionsLoading] = useState(false);
 
 	const load = useCallback(async () => {
 		setLoading(true);
@@ -119,6 +129,26 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 		void load();
 	}, [load]);
 
+	const openVersionModal = useCallback(
+		async (row: OpsProjectPoolRow) => {
+			const projectId = String(row.projectId || row.id || "");
+			if (!projectId) return;
+			setVersionModalTitle([row.name, row.tenantName].filter(Boolean).join(" - "));
+			setVersionRows([]);
+			setVersionModalOpen(true);
+			setVersionsLoading(true);
+			try {
+				const result = await opsApi.projectPoolArchiveVersions(projectId);
+				setVersionRows([...(result.versions || [])].sort((a, b) => Number(a.sortOrder || 0) - Number(b.sortOrder || 0) || String(a.code || a.id).localeCompare(String(b.code || b.id))));
+			} catch (error) {
+				message.error(error instanceof Error ? error.message : "加载版本状态失败");
+			} finally {
+				setVersionsLoading(false);
+			}
+		},
+		[message],
+	);
+
 	const archiveColumns = useMemo<ColumnsType<OpsProjectPoolRow>>(() => {
 		const offset = (page - 1) * pageSize;
 		return [
@@ -158,7 +188,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 			{
 				title: "状态",
 				key: "status",
-				width: 110,
+				width: 180,
 				filterDropdown: ({ close }) => (
 					<HeaderMultiSelectDropdown
 						value={statusFilter}
@@ -174,11 +204,29 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 					/>
 				),
 				filterIcon: () => <FilterFilled style={{ color: statusFilter.length === ARCHIVE_STATUSES.length ? undefined : "#dc2626" }} />,
-				render: (_: unknown, row) => (
-					<Tag bordered={false} style={{ ...statusStyle(row.status), marginInlineEnd: 0 }}>
-						{row.status || "—"}
-					</Tag>
-				),
+				render: (_: unknown, row) => {
+					const versionCount = Number(row.versionCount || 0);
+					return (
+						<Space size={6}>
+							<Tag bordered={false} style={{ ...statusStyle(row.status), marginInlineEnd: 0 }}>
+								{row.status || "—"}
+							</Tag>
+							{versionCount > 1 ? (
+								<Button
+									type="link"
+									size="small"
+									style={{ padding: 0, height: 22 }}
+									onClick={(event) => {
+										event.stopPropagation();
+										openVersionModal(row);
+									}}
+								>
+									{versionCount} 个版本
+								</Button>
+							) : null}
+						</Space>
+					);
+				},
 			},
 			{
 				title: "项目启动时间",
@@ -215,7 +263,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				render: (_: unknown, row) => formatProjectDate(row.endedAt),
 			},
 		];
-	}, [activeAdvancedCount, advancedFilter, advancedFilterFields, endedDateRange, onOpenLogs, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
+	}, [activeAdvancedCount, advancedFilter, advancedFilterFields, endedDateRange, openVersionModal, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
 
 	return (
 		<div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#fff" }}>
@@ -240,6 +288,44 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 					onOpenLogs={onOpenLogs}
 				/>
 			</div>
+			<Modal title={`${versionModalTitle || "项目"} · 版本状态`} open={versionModalOpen} onCancel={() => setVersionModalOpen(false)} footer={null} width={680} destroyOnHidden>
+				<Table<OpsProjectVersion>
+					size="small"
+					rowKey={(row) => row.id || row.code}
+					loading={versionsLoading}
+					dataSource={versionRows}
+					pagination={false}
+					columns={[
+						{
+							title: "版本",
+							key: "version",
+							render: (_: unknown, row) => (
+								<Space size={6}>
+									<span style={{ fontWeight: 700 }}>{row.code || "—"}</span>
+									<span>{row.name || "默认版本"}</span>
+									{row.isDefault ? <Tag bordered={false}>默认</Tag> : null}
+								</Space>
+							),
+						},
+						{
+							title: "状态",
+							dataIndex: "status",
+							width: 130,
+							render: (status: string) => (
+								<Tag bordered={false} style={{ ...statusStyle(status), marginInlineEnd: 0 }}>
+									{status || "—"}
+								</Tag>
+							),
+						},
+						{
+							title: "最后操作状态时间",
+							dataIndex: "statusChangedAt",
+							width: 160,
+							render: (value: string | null | undefined) => formatProjectDateTime(value),
+						},
+					]}
+				/>
+			</Modal>
 		</div>
 	);
 }

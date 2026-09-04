@@ -30,6 +30,7 @@ const COLUMN_LABELS: Record<string, string> = {
 	startedAt: "项目启动时间",
 	duration: "项目结束时间",
 	status: "当前状态",
+	recycleStatus: "回收状态",
 	...PROJECT_POOL_REMARK_COLUMN_LABELS,
 	segments: "目前环节",
 	memberCount: "人员列表",
