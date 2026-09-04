@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# companyPlan ops 后端一键部署:校验配置 → 装后端依赖 → 生成 Prisma 客户端 → PM2 启动/热重载
+# OPS 后端一键部署:校验配置 → 装后端依赖 → 生成 Prisma 客户端 → PM2 启动/热重载
 # 注意:本脚本只部署后端 API,不会 build/deploy 前端 Web。
 # 用法(服务器上,先 git pull 拉最新代码):
 #   npm run deploy        # 或 pnpm run deploy

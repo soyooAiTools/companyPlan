@@ -1,4 +1,4 @@
-name: Deploy Changed (Production)
+name: Deploy OPS Changed (Production)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: deploy-companyplan-prod
+  group: deploy-ops-prod
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect changed targets
+      - name: Detect OPS changed targets
         id: changes
         shell: bash
         run: |
@@ -64,7 +64,7 @@ jobs:
         if: steps.changes.outputs.deploy_web == 'true'
         run: pnpm build
 
-      - name: Deploy web to OSS
+      - name: Deploy OPS web to OSS
         if: steps.changes.outputs.deploy_web == 'true'
         run: node scripts/deploy-oss.mjs
         env:
@@ -73,7 +73,7 @@ jobs:
           OSS_REGION: oss-cn-beijing
           OSS_BUCKET: soyoo-ops-web
 
-      - name: Deploy API to server
+      - name: Deploy OPS API to server
         if: steps.changes.outputs.deploy_api == 'true'
         uses: appleboy/ssh-action@v1
         with:

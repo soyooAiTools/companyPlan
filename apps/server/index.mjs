@@ -101,7 +101,7 @@ app.use((error, _request, response, _next) => {
 });
 
 app.listen(port, () => {
-  logger.info(`companyPlan production server listening on http://127.0.0.1:${port}`);
+  logger.info(`OPS production server listening on http://127.0.0.1:${port}`);
   // 去同步:不再跑全量同步。改为消费 soyoo 变更 outbox,刷新工单快照(改名/换头像等)。
   startOpsChangeConsumer({ logger });
   // 通知扫描:周期性发现超时工单/项目并落库 + SSE 推送(间隔后台可改)
