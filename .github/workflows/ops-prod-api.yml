@@ -1,4 +1,4 @@
-name: Deploy OPS API
+name: ops-prod-api
 
 on:
   workflow_dispatch:

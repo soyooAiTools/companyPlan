@@ -1,4 +1,4 @@
-name: Deploy OPS Web (Production)
+name: ops-prod-web
 
 on:
   workflow_dispatch:
