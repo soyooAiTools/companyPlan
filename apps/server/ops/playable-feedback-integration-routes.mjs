@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { logger } from "../core/logger.mjs";
 import { prisma } from "./prisma.mjs";
-import { getResponsibles, getUser } from "./ops-realtime.mjs";
+import { getFeedbackResponsibles, getUser } from "./ops-realtime.mjs";
 import { loadSegments, prepareTicketCreate } from "./ops-routes.mjs";
 import { nowIso } from "./ops-helpers.mjs";
 import * as notif from "./services/ops-notifications.mjs";
@@ -135,7 +135,7 @@ async function loadTicketMappings(assignmentIds, database = prisma) {
 export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceAuth, dependencies = {} }) {
   const base = "/api/internal/playable-feedback";
   const database = dependencies.prisma || prisma;
-  const getResponsiblesForProject = dependencies.getResponsibles || getResponsibles;
+  const getResponsiblesForProject = dependencies.getResponsibles || getFeedbackResponsibles;
   const getRequester = dependencies.getUser || getUser;
   const loadTicketSegments = dependencies.loadSegments || loadSegments;
   const prepareTicket = dependencies.prepareTicketCreate || prepareTicketCreate;
@@ -228,6 +228,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       }
       const result = await prepareTicket({
         user,
+        feedbackAssignment: true,
         body: {
           ...item,
           projectId,

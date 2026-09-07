@@ -71,6 +71,8 @@ For local setup or isolated scenario tests, `COMPANYPLAN_MYSQL_CREATE_DATABASE=1
 
 反馈系统通过 `/api/internal/playable-feedback/*` 调用 companyPlan。该路由不接受浏览器会话，而是校验服务 ID、毫秒/秒时间戳、一次性 nonce 和请求原文 HMAC-SHA256。生产环境必须存在专用或兼容共享凭证；两者都缺失时接口返回 `503`。同一 `sourceAssignmentId` 只能映射一张工单，重复请求返回原工单，内容不同则返回 `409`。
 
+全部项目成员派单（2026-09-07）的发布顺序为 Helper（透传候选 `assignmentMode`）→ OPS API（返回 `project-members`，只对反馈派单放开岗位匹配）→ 预览前端（选人并确认环节、刷新候选）。不需要数据库迁移或修改密钥。部署验收应使用有效服务签名读取实际项目版本的候选，确认仅有管理员标签的项目成员也存在、默认程序人员不变；健康检查通过不代表此链路已更新。旧预览端仍可使用 `segments[].members` 中的岗位匹配推荐人员。
+
 如果部署机设置了 `HTTP_PROXY` / `HTTPS_PROXY` 且不能直连 `helperapi.soyootech.com`，还必须设置 `NODE_USE_ENV_PROXY=1`，并用 `node --use-env-proxy apps/server/index.mjs` 启动；否则 Node 原生 `fetch` 不会使用系统代理，候选人查询会返回 `fetch failed`。
 
 仅在连接正式数据库的备用联调实例中设置 `COMPANYPLAN_OPS_CHANGE_CONSUMER_ENABLED=0` 和 `COMPANYPLAN_NOTIFICATION_SCAN_ENABLED=0`，避免两个进程同时消费 Ops outbox 或重复发送超时通知；正式进程保持默认开启。

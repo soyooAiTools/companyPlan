@@ -1,7 +1,7 @@
 // ops 提单"实时查 soyoo"封装:选项目/选负责人/算环节负责人/建单快照。
 // 全部走 soyoo-client(/integration);不读本地 people/projects 表。
 import { soyooClient } from "./soyoo-client.mjs";
-import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
+import { effectiveSegmentTagIds, effectiveSegmentTags } from "./segment-tag-match.mjs";
 
 function mapProjectVersions(project) {
   return Array.isArray(project?.versions)
@@ -178,9 +178,31 @@ export async function getResponsibles(projectId, segments) {
   return { segments: segList, members: allMembers };
 }
 
+// Feedback assignment selects a project member and an explicit task segment.
+// Tags recommend defaults only; they do not grant or change account roles.
+export async function getFeedbackResponsibles(projectId, segments) {
+  const { members } = await getProjectWithMembers(projectId);
+  const active = members.filter((member) => member.status !== "disabled");
+  const available = segments.filter((segment) => effectiveSegmentTagIds(segment.tags).length);
+  const allMembers = active.map((member) => ({
+    id: member.id, username: member.username, name: member.name,
+    wechatName: member.wechatName, wechatAvatar: member.avatar,
+    segmentIds: available.filter((segment) => member.tags.some((tag) => effectiveSegmentTagIds(segment.tags).includes(tag.id))).map((segment) => segment.id),
+  }));
+  return {
+    assignmentMode: "project-members",
+    members: allMembers,
+    segments: available.map((segment) => ({
+      id: segment.id, name: segment.name, defaultDeliveryHours: segment.defaultDeliveryHours,
+      riskWarningHours: segment.riskWarningHours,
+      members: allMembers.filter((member) => member.segmentIds.includes(segment.id)),
+    })),
+  };
+}
+
 // 建单快照:实时查 soyoo,验证 owner 属于该项目该环节,返回要写进工单的快照字段(或 {error})。
 // segTags:[{id,name}] 该环节绑定的标签(来自本地 ops_segment_tags + 名字)。
-export async function buildTicketSnapshot({ projectId, projectVersionId = "", ownerId, requesterUserId, segTags }) {
+export async function buildTicketSnapshot({ projectId, projectVersionId = "", ownerId, requesterUserId, segTags, allowProjectMember = false }) {
   const segTagIds = effectiveSegmentTagIds(segTags);
   if (!segTagIds.length) return { error: "该环节未绑定任何标签" };
   const baseProjectId = String(projectId || "").split("::version-")[0];
@@ -189,7 +211,11 @@ export async function buildTicketSnapshot({ projectId, projectVersionId = "", ow
   if (!project) return { error: "项目不存在" };
   const member = members.find((m) => m.id === String(ownerId));
   if (!member) return { error: "负责人不在该项目" };
-  const matched = member.tags.find((t) => segTagIds.includes(t.id));
+  if (member.status === "disabled") return { error: "负责人已停用" };
+  // Only the service-authenticated feedback route enables this policy. The
+  // stored tag describes the selected work, never an invented user role.
+  const matched = member.tags.find((t) => segTagIds.includes(t.id))
+    || (allowProjectMember ? effectiveSegmentTags(segTags)[0] : null);
   if (!matched) return { error: "负责人不属于该环节(标签不匹配)" };
   const requesterUser = await getUser(requesterUserId);
   return {

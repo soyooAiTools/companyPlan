@@ -198,15 +198,15 @@ export async function loadSegments() {
   }));
 }
 
-async function loadSegmentTags(segmentId) {
-  const links = await prisma.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } });
+async function loadSegmentTags(segmentId, database = prisma) {
+  const links = await database.ops_segment_tags.findMany({ where: { segment_id: segmentId }, select: { tag_id: true } });
   if (!links.length) return [];
   const liveTags = await listTags().catch(() => []);
   const tagNameById = new Map(liveTags.map((t) => [String(t.id), t.name]));
   return links.map((row) => ({ id: String(row.tag_id), name: tagNameById.get(String(row.tag_id)) ?? String(row.tag_id) }));
 }
 
-export async function prepareTicketCreate({ user, body }) {
+export async function prepareTicketCreate({ user, body, feedbackAssignment = false, database = prisma }) {
   const projectId = body.projectId ? String(body.projectId) : "";
   const segmentId = Number(body.segmentId);
   const ownerId = body.ownerId ? String(body.ownerId) : "";
@@ -217,7 +217,7 @@ export async function prepareTicketCreate({ user, body }) {
   const contentHtml = isBlankRich(rawHtml) ? "" : sanitizeRichHtml(rawHtml);
   const summaryText = htmlToPlain(contentHtml) || clip(body.summary, 2000);
 
-  const segment = await prisma.ops_segments.findUnique({ where: { id: segmentId } });
+  const segment = await database.ops_segments.findUnique({ where: { id: segmentId } });
   if (!segment) return { error: "环节不存在" };
   const requestedDueInHours = body.dueInHours;
   const dueInHours = requestedDueInHours == null || requestedDueInHours === ""
@@ -226,12 +226,12 @@ export async function prepareTicketCreate({ user, body }) {
   if (!Number.isInteger(dueInHours) || dueInHours < 1 || dueInHours > 720) {
     return { error: "期望完成时长须为 1 至 720 小时的整数" };
   }
-  const segTags = await loadSegmentTags(segmentId);
+  const segTags = await loadSegmentTags(segmentId, database);
   if (!segTags.length) return { error: "该环节未绑定任何标签" };
 
   let built;
   try {
-    built = await buildTicketSnapshot({ projectId, projectVersionId: body.projectVersionId, ownerId, requesterUserId: meId(user), segTags });
+    built = await buildTicketSnapshot({ projectId, projectVersionId: body.projectVersionId, ownerId, requesterUserId: meId(user), segTags, allowProjectMember: feedbackAssignment });
   } catch (e) {
     return { soyooError: e };
   }

@@ -163,11 +163,15 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 
 | 接口 | 用途 |
 |---|---|
-| `GET /projects/:id/responsibles?versionId=` | 按项目版本、OPS 环节标签返回可指派制作人员。 |
+| `GET /projects/:id/responsibles?versionId=` | 返回指定项目版本全部未停用成员，以及可选的 OPS 制作环节。 |
 | `POST /tickets/batch` | 一次校验 1–20 位负责人，并为每个 `sourceAssignmentId` 创建一张独立工单；反馈 Helper 在调用前已按人员聚合，同一人只提交一张包含其全部反馈的工单。 |
 | `POST /tickets/status` | 按反馈系统的 assignment ID 批量读取工单状态。 |
 
-来源映射保存在 `ops_ticket_source_links`。`(source_system, source_assignment_id)` 是唯一键，保证网络重试和重复点击不会重复建单；`payload_sha256` 用来拒绝“同一幂等键、不同负责人或内容”的错误重放。建单仍使用现有项目成员和环节标签校验，成功后沿用 companyPlan 的站内通知与 SSE 推送。
+来源映射保存在 `ops_ticket_source_links`。`(source_system, source_assignment_id)` 是唯一键，保证网络重试和重复点击不会重复建单；`payload_sha256` 用来拒绝“同一幂等键、不同负责人或内容”的错误重放。反馈建单实时校验负责人属于指定项目版本且未停用、制作环节存在且已绑定有效标签，成功后沿用 companyPlan 的站内通知与 SSE 推送。
+
+候选响应的 `assignmentMode=project-members` 表示全部项目成员可选，不再按账号岗位标签过滤。顶层 `members` 包含管理员标签或无岗位标签的成员；`members[].segmentIds` 和 `segments[].members` 仅用于推荐环节及“程序优先、地编兜底”的默认选择。没有推荐环节的成员必须手动选择制作环节，不会自动当作程序人员。Helper 必须透传 `assignmentMode`；预览端在指派面板打开时每 15 秒及窗口重新获得焦点时刷新候选，亦提供“刷新人员”，保留已有选择及交付时长。成员被移出当前版本后保留为无效选择并禁止提交，不混入其他版本成员。
+
+此策略仅由服务签名保护的反馈路由在校验提单人是制片/管理员后启用。普通 OPS 提单仍校验负责人岗位标签匹配；浏览器在请求正文中伪造 `feedbackAssignment` 或 `allowProjectMember` 不会启用放宽策略。工单内的标签快照描述所选制作环节，不修改账号标签、角色或项目成员关系。
 
 候选环节同时返回 `defaultDeliveryHours` 和 `riskWarningHours`。反馈端可以为每条反馈填写 `dueInHours`（1–720 个工作小时）；同一负责人有多条反馈时，Helper 只发送一张合并工单，并把其中最短的时长作为该工单的 `dueInHours`，各反馈原始时长保留在工单正文。OPS 建单后以该值覆盖环节默认交付时长，并据此写入 `due_in_hours`、截止时间和甘特条长度。旧客户端不传该字段时仍使用环节默认值。
 

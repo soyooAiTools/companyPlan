@@ -6,6 +6,9 @@ import {
   createPlayableFeedbackSignature,
 } from "../middleware/playable-feedback-service-auth.mjs";
 import { registerPlayableFeedbackIntegrationRoutes } from "../ops/playable-feedback-integration-routes.mjs";
+import { getFeedbackResponsibles } from "../ops/ops-realtime.mjs";
+import { prepareTicketCreate } from "../ops/ops-routes.mjs";
+import { soyooClient } from "../ops/soyoo-client.mjs";
 
 function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
   const tickets = [];
@@ -86,9 +89,11 @@ function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
   return database;
 }
 
-async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
+async function startIntegrationServer({ staleSourceLinkClient = false, realMemberPolicy = false } = {}) {
   const secret = "route-e2e-shared-secret";
   const database = createFakeDatabase({ staleSourceLinkClient });
+  database.ops_segments = { findUnique: async ({ where }) => where.id === 2 ? { id: 2, name: "程序", default_delivery_hours: 24, risk_warning_hours: 4 } : null };
+  database.ops_segment_tags = { findMany: async () => [{ tag_id: 12 }] };
   const notifications = [];
   const responsibleCalls = [];
   const preparedTicketBodies = [];
@@ -110,14 +115,17 @@ async function startIntegrationServer({ staleSourceLinkClient = false } = {}) {
       loadSegments: async () => [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, tags: [{ id: "programmer", name: "程序" }] }],
       getResponsibles: async (projectRef) => {
         responsibleCalls.push(projectRef);
+        if (realMemberPolicy) return getFeedbackResponsibles(projectRef, [{ id: 2, name: "程序", tags: [{ id: "12", name: "程序" }] }]);
         return {
           segments: [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, members: [{ id: "8", name: "开发李四", wechatAvatar: "avatar.png" }] }],
           members: [{ id: "8", name: "开发李四", segmentIds: [2] }],
         };
       },
       getUser: async () => ({ id: "7", username: "producer", name: "制片张三", status: "active", isAdmin: false, tags: [{ name: "制片" }] }),
-      prepareTicketCreate: async ({ body }) => {
+      prepareTicketCreate: async ({ body, feedbackAssignment, user }) => {
+        assert.equal(feedbackAssignment, true);
         preparedTicketBodies.push(body);
+        if (realMemberPolicy) return prepareTicketCreate({ body, feedbackAssignment, user, database });
         return {
           data: {
             id: `ticket-${nextTicket++}`,
@@ -166,6 +174,49 @@ async function signedRequest(runtime, path, { method = "GET", body, signature = 
     body: body === undefined ? undefined : rawBody,
   });
 }
+
+test("real member policy: signed nick assignment persists, notifies and replays once, without changing roles", async (t) => {
+  const members = [
+    { user_id: 9, username: "nick", user_status: "active", tags: [{ id: 13, name: "管理员" }] },
+    { user_id: 8, username: "developer", user_status: "active", tags: [{ id: 12, name: "程序" }] },
+    { user_id: 11, username: "disabled", user_status: "disabled", tags: [] },
+  ];
+  t.mock.method(soyooClient, "projectMembers", async (ref) => {
+    assert.equal(ref, "1074::version-109");
+    return { project: { id: 1074, name: "112A" }, members };
+  });
+  t.mock.method(soyooClient, "user", async () => ({ id: 7, username: "producer", tags: [{ name: "制片" }] }));
+  t.mock.method(soyooClient, "tags", async () => [{ id: 12, name: "程序" }]);
+  const runtime = await startIntegrationServer({ realMemberPolicy: true });
+  t.after(() => new Promise(resolve => runtime.server.close(resolve)));
+  const candidates = await signedRequest(runtime, "/api/internal/playable-feedback/projects/1074/responsibles?versionId=109");
+  const choices = await candidates.json();
+  assert.equal(choices.assignmentMode, "project-members");
+  assert.deepEqual(choices.members.map(member => member.id), ["9", "8"]);
+  assert.deepEqual(choices.members[0].segmentIds, []);
+  const payload = {
+    requesterUserId: "7", projectId: "1074", projectVersionId: "109",
+    source: { batchId: "nick-batch", reviewId: "nick-review", feedbackId: "f1", url: "https://preview.example/feedback/nick-review" },
+    tickets: [{ sourceAssignmentId: "nick-assignment", ownerId: "9", segmentId: 2, dueInHours: 8, title: "反馈修订", summary: "调整音效" }],
+  };
+  const created = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
+  assert.equal(created.status, 201, JSON.stringify(await created.json()));
+  assert.equal(runtime.database.state.tickets[0].owner_username, "nick");
+  assert.equal(runtime.database.state.tickets[0].project_version_id, "109");
+  assert.equal(runtime.database.state.tickets[0].due_in_hours, 8);
+  assert.equal(runtime.database.state.tickets[0].tag_name, "程序");
+  assert.equal(runtime.notifications.length, 1);
+  assert.equal((await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload })).status, 200);
+  assert.equal(runtime.database.state.tickets.length, 1);
+  for (const ownerId of ["999", "11"]) {
+    const invalid = { ...payload, tickets: [{ ...payload.tickets[0], sourceAssignmentId: `invalid-${ownerId}`, ownerId }] };
+    const rejected = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: invalid });
+    assert.equal(rejected.status, 400);
+  }
+  assert.equal(runtime.database.state.tickets.length, 1);
+  assert.equal(runtime.notifications.length, 1);
+  assert.deepEqual(members[0].tags, [{ id: 13, name: "管理员" }]);
+});
 
 test("signed feedback assignment route loads candidates, creates one ticket per person, and is idempotent", async (t) => {
   const runtime = await startIntegrationServer();
