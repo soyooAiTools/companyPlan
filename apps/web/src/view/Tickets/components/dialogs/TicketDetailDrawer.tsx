@@ -3,6 +3,8 @@ import { Button, Descriptions, Divider, Drawer, Space, Spin, Tag, Timeline, Typo
 import { EditOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "../../../../api/modules/ops";
 import RichContentView from "../../../../components/RichContentView";
+import FeedbackSourceLink from "../../../../components/FeedbackSourceLink";
+import TicketEventNote from "../../../../components/TicketEventNote";
 import { fmtDateTime } from "../../../../utils/format";
 import { remainingView } from "../../ticketUtils";
 
@@ -28,6 +30,7 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 					</div>
 				) : (
 					<>
+						<FeedbackSourceLink ticketId={detail.id} />
 						<Space style={{ marginBottom: 12 }}>
 							<span>状态:</span>
 							{statusControl(detail, 130)}
@@ -112,7 +115,7 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 											) : e.toStatus ? (
 												<span style={{ color: "#64748b" }}>,状态「{e.toStatus}」</span>
 											) : null}
-											{e.note ? <div style={{ color: "#475569" }}>备注:{e.note}</div> : null}
+											<TicketEventNote note={e.note} />
 											<div style={{ color: "#94a3b8", fontSize: 12 }}>{fmtDateTime(e.createdAt)}</div>
 										</div>
 									),

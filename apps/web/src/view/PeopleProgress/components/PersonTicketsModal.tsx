@@ -5,6 +5,8 @@ import SegmentedTabs from "../../../components/SegmentedTabs";
 import { opsApi } from "../../../api/modules/ops";
 import type { OpsTicket, OpsTicketEvent } from "../../../api/modules/ops";
 import RichContentView from "../../../components/RichContentView";
+import FeedbackSourceLink from "../../../components/FeedbackSourceLink";
+import TicketEventNote from "../../../components/TicketEventNote";
 import { fmtDateTime } from "../../../utils/format";
 import { stageRangeLabel } from "../../ProjectPool/deadlineUtils";
 import { remainingView } from "../../Tickets/ticketUtils";
@@ -287,6 +289,7 @@ export default function PersonTicketsModal({ open, person, role, onClose }: Pers
 			<Drawer title={detail?.title || "工单详情"} open={Boolean(detail)} onClose={() => setDetail(null)} size={480} destroyOnHidden>
 				{detail ? (
 					<Spin spinning={detailLoading}>
+						<FeedbackSourceLink ticketId={detail.id} />
 						<Descriptions column={1} size="small" bordered>
 							<Descriptions.Item label="单号">
 								<Typography.Text copyable={{ text: detail.id }} style={{ fontFamily: "monospace", fontSize: 12 }}>
@@ -345,7 +348,7 @@ export default function PersonTicketsModal({ open, person, role, onClose }: Pers
 										<div>
 											<span style={{ fontWeight: 600 }}>{event.actorName || "系统"}</span> {event.action}
 											{event.fromStatus && event.toStatus ? <span style={{ color: "#64748b" }}>，状态「{event.fromStatus}」→「{event.toStatus}」</span> : null}
-											{event.note ? <div style={{ color: "#475569" }}>备注：{event.note}</div> : null}
+											<TicketEventNote note={event.note} />
 											<div style={{ color: "#94a3b8", fontSize: 12 }}>{fmtDateTime(event.createdAt)}</div>
 										</div>
 									),

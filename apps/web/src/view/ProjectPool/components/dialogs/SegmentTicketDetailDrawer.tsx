@@ -5,6 +5,8 @@ import { ArrowRightOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
 import { fmtDateTime } from "@/utils/format";
 import { remainingView } from "@/view/Tickets/ticketUtils";
+import FeedbackSourceLink from "@/components/FeedbackSourceLink";
+import TicketEventNote from "@/components/TicketEventNote";
 import "../../../Ops/RichText.css";
 
 type SegmentTicketDetailDrawerProps = {
@@ -60,6 +62,7 @@ export default function SegmentTicketDetailDrawer({ open, ticket, events, loadin
 				</div>
 			) : ticket ? (
 				<>
+					<FeedbackSourceLink ticketId={ticket.id} />
 					<Space size={8} wrap style={{ marginBottom: 14 }}>
 						<Person avatar={ticket.requesterAvatar} name={ticket.requesterName} />
 						<ArrowRightOutlined style={{ color: "#94a3b8", fontSize: 12 }} />
@@ -127,7 +130,7 @@ export default function SegmentTicketDetailDrawer({ open, ticket, events, loadin
 										) : e.toStatus ? (
 											<span style={{ color: "#64748b" }}>,状态「{e.toStatus}」</span>
 										) : null}
-										{e.note ? <div style={{ color: "#475569" }}>备注:{e.note}</div> : null}
+										<TicketEventNote note={e.note} />
 										<div style={{ color: "#94a3b8", fontSize: 12 }}>{fmtDateTime(e.createdAt)}</div>
 									</div>
 								),

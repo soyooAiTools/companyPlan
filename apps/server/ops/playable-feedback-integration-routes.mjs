@@ -6,6 +6,7 @@ import { loadSegments, prepareTicketCreate } from "./ops-routes.mjs";
 import { nowIso } from "./ops-helpers.mjs";
 import * as notif from "./services/ops-notifications.mjs";
 import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
+import { buildPlayableFeedbackSourceUrl } from "./playable-feedback-source.mjs";
 
 const SOURCE_SYSTEM = "playable-feedback";
 const PRIORITIES = new Set(["紧急", "优先", "普通", "低优先"]);
@@ -233,7 +234,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
           projectVersionId,
           projectVersionCode: clip(body.projectVersionCode, 40),
           projectVersionName: clip(body.projectVersionName, 160),
-          hyperlink: source.url,
+          hyperlink: buildPlayableFeedbackSourceUrl(source.url, source.reviewId, item.sourceAssignmentId),
         },
       });
       if (result.soyooError) return response.status(result.soyooError?.status || 502).json({ error: result.soyooError?.soyooError || "校验负责人失败" });
@@ -254,7 +255,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
               action: "反馈指派建单",
               from_status: null,
               to_status: "排队中",
-              note: `来源反馈 ${source.reviewId}/${source.feedbackId}`.slice(0, 500),
+              note: "由反馈中心指派，点击查看反馈原图与讨论可返回对应评审版本。",
               created_at: nowIso(),
             },
           });
@@ -266,7 +267,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
             source_feedback_id: source.feedbackId,
             ticket_id: ticket.id,
             payload_sha256: entry.hash,
-            source_url: source.url || null,
+            source_url: buildPlayableFeedbackSourceUrl(source.url, source.reviewId, entry.item.sourceAssignmentId) || null,
             created_at: nowIso(),
           });
           rows.push(ticket);

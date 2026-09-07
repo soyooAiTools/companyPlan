@@ -1,5 +1,6 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
+import { registerPlayableFeedbackSourceRoute } from "./playable-feedback-source.mjs";
 import { addBusinessHours, remainingBusinessHours } from "./business-hours.mjs";
 import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "../utils/rich-html.mjs";
 import { prisma } from "./prisma.mjs";
@@ -824,6 +825,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       events: events.map((e) => ({ id: e.id, actorName: e.actor_name ?? "", action: e.action, fromStatus: e.from_status ?? "", toStatus: e.to_status ?? "", note: e.note ?? "", createdAt: e.created_at })),
     });
   });
+
+  registerPlayableFeedbackSourceRoute(app, { requireAuth, database: prisma, getAccess: buildTicketCollaborationAccess, canView: canViewTicket });
 
   // 富文本正文(按需:点详情/查看/编辑时才拉,列表不返,避免列表带大字段)
   app.get("/api/ops/tickets/:id/content", requireAuth, async (req, res) => {

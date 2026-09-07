@@ -152,6 +152,13 @@ Ops 当前不提供需求提单记录。现有 companyPlan 提单仍存储在 `t
 
 ## 反馈系统指派建单
 
+### 评审深链与历史反馈（2026-09-07）
+
+- `GET /api/ops/tickets/:id/feedback-source`：登录后先按现有工单/协作可见范围校验，再读取来源映射；返回精确的评审版本和 person-level assignment 深链。
+- 新工单 `hyperlink` 与来源映射的 `source_url` 均指向 `#/feedback/:reviewId?assignmentId=…`。旧映射在读取时转换，不重写历史工单或审计记录。
+- 工单详情（需求表、项目环节、人员进度）统一显示“查看反馈原图与讨论”按钮。历史流转记录中的内部来源 ID 改为易读提示，数据库原始审计保留。
+- 历史追加形成新一轮反馈：Helper 保留原文并重新标记待修改；新建工单包含原反馈和后续要求，旧工单快照不被覆盖。
+
 试玩反馈后端使用服务签名调用 `/api/internal/playable-feedback`，浏览器不会直接持有共享密钥。
 
 | 接口 | 用途 |
