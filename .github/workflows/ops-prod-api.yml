@@ -34,9 +34,12 @@ jobs:
             set -e
             source ~/.bashrc 2>/dev/null || true
             source ~/.profile 2>/dev/null || true
-            cd ${{ secrets.DEPLOY_PATH }}
-            GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
-            ls -la
-            ls -la deploy
-            bash deploy/inject-playable-feedback-secret.sh
-            bash deploy/deploy.sh
+            flock -w 300 /tmp/soyoo-deploy.lock bash -lc '
+              set -e
+              cd "${{ secrets.DEPLOY_PATH }}"
+              GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
+              ls -la
+              ls -la deploy
+              bash deploy/inject-playable-feedback-secret.sh
+              bash deploy/deploy.sh
+            '
