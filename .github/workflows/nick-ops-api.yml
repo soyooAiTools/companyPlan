@@ -1,0 +1,33 @@
+name: nick-ops-api
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: nick-ops-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy OPS API
+        uses: appleboy/ssh-action@v1
+        env:
+          COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET: ${{ secrets.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET }}
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          port: ${{ secrets.SSH_PORT || '22' }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
+          script: |
+            set -e
+            source ~/.bashrc 2>/dev/null || true
+            source ~/.profile 2>/dev/null || true
+            cd ${{ secrets.DEPLOY_PATH }}
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
+            ls -la
+            ls -la deploy
+            bash deploy/inject-playable-feedback-secret.sh
+            bash deploy/deploy.sh
