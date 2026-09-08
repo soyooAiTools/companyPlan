@@ -80,9 +80,10 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 	const [statusFilter, setStatusFilter] = useState<string[]>(ARCHIVE_STATUSES);
 	const [startedDateRange, setStartedDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 	const [endedDateRange, setEndedDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+	const [settledDateRange, setSettledDateRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
 	const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
-	const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy>();
-	const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder>();
+	const [sortBy, setSortBy] = useState<OpsProjectPoolSortBy | undefined>("settledAt");
+	const [sortOrder, setSortOrder] = useState<OpsProjectPoolSortOrder | undefined>("desc");
 	const [versionModalOpen, setVersionModalOpen] = useState(false);
 	const [versionModalTitle, setVersionModalTitle] = useState("");
 	const [versionRows, setVersionRows] = useState<OpsProjectVersion[]>([]);
@@ -93,6 +94,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 		try {
 			const [startedFrom, startedTo] = startedDateRange || [];
 			const [endedFrom, endedTo] = endedDateRange || [];
+			const [settledFrom, settledTo] = settledDateRange || [];
 			const result = await opsApi.projectPoolArchive({
 				page,
 				pageSize,
@@ -101,6 +103,8 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				startedTo: startedTo ? startedTo.format("YYYY-MM-DD") : undefined,
 				endedFrom: endedFrom ? endedFrom.format("YYYY-MM-DD") : undefined,
 				endedTo: endedTo ? endedTo.format("YYYY-MM-DD") : undefined,
+				settledFrom: settledFrom ? settledFrom.format("YYYY-MM-DD") : undefined,
+				settledTo: settledTo ? settledTo.format("YYYY-MM-DD") : undefined,
 				advancedFilter: stringifyAdvancedFilter(advancedFilter),
 				sortBy,
 				sortOrder,
@@ -112,7 +116,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 		} finally {
 			setLoading(false);
 		}
-	}, [advancedFilter, endedDateRange, message, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
+	}, [advancedFilter, endedDateRange, message, page, pageSize, settledDateRange, sortBy, sortOrder, startedDateRange, statusFilter]);
 
 	const advancedFilterFields = useMemo(
 		() => [
@@ -229,7 +233,31 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				},
 			},
 			{
-				title: "项目启动时间",
+				title: "结算点击人",
+				key: "settledByName",
+				width: 120,
+				render: (_: unknown, row) => row.settledByName || "—",
+			},
+			{
+				title: "结算时间",
+				key: "settledAt",
+				width: 160,
+				sorter: true,
+				sortDirections: ["descend", "ascend", "descend"],
+				sortOrder: sortBy === "settledAt" ? (sortOrder === "asc" ? "ascend" : "descend") : null,
+				filterDropdown: ({ close }) => (
+					<DateRangeFilterDropdown
+						value={settledDateRange}
+						placeholder={["结算开始时间", "结算结束时间"]}
+						onApply={(value) => { setSettledDateRange(value); setPage(1); }}
+						close={close}
+					/>
+				),
+				filterIcon: () => <FilterFilled style={{ color: settledDateRange?.some(Boolean) ? "#dc2626" : undefined }} />,
+				render: (_: unknown, row) => formatProjectDateTime(row.settledAt),
+			},
+			{
+				title: "项目立项时间",
 				key: "startedAt",
 				width: 130,
 				sorter: true,
@@ -237,7 +265,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				filterDropdown: ({ close }) => (
 					<DateRangeFilterDropdown
 						value={startedDateRange}
-						placeholder={["项目启动时间", ""]}
+						placeholder={["项目立项时间", ""]}
 						onApply={(value) => { setStartedDateRange(value); setPage(1); }}
 						close={close}
 					/>
@@ -246,7 +274,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				render: (_: unknown, row) => formatProjectDate(row.startedAt),
 			},
 			{
-				title: "项目结束时间",
+				title: "预计项目完成时间",
 				key: "duration",
 				width: 130,
 				sorter: true,
@@ -254,7 +282,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				filterDropdown: ({ close }) => (
 					<DateRangeFilterDropdown
 						value={endedDateRange}
-						placeholder={["项目结束时间", ""]}
+						placeholder={["预计项目完成时间", ""]}
 						onApply={(value) => { setEndedDateRange(value); setPage(1); }}
 						close={close}
 					/>
@@ -263,7 +291,7 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 				render: (_: unknown, row) => formatProjectDate(row.endedAt),
 			},
 		];
-	}, [activeAdvancedCount, advancedFilter, advancedFilterFields, endedDateRange, openVersionModal, page, pageSize, sortBy, sortOrder, startedDateRange, statusFilter]);
+	}, [activeAdvancedCount, advancedFilter, advancedFilterFields, endedDateRange, openVersionModal, page, pageSize, settledDateRange, sortBy, sortOrder, startedDateRange, statusFilter]);
 
 	return (
 		<div style={{ height: "100%", display: "flex", flexDirection: "column", background: "#fff" }}>
@@ -281,8 +309,8 @@ export default function ArchiveProjectSheet({ scrollY, onOpenLogs }: ArchiveProj
 						setPageSize(nextPageSize);
 					}}
 					onSortChange={(nextSortBy, nextSortOrder) => {
-						setSortBy(nextSortBy);
-						setSortOrder(nextSortOrder);
+						setSortBy(nextSortBy || "settledAt");
+						setSortOrder(nextSortOrder || "desc");
 						setPage(1);
 					}}
 					onOpenLogs={onOpenLogs}

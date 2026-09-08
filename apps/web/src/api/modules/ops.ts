@@ -240,6 +240,9 @@ export interface OpsProjectPoolRow {
 	hasVersionChildren?: boolean;
 	versionCount?: number;
 	projectLifecycleStatus?: string;
+	settledByUserId?: string;
+	settledByName?: string;
+	settledAt?: string | null;
 	sortOrder?: number;
 	children?: OpsProjectPoolRow[];
 	name: string;
@@ -281,7 +284,7 @@ export interface OpsProjectPoolRow {
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
 }
-export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd";
+export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd" | "settledAt";
 export type OpsProjectPoolSortOrder = "asc" | "desc";
 export type ProjectRemarkField = "remark" | "remark2" | "remark3" | "remark4" | "remark5" | "remark6";
 type OpsProjectPoolListParams = {
@@ -305,6 +308,8 @@ type OpsArchivedProjectPoolListParams = Pick<OpsProjectPoolListParams, "page" | 
 	startedTo?: string;
 	endedFrom?: string;
 	endedTo?: string;
+	settledFrom?: string;
+	settledTo?: string;
 	advancedFilter?: string;
 };
 export interface OpsProjectStageDeadline {
@@ -668,9 +673,12 @@ export const opsApi = {
 		if (params.startedTo) qs.set("started_to", params.startedTo);
 		if (params.endedFrom) qs.set("ended_from", params.endedFrom);
 		if (params.endedTo) qs.set("ended_to", params.endedTo);
+		if (params.settledFrom) qs.set("settled_from", params.settledFrom);
+		if (params.settledTo) qs.set("settled_to", params.settledTo);
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.sortBy === "projectStart") qs.set("sort_by", "started_at");
 		if (params.sortBy === "projectEnd") qs.set("sort_by", "ended_at");
+		if (params.sortBy === "settledAt") qs.set("sort_by", "settled_at");
 		if (params.sortOrder) qs.set("sort_order", params.sortOrder);
 		const s = qs.toString();
 		return requestJson<{ rows: OpsProjectPoolRow[]; total: number; page: number; pageSize: number }>(`/api/ops/project-pool/archive${s ? `?${s}` : ""}`);

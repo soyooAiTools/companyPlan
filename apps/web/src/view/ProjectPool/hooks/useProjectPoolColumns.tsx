@@ -769,12 +769,12 @@ export function useProjectPoolColumns(
 		{
 			title: "回收状态",
 			key: "recycleStatus",
-			width: 170,
+			width: 225,
 			render: (_: unknown, row) => {
 				if (row.status !== "回收中") return null;
 				const status = row.recycleStatus || {};
 				return (
-					<Space size={4} wrap>
+					<Space size={4} wrap={false} style={{ whiteSpace: "nowrap" }}>
 						<RecycleTag label="项目源码" state={status.source} />
 						<RecycleTag label="项目渠道" state={status.channel} />
 						<RecycleTag label="资产文件" state={status.asset} onClick={options.readonly ? undefined : () => actions.changeAssetRecycle?.(row)} />

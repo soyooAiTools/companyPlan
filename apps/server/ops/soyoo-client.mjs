@@ -147,6 +147,8 @@ export const soyooClient = {
     if (opts.startedTo) q.set("started_to", String(opts.startedTo));
     if (opts.endedFrom) q.set("ended_from", String(opts.endedFrom));
     if (opts.endedTo) q.set("ended_to", String(opts.endedTo));
+    if (opts.settledFrom) q.set("settled_from", String(opts.settledFrom));
+    if (opts.settledTo) q.set("settled_to", String(opts.settledTo));
     return callRaw(`/integration/projects?${q.toString()}`, { timeoutMs: PROJECT_LIST_TIMEOUT });
   },
   setProjectStatus: (projectId, status, options = {}) =>

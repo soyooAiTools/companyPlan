@@ -226,14 +226,16 @@ export default function ChangeProjectFieldModal({
         {field === "status" && value === settlementDoneStatus ? (
           <AttentionNotice tone="success">
             {isMultiVersionSettlement
-              ? "注意：这是多版本项目的项目级结算完成操作，确认后整个项目会同步为结算完成，并从 OPS 项目池隐藏。请确认该项目所有版本均已回收。"
+              ? "注意：当前操作只会将这个版本改为结算完成；所有版本都结算完成后，项目才会自动结项并从项目池隐藏。"
               : "注意：这是结算完成操作，确认后项目会同步为结算完成，并从 OPS 项目池隐藏。"}
           </AttentionNotice>
         ) : null}
-        <div>
-          <div style={{ marginBottom: 6, color: "#64748b" }}>备注(可选,可附图):</div>
-          <RichTextEditor value={comment} onChange={onCommentChange} projectId={target?.id} />
-        </div>
+        {field !== "status" || value !== settlementDoneStatus ? (
+          <div>
+            <div style={{ marginBottom: 6, color: "#64748b" }}>备注(可选,可附图):</div>
+            <RichTextEditor value={comment} onChange={onCommentChange} projectId={target?.id} />
+          </div>
+        ) : null}
       </Space>
     </Modal>
   );

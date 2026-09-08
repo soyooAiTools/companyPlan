@@ -160,7 +160,8 @@ function applyProjectPoolColumnWidths(columns: ColumnsType<OpsProjectPoolRow>, w
 	return columns.map((column) => {
 		const key = projectPoolColumnKey(column);
 		const width = key ? widths[key] : undefined;
-		return width ? { ...column, width } : column;
+		if (!width) return column;
+		return { ...column, width: key === "recycleStatus" ? Math.max(225, width) : width };
 	});
 }
 

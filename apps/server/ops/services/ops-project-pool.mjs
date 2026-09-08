@@ -403,6 +403,9 @@ function archiveProjectRow(project) {
     tenantName: project.tenant_name ?? "",
     status: project.project_lifecycle_status || project.lifecycle_status || project.status || "",
     versionCount: Number(project.version_count || 0),
+    settledByUserId: project.settled_by_user_id == null ? undefined : String(project.settled_by_user_id),
+    settledByName: project.settled_by_name ?? "",
+    settledAt: project.settled_at ?? null,
     plannerName: project.planner_name ?? "",
     planners: Array.isArray(project.planners)
       ? project.planners.map((planner) => ({ name: planner?.name ?? "", avatar: planner?.avatar ?? "" })).filter((planner) => planner.name)
@@ -472,6 +475,8 @@ export async function listArchivedProjectPool({
   startedTo = "",
   endedFrom = "",
   endedTo = "",
+  settledFrom = "",
+  settledTo = "",
 }) {
   const effectiveStatus = status || ARCHIVE_PROJECT_STATUSES.join(",");
   const effectiveDateField = dateField === "ended_at" ? "ended_at" : "started_at";
@@ -488,13 +493,15 @@ export async function listArchivedProjectPool({
       dateField: effectiveDateField,
       from,
       to,
-      sortBy: sortBy === "ended_at" ? "ended_at" : sortBy === "started_at" ? "started_at" : effectiveDateField,
+      sortBy: sortBy === "ended_at" ? "ended_at" : sortBy === "started_at" ? "started_at" : "settled_at",
       sortOrder: sortOrder === "asc" ? "asc" : "desc",
       advancedFilter,
       startedFrom,
       startedTo,
       endedFrom,
       endedTo,
+      settledFrom,
+      settledTo,
       light: true,
     });
     const pageRows = (Array.isArray(result?.data) ? result.data : []).map(archiveProjectRow);
@@ -939,7 +946,21 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   if (status === settlementDoneStatus) {
     if (!isAdmin(user)) return { error: "仅管理员可结算完成项目", code: 403 };
     const helperResult = await soyooClient.setProjectStatus(projectId, settlementDoneStatus, { operator_id: Number(meId(user)) || undefined });
-    await assertSettlementVersionSyncedToSoyoo({ projectId, baseProjectId, settlementDoneStatus, helperResult });
+    const latestProject = await assertSettlementVersionSyncedToSoyoo({ projectId, baseProjectId, settlementDoneStatus, helperResult });
+    const helperData = helperResult?.data || {};
+    const targetVersionId = soyooVersionId(projectId) || String(helperData.version_id || "");
+    const projectVersions = Array.isArray(latestProject?.versions) ? latestProject.versions : [];
+    const targetVersion = projectVersions.find((version) => String(version?.id || "") === targetVersionId);
+    const versionCode = String(targetVersion?.code || project.versionCode || "v1").trim();
+    const versionName = String(targetVersion?.name || project.versionName || "默认版本").trim();
+    const projectName = String(latestProject?.name || project.name || "").trim();
+    const isMultiVersionProject = projectVersions.length > 1;
+    const settlementComment = isMultiVersionProject
+      ? `<p>${escapeHtml([versionCode, versionName].filter(Boolean).join(" · "))} ${escapeHtml(settlementDoneStatus)}</p>`
+      : `<p>【${escapeHtml(projectName)}】${escapeHtml(settlementDoneStatus)}</p>`;
+    const projectJustSettled =
+      String(helperData.lifecycle_status || helperData.project_lifecycle_status || "").trim() === settlementDoneStatus ||
+      String(helperData.project_status || "").trim() === settlementDoneStatus;
     await prisma.ops_project_status_logs.create({
       data: {
         project_id: String(projectId),
@@ -949,10 +970,25 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
         to_status: settlementDoneStatus,
         actor_id: meId(user),
         actor_name: user?.name || user?.username || "",
-        comment_html: commentHtml && !isBlankRich(commentHtml) ? sanitizeRichHtml(commentHtml) : "<p>当前版本状态同步为结算完成；项目会在所有版本结算完成后自动结算完成。</p>",
+        comment_html: settlementComment,
         created_at: nowIso(),
       },
     });
+    if (isMultiVersionProject && projectJustSettled) {
+      await prisma.ops_project_status_logs.create({
+        data: {
+          project_id: String(baseProjectId),
+          project_name: projectName,
+          kind: "status",
+          from_status: null,
+          to_status: settlementDoneStatus,
+          actor_id: meId(user),
+          actor_name: user?.name || user?.username || "",
+          comment_html: `<p style="color:#dc2626;font-weight:700">【${escapeHtml(projectName)}】已结项</p>`,
+          created_at: nowIso(),
+        },
+      });
+    }
     await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
       logger.warn("project-pool snapshot refresh failed after settlement done", { projectId: baseProjectId, error });
     });
