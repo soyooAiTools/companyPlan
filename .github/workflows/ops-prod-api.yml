@@ -22,14 +22,11 @@ jobs:
     steps:
       - name: Deploy OPS API
         uses: appleboy/ssh-action@v1
-        env:
-          COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET: ${{ secrets.COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           port: ${{ secrets.SSH_PORT || '22' }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          envs: COMPANYPLAN_PLAYABLE_FEEDBACK_SHARED_SECRET
           script: |
             set -e
             source ~/.bashrc 2>/dev/null || true
@@ -37,9 +34,9 @@ jobs:
             flock -w 300 /tmp/soyoo-deploy.lock bash -lc '
               set -e
               cd "${{ secrets.DEPLOY_PATH }}"
+              pwd
               GIT_SSH_COMMAND="ssh -i ~/.ssh/soyoo-ops" git pull --ff-only
               ls -la
               ls -la deploy
-              bash deploy/inject-playable-feedback-secret.sh
               bash deploy/deploy.sh
             '
