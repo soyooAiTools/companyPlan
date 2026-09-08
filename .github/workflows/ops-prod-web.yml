@@ -34,6 +34,8 @@ jobs:
 
       - name: Build (production)
         run: pnpm build
+        env:
+          VITE_SVN_INTERNAL_BASE_URL: svn://10.10.2.158:3690
 
       - name: Deploy to OSS
         run: node scripts/deploy-oss.mjs

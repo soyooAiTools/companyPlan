@@ -1,12 +1,13 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import { Button, Avatar, Dropdown, Input, Popover, Space, Tag, Tooltip, Typography } from "antd";
+import { Button, Avatar, Divider, Dropdown, Input, Popover, Space, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import type { SortOrder } from "antd/es/table/interface";
-import { DownOutlined, EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
+import { CopyOutlined, DownOutlined, EditOutlined, FileTextOutlined, FilterFilled, QuestionCircleOutlined, ThunderboltFilled } from "@ant-design/icons";
 import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsRecycleState, OpsSegment, ProjectRemarkField } from "@/api/modules/ops";
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
+import { copyText } from "@/utils/copyText";
 import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, nextStageDeadline, projectStartDate, stageRangeLabel } from "../deadlineUtils";
@@ -106,6 +107,66 @@ function RecycleTag({
 		>
 			{label}
 		</Tag>
+	);
+}
+
+const svnInternalBaseUrl = String(import.meta.env.VITE_SVN_INTERNAL_BASE_URL || "").replace(/\/+$/, "");
+
+function SvnCopyButton({ projectName, externalUrl, repoName }: { projectName: string; externalUrl: string; repoName?: string }) {
+	const [copied, setCopied] = useState<"online" | "offline" | "">("");
+	const internalUrl = svnInternalBaseUrl && repoName ? `${svnInternalBaseUrl}/${String(repoName).replace(/^\/+/, "")}` : "";
+	const copyAddress = (type: "online" | "offline", value: string) => {
+		void copyText(value).then(() => {
+			setCopied(type);
+			window.setTimeout(() => setCopied((current) => (current === type ? "" : current)), 1200);
+		});
+	};
+	const addressRow = (label: string, type: "online" | "offline", value: string) => (
+		<div style={{ display: "grid", gridTemplateColumns: "38px minmax(0, 1fr) 28px", alignItems: "center", gap: 8, minWidth: 360 }}>
+			<span style={{ color: "#0f172a", fontSize: 12, fontWeight: 600 }}>{label}</span>
+			<Typography.Text ellipsis style={{ minWidth: 0, maxWidth: 280, fontSize: 12, fontWeight: 500, color: value ? "#0f172a" : "#94a3b8" }}>
+				{value || "暂无地址"}
+			</Typography.Text>
+			<Button
+				type="text"
+				size="small"
+				icon={<CopyOutlined style={{ color: value ? "#1677ff" : "#cbd5e1" }} />}
+				disabled={!value}
+				aria-label={`复制${label}地址`}
+				onClick={() => copyAddress(type, value)}
+			/>
+		</div>
+	);
+	return (
+		<Popover
+			trigger="click"
+			placement="bottomRight"
+			content={
+				<div onClick={(event) => event.stopPropagation()}>
+					<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, minWidth: 360, marginBottom: 10 }}>
+						<Typography.Text style={{ minWidth: 0, maxWidth: 280, color: "#cf1322", fontSize: 13, fontWeight: 600 }} ellipsis>
+							{projectName}
+						</Typography.Text>
+						<span style={{ minWidth: 52, textAlign: "right", color: "#16a34a", fontSize: 12, visibility: copied ? "visible" : "hidden" }}>复制成功</span>
+					</div>
+					<Space direction="vertical" size={8} split={<Divider dashed style={{ margin: 0, borderColor: "#cbd5e1" }} />}>
+						{addressRow("线上：", "online", externalUrl)}
+						{addressRow("线下：", "offline", internalUrl)}
+					</Space>
+				</div>
+			}>
+			<Button
+				type="link"
+				size="small"
+				icon={<CopyOutlined />}
+				aria-label="查看 SVN 地址"
+				style={{ padding: "0 2px", width: 48, height: 20, flexShrink: 0, color: "#1677ff", fontSize: 12, fontWeight: 500 }}
+				onClick={(event) => {
+					event.stopPropagation();
+				}}>
+				SVN
+			</Button>
+		</Popover>
 	);
 }
 
@@ -482,10 +543,12 @@ export function useProjectPoolColumns(
 				const isParent = !!row.hasVersionChildren;
 				const isVersion = !!row.isVersionRow;
 				const canCreateTicket = !options.readonly && actions.openCreateTicket && !isParent;
+				const svnCopyValue = String(row.svnUrl || row.svnRepoName || "").trim();
+				const showActions = !isParent && (!!svnCopyValue || !!canCreateTicket);
 				const versionText = [row.versionCode, row.versionName].filter(Boolean).join(" · ") || "版本";
 				const showUrgentMark = row.isUrgent && !isParent;
 				return (
-					<div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, width: "100%", maxWidth: 330, minWidth: 0, height: "100%" }}>
+					<div style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, width: "100%", minWidth: 0, height: "100%" }}>
 						{showUrgentMark ? urgentCornerMark : null}
 						<span
 							style={{ width: 24, flexShrink: 0, textAlign: "right", color: isVersion ? "#94a3b8" : "#2563eb", fontSize: 12, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
@@ -516,17 +579,22 @@ export function useProjectPoolColumns(
 								</>
 							)}
 						</div>
-						{canCreateTicket ? (
-							<Button
-								type="link"
-								size="small"
-								style={{ padding: "0 2px", height: 20, flexShrink: 0, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
-								onClick={(e) => {
-									e.stopPropagation();
-									actions.openCreateTicket?.(row);
-								}}>
-								+ 提单
-							</Button>
+						{showActions ? (
+							<div style={{ display: "grid", gridTemplateColumns: "48px 48px", alignItems: "center", gap: 4, width: 100, flexShrink: 0 }}>
+								{svnCopyValue ? <SvnCopyButton projectName={row.name || "未命名项目"} externalUrl={String(row.svnUrl || "").trim()} repoName={row.svnRepoName} /> : <span />}
+								{canCreateTicket ? (
+									<Button
+										type="link"
+										size="small"
+										style={{ padding: "0 2px", width: 48, height: 20, color: "#0f766e", fontSize: 12, fontWeight: 500 }}
+										onClick={(e) => {
+											e.stopPropagation();
+											actions.openCreateTicket?.(row);
+										}}>
+										+ 提单
+									</Button>
+								) : null}
+							</div>
 						) : null}
 					</div>
 				);

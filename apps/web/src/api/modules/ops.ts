@@ -247,6 +247,8 @@ export interface OpsProjectPoolRow {
 	tenantName: string; // 客户名(= soyoo tenant_name)
 	customerContact?: string; // 客户侧具体对接人,对应飞书「客户」列
 	requirementDoc?: string; // 客户需求文档链接,对应飞书「需求文档」列
+	svnRepoName?: string; // 当前版本 SVN 仓库名
+	svnUrl?: string; // 当前版本 SVN 地址
 	status: string;
 	recycleStatus?: OpsProjectRecycleStatus;
 	stage: string; // 制作阶段(ops 自有:资产确认/场景单帧版本/可交互初版/功能完整版/最终交付版)
