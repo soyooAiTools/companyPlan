@@ -205,6 +205,25 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       dueInHours: item.dueInHours == null || item.dueInHours === "" ? undefined : Number(item.dueInHours),
     }));
 
+    if (normalized.some((item) => !Number.isInteger(item.segmentId) || item.segmentId <= 0)) {
+      try {
+        const segments = await loadTicketSegments();
+        const options = await getResponsiblesForProject(versionProjectRef(projectId, projectVersionId), segments);
+        const memberById = new Map((options.members || []).map((member) => [String(member.id), member]));
+        for (const item of normalized) {
+          if (Number.isInteger(item.segmentId) && item.segmentId > 0) continue;
+          const member = memberById.get(item.ownerId);
+          const segmentId = Number(member?.segmentIds?.[0]);
+          if (!Number.isInteger(segmentId) || segmentId <= 0) {
+            return response.status(400).json({ error: `负责人 ${item.ownerId} 未匹配到 OPS 制作环节` });
+          }
+          item.segmentId = segmentId;
+        }
+      } catch (error) {
+        return response.status(error?.status || 502).json({ error: error?.soyooError || error?.message || "自动匹配制作环节失败" });
+      }
+    }
+
     const assignmentIds = normalized.map((item) => item.sourceAssignmentId);
     let existing;
     try {

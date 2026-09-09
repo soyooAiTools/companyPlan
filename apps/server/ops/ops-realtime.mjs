@@ -178,8 +178,8 @@ export async function getResponsibles(projectId, segments) {
   return { segments: segList, members: allMembers };
 }
 
-// Feedback assignment selects a project member and an explicit task segment.
-// Tags recommend defaults only; they do not grant or change account roles.
+// Feedback assignment selects project members. Their OPS segments are derived
+// from project tags, and callers may use the first match as the default segment.
 export async function getFeedbackResponsibles(projectId, segments) {
   const { members } = await getProjectWithMembers(projectId);
   const active = members.filter((member) => member.status !== "disabled");

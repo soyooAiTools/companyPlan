@@ -92,7 +92,10 @@ function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
 async function startIntegrationServer({ staleSourceLinkClient = false, realMemberPolicy = false } = {}) {
   const secret = "route-e2e-shared-secret";
   const database = createFakeDatabase({ staleSourceLinkClient });
-  database.ops_segments = { findUnique: async ({ where }) => where.id === 2 ? { id: 2, name: "程序", default_delivery_hours: 24, risk_warning_hours: 4 } : null };
+  database.ops_segments = { findUnique: async ({ where }) => ({
+    2: { id: 2, name: "程序", default_delivery_hours: 24, risk_warning_hours: 4 },
+    3: { id: 3, name: "动画", default_delivery_hours: 16, risk_warning_hours: 3 },
+  })[where.id] || null };
   database.ops_segment_tags = { findMany: async () => [{ tag_id: 12 }] };
   const notifications = [];
   const responsibleCalls = [];
@@ -112,13 +115,19 @@ async function startIntegrationServer({ staleSourceLinkClient = false, realMembe
     }),
     dependencies: {
       prisma: database,
-      loadSegments: async () => [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, tags: [{ id: "programmer", name: "程序" }] }],
+      loadSegments: async () => [
+        { id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, tags: [{ id: "programmer", name: "程序" }] },
+        { id: 3, name: "动画", defaultDeliveryHours: 16, riskWarningHours: 3, tags: [{ id: "animator", name: "动画" }] },
+      ],
       getResponsibles: async (projectRef) => {
         responsibleCalls.push(projectRef);
         if (realMemberPolicy) return getFeedbackResponsibles(projectRef, [{ id: 2, name: "程序", tags: [{ id: "12", name: "程序" }] }]);
         return {
           segments: [{ id: 2, name: "程序", defaultDeliveryHours: 24, riskWarningHours: 4, members: [{ id: "8", name: "开发李四", wechatAvatar: "avatar.png" }] }],
-          members: [{ id: "8", name: "开发李四", segmentIds: [2] }],
+          members: [
+            { id: "8", name: "开发李四", segmentIds: [2, 3] },
+            { id: "9", name: "动画王五", segmentIds: [3, 2] },
+          ],
         };
       },
       getUser: async () => ({ id: "7", username: "producer", name: "制片张三", status: "active", isAdmin: false, tags: [{ name: "制片" }] }),
@@ -235,8 +244,8 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
     projectVersionId: "20",
     source: { batchId: "batch-1", reviewId: "review-1", feedbackId: "feedback-1", url: "https://preview.example/review-1" },
     tickets: [
-      { sourceAssignmentId: "assignment-1", ownerId: "8", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
-      { sourceAssignmentId: "assignment-2", ownerId: "9", segmentId: 2, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
+      { sourceAssignmentId: "assignment-1", ownerId: "8", segmentId: 0, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
+      { sourceAssignmentId: "assignment-2", ownerId: "9", segmentId: 0, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
     ],
   };
   const createResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
@@ -248,6 +257,8 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
   assert.equal(runtime.database.state.ticketEvents.length, 2);
   assert.deepEqual(runtime.notifications, ["ticket-1", "ticket-2"]);
   assert.deepEqual(runtime.preparedTicketBodies.map((body) => body.dueInHours), [18, 18]);
+  assert.deepEqual(runtime.preparedTicketBodies.map((body) => body.segmentId), [2, 3]);
+  assert.deepEqual(runtime.responsibleCalls, ["10::version-20", "10::version-20"]);
 
   const replayResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", { method: "POST", body: payload });
   assert.equal(replayResponse.status, 200);
@@ -257,7 +268,7 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
 
   const conflictingPayload = {
     ...payload,
-    tickets: payload.tickets.map((ticket, index) => index === 0 ? { ...ticket, ownerId: "10" } : ticket),
+    tickets: payload.tickets.map((ticket, index) => index === 0 ? { ...ticket, summary: "幂等内容发生变化" } : ticket),
   };
   const conflictResponse = await signedRequest(runtime, "/api/internal/playable-feedback/tickets/batch", {
     method: "POST",

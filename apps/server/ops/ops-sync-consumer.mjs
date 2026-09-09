@@ -4,6 +4,7 @@ import { prisma } from "./prisma.mjs";
 import { soyooClient } from "./soyoo-client.mjs";
 import { getProjectWithMembers, getUser } from "./ops-realtime.mjs";
 import { autoCreateProgramFirstTicket, refreshProjectPoolSnapshot, refreshProjectPoolSnapshotsByMember } from "./services/ops-project-pool.mjs";
+import { consumePlayableFeedbackBatch } from "./services/playable-feedback-outbox.mjs";
 
 async function getLastSeq() {
   const row = await prisma.ops_sync_state.findUnique({ where: { k: "last_seq" } });
@@ -25,6 +26,11 @@ function userIdCandidates(userId) {
 function programFirstTicketRequest(action) {
   const match = String(action || "").match(/^program_first_ticket:(\d+)(?::(\d+))?$/);
   return match ? { ownerId: match[1], versionId: match[2] || "" } : null;
+}
+
+function playableFeedbackRequest(action) {
+  const match = String(action || "").match(/^playable_feedback:(assign_batch_[a-f0-9]+)$/);
+  return match ? { batchId: match[1] } : null;
 }
 
 // 用户改名/换头像/管理员/禁用状态 → 同步本地身份 + 刷该用户在所有工单里的 owner/requester 快照
@@ -80,6 +86,13 @@ async function refreshProject(projectId) {
 
 async function handleProjectChange(ch, logger) {
   const projectId = String(ch.entity_id);
+  const feedbackRequest = playableFeedbackRequest(ch.action);
+  if (feedbackRequest) {
+    const payload = await soyooClient.playableFeedbackBatch(feedbackRequest.batchId);
+    const result = await consumePlayableFeedbackBatch(payload);
+    logger?.info?.("[ops-outbox] create playable feedback tickets", { projectId, batchId: feedbackRequest.batchId, ...result });
+    return;
+  }
   const programRequest = programFirstTicketRequest(ch.action);
   if (programRequest) {
     const projectRef = programRequest.versionId ? `${projectId}::version-${programRequest.versionId}` : projectId;
@@ -124,6 +137,7 @@ async function poll(logger) {
           else if (ch.entity_type === "tenant") await refreshTenant(String(ch.entity_id));
         } catch (e) {
           logger?.warn?.("[ops-outbox] apply change failed", { seq: ch.seq, type: ch.entity_type, error: e?.message ?? String(e) });
+		  throw e;
         }
         after = Number(ch.seq);
         await setLastSeq(after);
