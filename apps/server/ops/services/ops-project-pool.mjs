@@ -767,10 +767,10 @@ async function autoCreateProjectStatusTicket({ project, members, projectId, titl
   return { created: true, ticketId: created.id };
 }
 
-async function findAutoProgramSegment() {
-  const segment = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
+export async function findAutoProgramSegment(database = prisma) {
+  const segment = await database.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT } });
   if (segment) return segment;
-  const fallback = await prisma.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT_FALLBACK } });
+  const fallback = await database.ops_segments.findFirst({ where: { name: AUTO_PROGRAM_SEGMENT_FALLBACK } });
   if (fallback) logger.warn("[ops-outbox] program first segment fallback", { from: AUTO_PROGRAM_SEGMENT, to: AUTO_PROGRAM_SEGMENT_FALLBACK });
   return fallback;
 }

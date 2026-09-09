@@ -4,7 +4,7 @@ import { getFeedbackResponsibles, getUser } from "../ops-realtime.mjs";
 import { loadSegments, prepareTicketCreate } from "../ops-routes.mjs";
 import { nowIso } from "../ops-helpers.mjs";
 import * as notifications from "./ops-notifications.mjs";
-import { refreshProjectPoolSnapshot } from "./ops-project-pool.mjs";
+import { findAutoProgramSegment, refreshProjectPoolSnapshot } from "./ops-project-pool.mjs";
 import { buildPlayableFeedbackSourceUrl } from "../playable-feedback-source.mjs";
 
 const SOURCE_SYSTEM = "playable-feedback";
@@ -28,6 +28,45 @@ function projectRef(projectId, versionId) {
 	return versionId ? `${projectId}::version-${versionId}` : projectId;
 }
 
+async function findSourceLink(database, assignmentId) {
+	if (database.ops_ticket_source_links?.findFirst) {
+		return database.ops_ticket_source_links.findFirst({
+			where: { source_system: SOURCE_SYSTEM, source_assignment_id: assignmentId },
+		});
+	}
+	if (typeof database.$queryRawUnsafe !== "function") throw new Error("OPS feedback source-link storage is unavailable");
+	const rows = await database.$queryRawUnsafe(
+		`SELECT source_system, source_batch_id, source_assignment_id, source_review_id,
+		        source_feedback_id, ticket_id, payload_sha256, source_url, created_at
+		   FROM ops_ticket_source_links
+		  WHERE source_system = ? AND source_assignment_id = ?
+		  LIMIT 1`,
+		SOURCE_SYSTEM,
+		assignmentId,
+	);
+	return rows[0] || null;
+}
+
+async function createSourceLink(database, data) {
+	if (database.ops_ticket_source_links?.create) return database.ops_ticket_source_links.create({ data });
+	if (typeof database.$executeRawUnsafe !== "function") throw new Error("OPS feedback source-link storage is unavailable");
+	return database.$executeRawUnsafe(
+		`INSERT INTO ops_ticket_source_links (
+		   source_system, source_batch_id, source_assignment_id, source_review_id,
+		   source_feedback_id, ticket_id, payload_sha256, source_url, created_at
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		data.source_system,
+		data.source_batch_id,
+		data.source_assignment_id,
+		data.source_review_id,
+		data.source_feedback_id,
+		data.ticket_id,
+		data.payload_sha256,
+		data.source_url,
+		data.created_at,
+	);
+}
+
 export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 	const database = dependencies.prisma || prisma;
 	const source = payload?.source || {};
@@ -46,7 +85,7 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 	const segments = await loadTicketSegments();
 	const options = await (dependencies.getFeedbackResponsibles || getFeedbackResponsibles)(projectRef(projectId, projectVersionId), segments);
 	const memberById = new Map((options.members || []).map((member) => [String(member.id), member]));
-	const segmentById = new Map((options.segments || []).map((segment) => [Number(segment.id), segment]));
+	const segmentById = new Map((segments || []).map((segment) => [Number(segment.id), segment]));
 	const prepare = dependencies.prepareTicketCreate || prepareTicketCreate;
 	const sourceUrl = buildPlayableFeedbackSourceUrl(source.url, source.reviewId, "");
 
@@ -57,13 +96,15 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 		const member = memberById.get(ownerId);
 		if (!assignmentId || !member) throw new Error("录制反馈负责人不属于当前项目版本");
 		const requestedSegmentId = Number(ticket.segmentId);
-		const segmentId = requestedSegmentId > 0 && segmentById.has(requestedSegmentId) ? requestedSegmentId : Number(member.segmentIds?.[0]);
+		let segmentId = requestedSegmentId > 0 && segmentById.has(requestedSegmentId) ? requestedSegmentId : Number(member.segmentIds?.[0]);
+		if (!Number.isInteger(segmentId) || !segmentById.has(segmentId)) {
+			const programSegment = await (dependencies.findProgramFirstSegment || findAutoProgramSegment)(database);
+			segmentId = Number(programSegment?.id);
+		}
 		if (!Number.isInteger(segmentId) || !segmentById.has(segmentId)) {
 			throw new Error(`负责人 ${member.name || member.username || ownerId} 未匹配到制作环节`);
 		}
-		const link = await database.ops_ticket_source_links.findFirst({
-			where: { source_system: SOURCE_SYSTEM, source_assignment_id: assignmentId },
-		});
+		const link = await findSourceLink(database, assignmentId);
 		const hash = payloadHash({ projectId, projectVersionId, source, ticket: { ...ticket, segmentId } });
 		if (link) {
 			if (link.payload_sha256 !== hash) throw new Error(`反馈指派 ${assignmentId} 的幂等内容不一致`);
@@ -101,12 +142,11 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 					action: "反馈指派建单",
 					from_status: null,
 					to_status: "排队中",
-					note: "由录制反馈发布，点击来源可返回对应历史版本和反馈帧。",
+					note: "",
 					created_at: nowIso(),
 				},
 			});
-			await tx.ops_ticket_source_links.create({
-				data: {
+			await createSourceLink(tx, {
 					source_system: SOURCE_SYSTEM,
 					source_batch_id: String(source.batchId),
 					source_assignment_id: entry.assignmentId,
@@ -116,7 +156,6 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 					payload_sha256: entry.hash,
 					source_url: sourceUrl || null,
 					created_at: nowIso(),
-				},
 			});
 			rows.push(ticket);
 		}

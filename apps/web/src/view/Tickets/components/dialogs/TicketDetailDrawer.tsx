@@ -3,7 +3,7 @@ import { Button, Descriptions, Divider, Drawer, Space, Spin, Tag, Timeline, Typo
 import { EditOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "../../../../api/modules/ops";
 import RichContentView from "../../../../components/RichContentView";
-import FeedbackSourceLink from "../../../../components/FeedbackSourceLink";
+import FeedbackSourceInlineLink from "../../../../components/FeedbackSourceInlineLink";
 import TicketEventNote from "../../../../components/TicketEventNote";
 import { fmtDateTime } from "../../../../utils/format";
 import { remainingView } from "../../ticketUtils";
@@ -30,7 +30,6 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 					</div>
 				) : (
 					<>
-						<FeedbackSourceLink ticketId={detail.id} />
 						<Space style={{ marginBottom: 12 }}>
 							<span>状态:</span>
 							{statusControl(detail, 130)}
@@ -95,6 +94,7 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 							) : (
 								<Typography.Text type="secondary">空</Typography.Text>
 							)}
+							<FeedbackSourceInlineLink ticketId={detail.id} />
 						</div>
 
 						<Divider style={{ margin: "8px 0 16px" }} />

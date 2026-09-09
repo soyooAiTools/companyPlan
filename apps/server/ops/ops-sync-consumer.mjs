@@ -122,6 +122,28 @@ async function refreshTenant(tenantId) {
 }
 
 let running = false;
+
+// A previous OPS version may advance the shared project-change cursor before
+// it knows how to consume playable feedback actions. Replaying a small recent
+// window on startup is safe because ticket creation is idempotent by assignment.
+async function replayRecentPlayableFeedback(logger) {
+  const lastSeq = await getLastSeq();
+  if (!lastSeq) return;
+  const changes = await soyooClient.changes(Math.max(0, lastSeq - 500), 500);
+  for (const change of Array.isArray(changes) ? changes : []) {
+    if (Number(change.seq) > lastSeq || change.entity_type !== "project") continue;
+    const request = playableFeedbackRequest(change.action);
+    if (!request) continue;
+    try {
+      const payload = await soyooClient.playableFeedbackBatch(request.batchId);
+      const result = await consumePlayableFeedbackBatch(payload);
+      logger?.info?.("[ops-outbox] reconcile playable feedback tickets", { batchId: request.batchId, ...result });
+    } catch (error) {
+      logger?.warn?.("[ops-outbox] reconcile playable feedback failed", { batchId: request.batchId, error: error?.message ?? String(error) });
+    }
+  }
+}
+
 async function poll(logger) {
   if (running) return;
   running = true;
@@ -159,7 +181,7 @@ export function startOpsChangeConsumer({ logger } = {}) {
   }
   const intervalMs = Number(process.env.COMPANYPLAN_OPS_PULL_INTERVAL_MS ?? "30000");
   const timer = setInterval(() => void poll(logger), intervalMs);
-  void poll(logger);
+	void replayRecentPlayableFeedback(logger).finally(() => poll(logger));
   logger?.info?.("[ops-outbox] change consumer started", { intervalMs });
   return timer;
 }
