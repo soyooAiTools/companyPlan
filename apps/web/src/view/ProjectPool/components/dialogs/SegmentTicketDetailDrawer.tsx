@@ -5,8 +5,8 @@ import { ArrowRightOutlined } from "@ant-design/icons";
 import type { OpsTicket, OpsTicketEvent } from "@/api/modules/ops";
 import { fmtDateTime } from "@/utils/format";
 import { remainingView } from "@/view/Tickets/ticketUtils";
-import FeedbackSourceLink from "@/components/FeedbackSourceLink";
 import TicketEventNote from "@/components/TicketEventNote";
+import FeedbackSourceInlineLink from "@/components/FeedbackSourceInlineLink";
 import "../../../Ops/RichText.css";
 
 type SegmentTicketDetailDrawerProps = {
@@ -62,7 +62,6 @@ export default function SegmentTicketDetailDrawer({ open, ticket, events, loadin
 				</div>
 			) : ticket ? (
 				<>
-					<FeedbackSourceLink ticketId={ticket.id} />
 					<Space size={8} wrap style={{ marginBottom: 14 }}>
 						<Person avatar={ticket.requesterAvatar} name={ticket.requesterName} />
 						<ArrowRightOutlined style={{ color: "#94a3b8", fontSize: 12 }} />
@@ -110,6 +109,7 @@ export default function SegmentTicketDetailDrawer({ open, ticket, events, loadin
 						) : (
 							<Typography.Text type="secondary">空</Typography.Text>
 						)}
+						<FeedbackSourceInlineLink ticketId={ticket.id} />
 					</div>
 
 					<Divider style={{ margin: "8px 0 16px" }} />
