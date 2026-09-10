@@ -255,6 +255,7 @@ model ops_ticket_source_links {
   source_batch_id      String @db.VarChar(64)
   source_assignment_id String @db.VarChar(64)
   source_review_id     String @db.VarChar(64)
+  source_review_number Int?
   source_feedback_id   String @db.VarChar(160)
   ticket_id            String @unique(map: "uniq_otsl_ticket") @db.VarChar(64)
   payload_sha256       String @db.VarChar(64)

@@ -72,7 +72,7 @@ async function findSourceLinks(assignmentIds, database = prisma) {
   }
   const placeholders = assignmentIds.map(() => "?").join(", ");
   return database.$queryRawUnsafe(
-    `SELECT source_system, source_batch_id, source_assignment_id, source_review_id,
+    `SELECT source_system, source_batch_id, source_assignment_id, source_review_id, source_review_number,
             source_feedback_id, ticket_id, payload_sha256, source_url, created_at
        FROM ops_ticket_source_links
       WHERE source_system = ? AND source_assignment_id IN (${placeholders})`,
@@ -90,13 +90,14 @@ async function createSourceLink(database, data) {
   }
   return database.$executeRawUnsafe(
     `INSERT INTO ops_ticket_source_links (
-       source_system, source_batch_id, source_assignment_id, source_review_id,
+       source_system, source_batch_id, source_assignment_id, source_review_id, source_review_number,
        source_feedback_id, ticket_id, payload_sha256, source_url, created_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     data.source_system,
     data.source_batch_id,
     data.source_assignment_id,
     data.source_review_id,
+    data.source_review_number,
     data.source_feedback_id,
     data.ticket_id,
     data.payload_sha256,
@@ -190,6 +191,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
     const source = {
       batchId: clip(body.source.batchId, 64).trim(),
       reviewId: clip(body.source.reviewId, 64).trim(),
+      reviewNumber: Number.isInteger(Number(body.source.reviewNumber)) && Number(body.source.reviewNumber) > 0 ? Number(body.source.reviewNumber) : null,
       feedbackId: clip(body.source.feedbackId, 160).trim(),
       url: clip(body.source.url, 500).trim(),
     };
@@ -284,6 +286,7 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
             source_batch_id: source.batchId,
             source_assignment_id: entry.item.sourceAssignmentId,
             source_review_id: source.reviewId,
+            source_review_number: source.reviewNumber,
             source_feedback_id: source.feedbackId,
             ticket_id: ticket.id,
             payload_sha256: entry.hash,

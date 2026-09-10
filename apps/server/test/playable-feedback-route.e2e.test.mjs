@@ -34,6 +34,7 @@ function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
         source_batch_id,
         source_assignment_id,
         source_review_id,
+        source_review_number,
         source_feedback_id,
         ticket_id,
         payload_sha256,
@@ -45,6 +46,7 @@ function createFakeDatabase({ staleSourceLinkClient = false } = {}) {
         source_batch_id,
         source_assignment_id,
         source_review_id,
+        source_review_number,
         source_feedback_id,
         ticket_id,
         payload_sha256,
@@ -242,7 +244,7 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
     requesterUserId: "7",
     projectId: "10",
     projectVersionId: "20",
-    source: { batchId: "batch-1", reviewId: "review-1", feedbackId: "feedback-1", url: "https://preview.example/review-1" },
+    source: { batchId: "batch-1", reviewId: "review-1", reviewNumber: 15, feedbackId: "feedback-1", url: "https://preview.example/review-1" },
     tickets: [
       { sourceAssignmentId: "assignment-1", ownerId: "8", segmentId: 0, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
       { sourceAssignmentId: "assignment-2", ownerId: "9", segmentId: 0, title: "反馈 #1", contentHtml: "<p>按钮偏移</p>", summary: "按钮偏移", priority: "优先", needType: "试玩反馈", dueInHours: 18 },
@@ -254,6 +256,7 @@ test("signed feedback assignment route loads candidates, creates one ticket per 
   assert.equal(created.assignments.length, 2);
   assert.equal(runtime.database.state.tickets.length, 2);
   assert.equal(runtime.database.state.sourceLinks.length, 2);
+  assert.deepEqual(runtime.database.state.sourceLinks.map((link) => link.source_review_number), [15, 15]);
   assert.equal(runtime.database.state.ticketEvents.length, 2);
   assert.deepEqual(runtime.notifications, ["ticket-1", "ticket-2"]);
   assert.deepEqual(runtime.preparedTicketBodies.map((body) => body.dueInHours), [18, 18]);

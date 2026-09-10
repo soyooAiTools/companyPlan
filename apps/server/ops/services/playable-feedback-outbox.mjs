@@ -36,7 +36,7 @@ async function findSourceLink(database, assignmentId) {
 	}
 	if (typeof database.$queryRawUnsafe !== "function") throw new Error("OPS feedback source-link storage is unavailable");
 	const rows = await database.$queryRawUnsafe(
-		`SELECT source_system, source_batch_id, source_assignment_id, source_review_id,
+		`SELECT source_system, source_batch_id, source_assignment_id, source_review_id, source_review_number,
 		        source_feedback_id, ticket_id, payload_sha256, source_url, created_at
 		   FROM ops_ticket_source_links
 		  WHERE source_system = ? AND source_assignment_id = ?
@@ -52,13 +52,14 @@ async function createSourceLink(database, data) {
 	if (typeof database.$executeRawUnsafe !== "function") throw new Error("OPS feedback source-link storage is unavailable");
 	return database.$executeRawUnsafe(
 		`INSERT INTO ops_ticket_source_links (
-		   source_system, source_batch_id, source_assignment_id, source_review_id,
+		   source_system, source_batch_id, source_assignment_id, source_review_id, source_review_number,
 		   source_feedback_id, ticket_id, payload_sha256, source_url, created_at
-		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		data.source_system,
 		data.source_batch_id,
 		data.source_assignment_id,
 		data.source_review_id,
+		data.source_review_number,
 		data.source_feedback_id,
 		data.ticket_id,
 		data.payload_sha256,
@@ -151,6 +152,7 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 					source_batch_id: String(source.batchId),
 					source_assignment_id: entry.assignmentId,
 					source_review_id: String(source.reviewId),
+					source_review_number: Number.isInteger(Number(source.reviewNumber)) && Number(source.reviewNumber) > 0 ? Number(source.reviewNumber) : null,
 					source_feedback_id: String(source.feedbackId),
 					ticket_id: ticket.id,
 					payload_sha256: entry.hash,

@@ -530,7 +530,7 @@ export const opsApi = {
 	ticketEvents: (id: string) => requestJson<{ events: OpsTicketEvent[] }>(`/api/ops/tickets/${encodeURIComponent(id)}/events`),
 	// 按需拉富文本正文(列表不返 contentHtml)
 	ticketContent: (id: string) => requestJson<{ contentHtml: string }>(`/api/ops/tickets/${encodeURIComponent(id)}/content`),
-	ticketFeedbackSource: (id: string) => requestJson<{ source: { url: string; reviewId: string; assignmentId: string } | null }>(`/api/ops/tickets/${encodeURIComponent(id)}/feedback-source`),
+	ticketFeedbackSource: (id: string) => requestJson<{ source: { url: string; reviewId: string; reviewNumber?: number | null; assignmentId: string } | null }>(`/api/ops/tickets/${encodeURIComponent(id)}/feedback-source`),
 	updateTicketContent: (id: string, contentHtml: string) =>
 		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ contentHtml }) }),
 	updateTicketAdminNote: (id: string, adminNote: string) =>

@@ -21,10 +21,11 @@ test("loads the source by scoped ticket ID with bound parameters and preserves e
     assert.match(sql, /ticket_id = \?/);
     assert.equal(system, "playable-feedback");
     assert.equal(id, "t1");
-    return [{ source_review_id: "r1", source_assignment_id: "a1", source_url: "https://preview.example/preview/index.html?tenant=demo" }];
+    return [{ source_review_id: "r1", source_review_number: 15, source_assignment_id: "a1", source_url: "https://preview.example/preview/index.html?tenant=demo" }];
   } };
   const result = await loadPlayableFeedbackSource(database, "t1");
   assert.equal(result.reviewId, "r1");
+  assert.equal(result.reviewNumber, 15);
   assert.match(result.url, /#\/feedback\/r1\?assignmentId=a1&ticketId=t1$/);
   assert.equal(await loadPlayableFeedbackSource({ $queryRawUnsafe: async () => [] }, "other"), null);
 });
@@ -36,7 +37,7 @@ test("feedback source route enforces login and ticket visibility before loading 
     requireAuth: (req, res, next) => { if (!req.get("x-test-user")) return res.sendStatus(401); req.user = { id: req.get("x-test-user") }; next(); },
     database: {
       tickets: { findUnique: async ({ where }) => where.id === "t1" ? { owner_id: "artist", requester_id: "producer" } : null },
-      $queryRawUnsafe: async () => { sourceReads++; return [{ source_review_id: "r1", source_assignment_id: "a1", source_url: "https://preview.example/preview/index.html" }]; },
+      $queryRawUnsafe: async () => { sourceReads++; return [{ source_review_id: "r1", source_review_number: 15, source_assignment_id: "a1", source_url: "https://preview.example/preview/index.html" }]; },
     },
     getAccess: async (user) => ({ userId: user.id, admin: user.id === "admin", viewOwnerIds: new Set([user.id]), handleOwnerIds: new Set([user.id]) }),
     canView: canViewTicket,

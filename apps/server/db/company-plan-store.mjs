@@ -226,6 +226,7 @@ async function initializeSchema() {
       source_batch_id VARCHAR(64) NOT NULL,
       source_assignment_id VARCHAR(64) NOT NULL,
       source_review_id VARCHAR(64) NOT NULL,
+      source_review_number INT,
       source_feedback_id VARCHAR(160) NOT NULL,
       ticket_id VARCHAR(64) NOT NULL,
       payload_sha256 VARCHAR(64) NOT NULL,
@@ -377,6 +378,7 @@ async function ensureSystemPerson() {
 }
 
 async function migrateSchema() {
+	await ensureColumn("ops_ticket_source_links", "source_review_number", "INT");
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
   await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
   await ensureColumn("tickets", "timeline_offset_hours", "INT DEFAULT 0");

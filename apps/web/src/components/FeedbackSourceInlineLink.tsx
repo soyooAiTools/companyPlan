@@ -2,17 +2,29 @@ import { useEffect, useState } from "react";
 import { opsApi } from "../api/modules/ops";
 
 export default function FeedbackSourceInlineLink({ ticketId }: { ticketId: string }) {
-	const [url, setUrl] = useState("");
+	const [source, setSource] = useState<{ url: string; reviewNumber?: number | null } | null>(null);
 
 	useEffect(() => {
 		let active = true;
-		setUrl("");
-		opsApi.ticketFeedbackSource(ticketId)
-			.then((response) => { if (active) setUrl(response.source?.url || ""); })
+		setSource(null);
+		opsApi
+			.ticketFeedbackSource(ticketId)
+			.then((response) => {
+				if (active) setSource(response.source?.url ? response.source : null);
+			})
 			.catch(() => {});
-		return () => { active = false; };
+		return () => {
+			active = false;
+		};
 	}, [ticketId]);
 
-	if (!url) return null;
-	return <div style={{ marginTop: 8 }}><a href={url} target="_blank" rel="noopener noreferrer">打开反馈原图与讨论</a></div>;
+	if (!source) return null;
+	const versionLabel = Number.isInteger(source.reviewNumber) && Number(source.reviewNumber) > 0 ? `【V${source.reviewNumber}】` : "";
+	return (
+		<div style={{ marginTop: 8 }}>
+			<a href={source.url} target="_blank" rel="noopener noreferrer">
+				{versionLabel}打开反馈原图查看
+			</a>
+		</div>
+	);
 }
