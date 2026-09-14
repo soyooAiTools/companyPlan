@@ -91,6 +91,7 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 	const sourceUrl = buildPlayableFeedbackSourceUrl(source.url, source.reviewId, "");
 
 	const prepared = [];
+	const conflicts = [];
 	for (const ticket of tickets) {
 		const assignmentId = String(ticket.sourceAssignmentId || "").trim();
 		const ownerId = String(ticket.ownerId || "").trim();
@@ -108,7 +109,9 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 		const link = await findSourceLink(database, assignmentId);
 		const hash = payloadHash({ projectId, projectVersionId, source, ticket: { ...ticket, segmentId } });
 		if (link) {
-			if (link.payload_sha256 !== hash) throw new Error(`反馈指派 ${assignmentId} 的幂等内容不一致`);
+			// 已有来源关联时绝不重复建单。历史补单或旧 payload 可能与当前内容不同，
+			// 该冲突只需留痕，不能阻塞后续 outbox 变更的消费。
+			if (link.payload_sha256 !== hash) conflicts.push(assignmentId);
 			continue;
 		}
 		const result = await prepare({
@@ -166,5 +169,6 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 
 	for (const ticket of created) await (dependencies.notifyTicketAssigned || notifications.notifyTicketAssigned)(ticket, requester.id);
 	if (created.length) await (dependencies.refreshProjectPoolSnapshot || refreshProjectPoolSnapshot)(projectId).catch(() => null);
-	return { created: created.length, idempotent: prepared.length === 0 };
+	const result = { created: created.length, idempotent: prepared.length === 0 };
+	return conflicts.length ? { ...result, conflicts } : result;
 }

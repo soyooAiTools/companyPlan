@@ -6,6 +6,8 @@ import { getProjectWithMembers, getUser } from "./ops-realtime.mjs";
 import { autoCreateProgramFirstTicket, refreshProjectPoolSnapshot, refreshProjectPoolSnapshotsByMember } from "./services/ops-project-pool.mjs";
 import { consumePlayableFeedbackBatch } from "./services/playable-feedback-outbox.mjs";
 
+const DEFAULT_MAX_CHANGE_ATTEMPTS = 5;
+
 async function getLastSeq() {
   const row = await prisma.ops_sync_state.findUnique({ where: { k: "last_seq" } });
   return row ? Number(row.v) : 0;
@@ -16,6 +18,52 @@ async function setLastSeq(seq) {
     create: { k: "last_seq", v: BigInt(seq) },
     update: { v: BigInt(seq) },
   });
+}
+
+function syncFailureLimit() {
+  const configured = Number(process.env.COMPANYPLAN_OPS_CHANGE_MAX_ATTEMPTS ?? DEFAULT_MAX_CHANGE_ATTEMPTS);
+  return Number.isInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_CHANGE_ATTEMPTS;
+}
+
+function isPermanentChangeError(error) {
+  if (Number(error?.status) >= 400 && Number(error?.status) < 500) return true;
+  const message = String(error?.message || error || "");
+  return [
+    "不存在或已停用",
+    "不属于当前项目版本",
+    "未匹配到制作环节",
+    "幂等内容不一致",
+    "提单数据不完整",
+  ].some((text) => message.includes(text));
+}
+
+async function recordSyncFailure(change, error, skipped) {
+  const now = new Date().toISOString();
+  const message = String(error?.message || error || "未知错误").slice(0, 2000);
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO ops_sync_dead_letters (
+      seq, entity_type, entity_id, action, attempts, last_error, first_failed_at, last_failed_at, skipped_at
+    ) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+      attempts = attempts + 1,
+      last_error = VALUES(last_error),
+      last_failed_at = VALUES(last_failed_at),
+      skipped_at = VALUES(skipped_at)`,
+    BigInt(change.seq),
+    String(change.entity_type || ""),
+    String(change.entity_id || ""),
+    String(change.action || "").slice(0, 255),
+    message,
+    now,
+    now,
+    skipped ? now : null,
+  );
+  const rows = await prisma.$queryRawUnsafe("SELECT attempts FROM ops_sync_dead_letters WHERE seq = ? LIMIT 1", BigInt(change.seq));
+  return Number(rows?.[0]?.attempts || 1);
+}
+
+async function clearSyncFailure(seq) {
+  await prisma.$executeRawUnsafe("DELETE FROM ops_sync_dead_letters WHERE seq = ?", BigInt(seq));
 }
 
 function userIdCandidates(userId) {
@@ -98,6 +146,9 @@ async function handleProjectChange(ch, logger) {
   if (feedbackRequest) {
     const payload = await soyooClient.playableFeedbackBatch(feedbackRequest.batchId);
     const result = await consumePlayableFeedbackBatch(payload);
+    if (result.conflicts?.length) {
+      logger?.warn?.("[ops-outbox] playable feedback idempotency conflict skipped", { projectId, batchId: feedbackRequest.batchId, assignmentIds: result.conflicts });
+    }
     logger?.info?.("[ops-outbox] create playable feedback tickets", { projectId, batchId: feedbackRequest.batchId, ...result });
     return;
   }
@@ -145,6 +196,9 @@ async function replayRecentPlayableFeedback(logger) {
     try {
       const payload = await soyooClient.playableFeedbackBatch(request.batchId);
       const result = await consumePlayableFeedbackBatch(payload);
+      if (result.conflicts?.length) {
+        logger?.warn?.("[ops-outbox] playable feedback idempotency conflict skipped", { batchId: request.batchId, assignmentIds: result.conflicts });
+      }
       logger?.info?.("[ops-outbox] reconcile playable feedback tickets", { batchId: request.batchId, ...result });
     } catch (error) {
       logger?.warn?.("[ops-outbox] reconcile playable feedback failed", { batchId: request.batchId, error: error?.message ?? String(error) });
@@ -161,16 +215,27 @@ async function poll(logger) {
       const changes = await soyooClient.changes(after, 200);
       if (!Array.isArray(changes) || !changes.length) break;
       for (const ch of changes) {
+        let deadLettered = false;
         try {
           if (ch.entity_type === "user") await refreshUser(String(ch.entity_id));
           else if (ch.entity_type === "project") await handleProjectChange(ch, logger);
           else if (ch.entity_type === "tenant") await refreshTenant(String(ch.entity_id));
         } catch (e) {
-          logger?.warn?.("[ops-outbox] apply change failed", { seq: ch.seq, type: ch.entity_type, error: e?.message ?? String(e) });
-		  throw e;
+          const permanent = isPermanentChangeError(e);
+          const attempts = await recordSyncFailure(ch, e, permanent);
+          const skipped = permanent || attempts >= syncFailureLimit();
+          logger?.warn?.(skipped ? "[ops-outbox] change moved to dead letter" : "[ops-outbox] apply change failed", {
+            seq: ch.seq,
+            type: ch.entity_type,
+            attempts,
+            error: e?.message ?? String(e),
+          });
+          if (!skipped) throw e;
+          deadLettered = true;
         }
         after = Number(ch.seq);
         await setLastSeq(after);
+        if (!deadLettered) await clearSyncFailure(ch.seq);
       }
       if (changes.length < 200) break;
     }

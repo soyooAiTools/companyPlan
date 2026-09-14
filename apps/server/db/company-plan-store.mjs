@@ -505,6 +505,22 @@ async function migrateSchema() {
     "CREATE TABLE IF NOT EXISTS ops_sync_state (k VARCHAR(64) PRIMARY KEY, v BIGINT NOT NULL DEFAULT 0)"
   ).run();
 
+  // 变更消费失败记录：永久错误或多次重试仍失败的变更移入此处，不能阻塞全局游标。
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS ops_sync_dead_letters (
+      seq BIGINT PRIMARY KEY,
+      entity_type VARCHAR(32) NOT NULL,
+      entity_id VARCHAR(64) NOT NULL,
+      action VARCHAR(255),
+      attempts INT NOT NULL DEFAULT 0,
+      last_error TEXT,
+      first_failed_at VARCHAR(40) NOT NULL,
+      last_failed_at VARCHAR(40) NOT NULL,
+      skipped_at VARCHAR(40),
+      KEY idx_osdl_skipped (skipped_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+  ).run();
+
   // 项目状态流转记录(项目池:谁/何时把项目状态 X→Y + 富文本评论)
   await db
     .prepare(
