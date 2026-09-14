@@ -35,8 +35,16 @@ function playableFeedbackRequest(action) {
 
 // 用户改名/换头像/管理员/禁用状态 → 同步本地身份 + 刷该用户在所有工单里的 owner/requester 快照
 async function refreshUser(userId) {
-  const u = await getUser(userId);
   const ids = userIdCandidates(userId);
+  let u;
+  try {
+    u = await getUser(userId);
+  } catch (error) {
+    // 用户已从 soyoo 删除时，仍要消费这条变更，避免旧用户阻塞整个 outbox 游标。
+    if (Number(error?.status) !== 404) throw error;
+    await prisma.people.updateMany({ where: { id: { in: ids } }, data: { disabled_at: new Date().toISOString() } });
+    return;
+  }
   if (!u) {
     await prisma.people.updateMany({ where: { id: { in: ids } }, data: { disabled_at: new Date().toISOString() } });
     return;
