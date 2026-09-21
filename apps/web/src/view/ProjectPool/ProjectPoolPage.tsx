@@ -750,6 +750,16 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		}
 	};
 
+	const saveInlineRemark = async (row: OpsProjectPoolRow, field: "remark" | "remark2" | "remark3" | "remark4" | "remark5" | "remark6", value: string) => {
+		try {
+			await opsApi.changeProjectRemark(row.id, value, field);
+			message.success("备注已更新");
+			await reloadAfterProjectChange();
+		} catch (error) {
+			message.error(error instanceof Error ? error.message : "备注2更新失败");
+		}
+	};
+
 	const changeAssetRecycle = (row: OpsProjectPoolRow) => {
 		assetRecycleForm.setFieldsValue({ assetStatus: row.recycleStatus?.asset === "success" ? "success" : "" });
 		modal.confirm({
@@ -778,6 +788,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 	const columns = useProjectPoolColumns(
 		{
 			...dialogs.actions,
+			saveInlineRemark,
 			openCreateTicket: (row) => setCreateTicketProject(row),
 			transferPlanner,
 			changeAssetRecycle,

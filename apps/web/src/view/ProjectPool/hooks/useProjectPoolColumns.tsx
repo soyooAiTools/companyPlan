@@ -11,6 +11,7 @@ import { copyText } from "@/utils/copyText";
 import { fmtDateTime } from "@/utils/format";
 import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
 import HeaderDateRangeDropdown, { type HeaderDateRangeValue } from "../components/table/HeaderDateRangeDropdown";
+import InlineEditableText from "../components/table/InlineEditableText";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, nextStageDeadline, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 import { NO_SEGMENT_FILTER_VALUE, UNSET_STAGE_FILTER_VALUE } from "../utils/filterProjectPoolRows";
@@ -23,6 +24,7 @@ export type ProjectPoolColumnActions = {
 	openMeta: (row: OpsProjectPoolRow) => void;
 	openDeadlineEdit: (row: OpsProjectPoolRow) => void;
 	openRemark: (row: OpsProjectPoolRow, field?: ProjectRemarkField) => void;
+	saveInlineRemark: (row: OpsProjectPoolRow, field: ProjectRemarkField, value: string) => Promise<void>;
 	openSegTickets: (row: OpsProjectPoolRow, segment: { id: number; name: string }) => void;
 	openMembers: (row: OpsProjectPoolRow) => void;
 	openCreateTicket?: (row: OpsProjectPoolRow) => void;
@@ -516,6 +518,15 @@ export function useProjectPoolColumns(
 		filterIcon: filters ? () => filterIcon(!!advancedFieldFilterValue(filters.remarkFilter, field), "#dc2626") : undefined,
 		render: (_: unknown, row: OpsProjectPoolRow) => {
 			const value = row[field] || "";
+			if (field === "remark2") {
+				return (
+					<InlineEditableText
+						value={value}
+						readonly={options.readonly}
+						onSave={(nextValue) => actions.saveInlineRemark(row, field, nextValue)}
+					/>
+				);
+			}
 			const text = remarkPreview(value);
 			const preview = text || (value ? "[图文备注]" : "");
 			return (
