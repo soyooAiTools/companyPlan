@@ -44,4 +44,4 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           OSS_REGION: oss-cn-beijing
           OSS_BUCKET: soyoo-ops-web
-          OSS_UPLOAD_TIMEOUT_MS: 180000
+          OSS_UPLOAD_TIMEOUT_MS: 600000
