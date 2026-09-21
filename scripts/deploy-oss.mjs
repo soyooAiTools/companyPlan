@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, "..", "apps", "web", "dist");
 
 const { OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_REGION, OSS_BUCKET } = process.env;
+const OSS_UPLOAD_TIMEOUT_MS = Number(process.env.OSS_UPLOAD_TIMEOUT_MS || 180000);
 for (const [k, v] of Object.entries({ OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_REGION, OSS_BUCKET })) {
 	if (!v) {
 		console.error(`[deploy-oss] 缺少环境变量 ${k}`);
@@ -22,6 +23,8 @@ const client = new OSS({
 	accessKeySecret: OSS_ACCESS_KEY_SECRET,
 	bucket: OSS_BUCKET,
 	secure: true,
+	timeout: OSS_UPLOAD_TIMEOUT_MS,
+	retryMax: 3,
 });
 
 async function walk(dir, base = dir) {
