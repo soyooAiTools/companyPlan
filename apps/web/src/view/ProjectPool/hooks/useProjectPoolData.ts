@@ -43,6 +43,7 @@ type ProjectPoolInitialDataPreferences = {
 	stageFilter?: string[];
 	plannerFilter?: string[];
 	segmentFilter?: number[];
+	statusChangedRange?: [string, string] | null;
 	advancedFilter?: AdvancedFilterValue;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
@@ -64,6 +65,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [stageFilter, setStageFilter] = useState<string[]>(initialPreferences.stageFilter || []);
   const [plannerFilter, setPlannerFilter] = useState<string[]>(initialPreferences.plannerFilter || []);
   const [segmentFilter, setSegmentFilter] = useState<number[]>(initialPreferences.segmentFilter || []);
+  const [statusChangedRange, setStatusChangedRange] = useState<[string, string] | null>(initialPreferences.statusChangedRange || null);
   // 左侧高级筛选不管理备注字段；备注列使用独立状态，避免两个表头串台。
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilterValue>(withoutRemarkRules(initialPreferences.advancedFilter));
   const [remarkFilter, setRemarkFilter] = useState<AdvancedFilterValue>(emptyAdvancedFilter);
@@ -74,47 +76,54 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
   const [allRowsLoading, setAllRowsLoading] = useState(false);
   const [allRowsKey, setAllRowsKey] = useState("");
   const [filterOptionRows, setFilterOptionRows] = useState<OpsProjectPoolRow[]>([]);
-  const allRowsRequestRef = useRef<Promise<OpsProjectPoolRow[]> | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const allRowsLoadIdRef = useRef(0);
+  const allRowsRequestRef = useRef<{ key: string; promise: Promise<OpsProjectPoolRow[]> } | null>(null);
   const advancedFilterParam = stringifyAdvancedFilter(advancedFilter);
   const remarkFilterParam = stringifyAdvancedFilter(remarkFilter);
-  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), advancedFilterParam || "", remarkFilterParam || ""].join("|");
-  const allRowsSourceKey = mine ? "mine" : "all";
+  const statusChangedParams = { statusChangedFrom: statusChangedRange?.[0], statusChangedTo: statusChangedRange?.[1] };
+  const filterKey = [debounced.trim(), statusFilter.join(","), stageFilter.join(","), plannerFilter.join(","), segmentFilter.join(","), statusChangedRange?.join(",") || "", advancedFilterParam || "", remarkFilterParam || ""].join("|");
+  const allRowsSourceKey = `${mine ? "mine" : "all"}|${statusChangedRange?.join(",") || ""}`;
 
   const load = async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setRows([]);
     setTotal(0);
     try {
       const result =
         tab === "stale"
-          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder })
+          ? await opsApi.projectPoolStale({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, ...statusChangedParams, sortBy, sortOrder })
           : mine
-            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder })
-            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, sortBy, sortOrder });
+            ? await opsApi.myProjects({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, ...statusChangedParams, sortBy, sortOrder })
+            : await opsApi.projectPool({ page, pageSize, q: debounced.trim() || undefined, status: statusFilter, stage: stageFilter, planner: plannerFilter, segment: segmentFilter, advancedFilter: advancedFilterParam, remarkFilter: remarkFilterParam, ...statusChangedParams, sortBy, sortOrder });
+      if (requestId !== loadRequestIdRef.current) return;
       setRows(result.rows);
       setTotal(result.total);
     } catch (e) {
-      message.error(e instanceof Error ? e.message : "加载失败");
+      if (requestId === loadRequestIdRef.current) message.error(e instanceof Error ? e.message : "加载失败");
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestIdRef.current) setLoading(false);
     }
   };
 
   // 合并项目池全量数据的并发请求:loadAllRows 和 loadFilterOptionRows 可能同时需要 pageSize=500 的数据。
   // 这里复用正在进行中的 Promise,不是输入防抖;lodash debounce 会延迟触发,但不能让两个调用共享同一次请求结果。
   const fetchAllRows = async () => {
-    if (allRowsRequestRef.current) return allRowsRequestRef.current;
+    const requestKey = allRowsSourceKey;
+    if (allRowsRequestRef.current?.key === requestKey) return allRowsRequestRef.current.promise;
     const request = (async () => {
       const pageSizeForAll = 500;
       const fetchPages = async (extra: { status?: string[] } = {}) => {
-        const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...extra }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...extra });
+        const requestParams = { ...statusChangedParams, ...extra };
+        const first = mine ? await opsApi.myProjects({ page: 1, pageSize: pageSizeForAll, ...requestParams }) : await opsApi.projectPool({ page: 1, pageSize: pageSizeForAll, ...requestParams });
         const nextRows = [...first.rows];
         const pageCount = Math.ceil(first.total / pageSizeForAll);
         if (pageCount > 1) {
           const rest = await Promise.all(
             Array.from({ length: pageCount - 1 }, (_, index) => {
               const nextPage = index + 2;
-              return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...extra }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...extra });
+              return mine ? opsApi.myProjects({ page: nextPage, pageSize: pageSizeForAll, ...requestParams }) : opsApi.projectPool({ page: nextPage, pageSize: pageSizeForAll, ...requestParams });
             }),
           );
           for (const result of rest) nextRows.push(...result.rows);
@@ -137,11 +146,11 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       }
       return nextRows;
     })();
-    allRowsRequestRef.current = request;
+    allRowsRequestRef.current = { key: requestKey, promise: request };
     try {
       return await request;
     } finally {
-      allRowsRequestRef.current = null;
+      if (allRowsRequestRef.current?.promise === request) allRowsRequestRef.current = null;
     }
   };
 
@@ -152,18 +161,21 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
       return;
     }
     if (!force && allRowsKey === allRowsSourceKey && allRows.length) return;
+    const requestId = ++allRowsLoadIdRef.current;
     setAllRowsLoading(true);
     try {
       const nextRows = await fetchAllRows();
+      if (requestId !== allRowsLoadIdRef.current) return;
       setAllRows(nextRows);
       setFilterOptionRows(nextRows);
       setAllRowsKey(allRowsSourceKey);
     } catch (e) {
+      if (requestId !== allRowsLoadIdRef.current) return;
       message.error(e instanceof Error ? e.message : "加载分组数据失败");
       setAllRows([]);
       setAllRowsKey("");
     } finally {
-      setAllRowsLoading(false);
+      if (requestId === allRowsLoadIdRef.current) setAllRowsLoading(false);
     }
   };
 
@@ -196,6 +208,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setAllRows([]);
     setAllRowsKey("");
     allRowsRequestRef.current = null;
+    loadRequestIdRef.current += 1;
+    allRowsLoadIdRef.current += 1;
     setFilterOptionRows([]);
     setTotal(0);
     setPage(1);
@@ -206,6 +220,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setStageFilter(initialPreferences.stageFilter || []);
     setPlannerFilter(initialPreferences.plannerFilter || []);
     setSegmentFilter(initialPreferences.segmentFilter || []);
+    setStatusChangedRange(initialPreferences.statusChangedRange || null);
     setAdvancedFilter(withoutRemarkRules(initialPreferences.advancedFilter));
     setRemarkFilter(emptyAdvancedFilter);
     setSortBy(initialPreferences.sortBy);
@@ -221,7 +236,7 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     }
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, advancedFilterParam, remarkFilterParam, sortBy, sortOrder, debounced]);
+  }, [mine, pagedEnabled, tab, page, pageSize, statusFilter, stageFilter, plannerFilter, segmentFilter, statusChangedRange, advancedFilterParam, remarkFilterParam, sortBy, sortOrder, debounced]);
 
   useEffect(() => {
     opsApi
@@ -258,6 +273,8 @@ export function useProjectPoolData(message: MessageApi, options: { mine?: boolea
     setPlannerFilter,
     segmentFilter,
     setSegmentFilter,
+    statusChangedRange,
+    setStatusChangedRange,
     advancedFilter,
     setAdvancedFilter,
     remarkFilter,

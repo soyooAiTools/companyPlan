@@ -269,6 +269,12 @@ export interface OpsProjectPoolRow {
 	planners: { name: string; avatar: string; hireDate?: string; hire_date?: string; id?: string; userId?: string; username?: string; status?: string }[]; // 拆分后的每个策划 + 微信头像(无头像则 avatar 为空)
 	members?: OpsProjectPoolMember[]; // 项目成员轻量快照,用于按负责人分组和新人标识
 	statusChangedAt: string | null;
+	latestStatusChange?: {
+		actorId: string;
+		actorName: string;
+		actorAvatar: string;
+		changedAt: string;
+	} | null;
 	memberCount: number;
 	segments: { id: number; name: string; count: number }[]; // 目前环节 + 各环节未完成工单数
 	ticketGroups: Record<string, number>; // 未完成工单按状态分组 {排队中:N, 进行中:N}
@@ -297,6 +303,8 @@ type OpsProjectPoolListParams = {
 	planner?: string[];
 	advancedFilter?: string;
 	remarkFilter?: string;
+	statusChangedFrom?: string;
+	statusChangedTo?: string;
 	sortBy?: OpsProjectPoolSortBy;
 	sortOrder?: OpsProjectPoolSortOrder;
 };
@@ -604,6 +612,8 @@ export const opsApi = {
 		if (params.planner?.length) qs.set("planner", params.planner.join(",")); // 策划多选 → 逗号分隔
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
+		if (params.statusChangedFrom) qs.set("status_changed_from", params.statusChangedFrom);
+		if (params.statusChangedTo) qs.set("status_changed_to", params.statusChangedTo);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -622,6 +632,8 @@ export const opsApi = {
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
+		if (params.statusChangedFrom) qs.set("status_changed_from", params.statusChangedFrom);
+		if (params.statusChangedTo) qs.set("status_changed_to", params.statusChangedTo);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);
@@ -652,6 +664,8 @@ export const opsApi = {
 		if (params.planner?.length) qs.set("planner", params.planner.join(","));
 		if (params.advancedFilter) qs.set("advanced_filter", params.advancedFilter);
 		if (params.remarkFilter) qs.set("remark_filter", params.remarkFilter);
+		if (params.statusChangedFrom) qs.set("status_changed_from", params.statusChangedFrom);
+		if (params.statusChangedTo) qs.set("status_changed_to", params.statusChangedTo);
 		if (params.sortBy && params.sortOrder) {
 			qs.set("sortBy", params.sortBy);
 			qs.set("sortOrder", params.sortOrder);

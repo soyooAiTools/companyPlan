@@ -11,6 +11,7 @@ import { addBusinessHours, subBusinessHours } from "../business-hours.mjs";
 import { createProjectPoolTimer } from "./project-pool/timer.mjs";
 import { loadMySnapshotRows, loadVisibleSnapshotRows, refreshProjectPoolSnapshot } from "./project-pool/snapshot-store.mjs";
 import { loadProjectExtMap } from "./project-pool/read-model.mjs";
+import { attachLatestStatusChanges, filterRowsByLatestStatusChangeRange } from "./project-pool/latest-status-change.mjs";
 import { effectiveSegmentTagIds } from "../segment-tag-match.mjs";
 import { logger } from "../../core/logger.mjs";
 import { getUserTenantScope } from "./tenant-scope.mjs";
@@ -342,7 +343,7 @@ function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   }).map(sortChildren);
 }
 
-async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "", onlyMine = false, paginate = true, timer = null }) {
+async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", statusChangedFrom = "", statusChangedTo = "", sortBy = "", sortOrder = "", onlyMine = false, paginate = true, timer = null }) {
   const statusFilter = String(status || "")
     .split(",")
     .map((s) => s.trim())
@@ -364,16 +365,28 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 	rows = filterProjectPoolRows(rows, { q, stage, planner: effectivePlanner, segment, advancedFilter, remarkFilter });
   timer?.mark("应用筛选条件", { rows: rows.length });
 
+  const hasStatusChangedRange = !!(statusChangedFrom || statusChangedTo);
+  if (hasStatusChangedRange) {
+    rows = await attachLatestStatusChanges(rows);
+    rows = filterRowsByLatestStatusChangeRange(rows, { from: statusChangedFrom, to: statusChangedTo });
+    timer?.mark("过滤最后状态修改时间", { rows: rows.length, from: statusChangedFrom, to: statusChangedTo });
+  }
+
   rows = sortProjectPoolRows(rows, { sortBy, sortOrder });
   timer?.mark("排序项目", { rows: rows.length });
   const total = rows.length;
   if (!paginate) {
+    if (!hasStatusChangedRange) {
+      rows = await attachLatestStatusChanges(rows);
+      timer?.mark("补充最后状态修改信息", { rows: rows.length });
+    }
     const responseBytes = Buffer.byteLength(JSON.stringify(rows), "utf8");
     timer?.mark("返回全量数据", { rows: rows.length, total, responseBytes });
     return { rows, total, page: 1, pageSize: total };
   }
   const start = (page - 1) * pageSize;
-  const pageRows = rows.slice(start, start + pageSize);
+  const pageRows = hasStatusChangedRange ? rows.slice(start, start + pageSize) : await attachLatestStatusChanges(rows.slice(start, start + pageSize));
+  if (!hasStatusChangedRange) timer?.mark("补充最后状态修改信息", { rows: pageRows.length });
   const responseBytes = pageSize >= 100 ? Buffer.byteLength(JSON.stringify(pageRows), "utf8") : undefined;
   timer?.mark("截取分页数据", { rows: pageRows.length, total, responseBytes });
   return { rows: pageRows, total, page, pageSize };
@@ -381,10 +394,10 @@ async function listProjectPoolFromSnapshot({ user, page = 1, pageSize = 20, q = 
 
 // ---- 列表(管理员全部 / 策划=自己作为制片参与的项目)----
 // status:前端显式多选(逗号分隔)→ 只查这些;不传 → 只查「设置→项目状态时间」里【开启监控】的状态,关闭的不展示(与超时口径一致)
-export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", statusChangedFrom = "", statusChangedTo = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("list", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
-	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, statusChangedFrom, statusChangedTo, sortBy, sortOrder, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -573,10 +586,10 @@ export async function progressAnalysis({ user, q = "", status = "", stage = "", 
 }
 
 // ---- 我的项目:固定按当前登录人参与的项目查询;不要求策划权限 ----
-export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listMyProjectPool({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", statusChangedFrom = "", statusChangedTo = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("mine", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, userId: meId(user) });
   try {
-	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, sortBy, sortOrder, onlyMine: true, timer });
+	const result = await listProjectPoolFromSnapshot({ user, page, pageSize, q, status, stage, planner, segment, advancedFilter, remarkFilter, statusChangedFrom, statusChangedTo, sortBy, sortOrder, onlyMine: true, timer });
     const { rows, total } = result;
     timer.done({ rows: rows.length, total });
     return result;
@@ -1449,7 +1462,7 @@ async function stageOverdueProjectsForNotify() {
     .filter(Boolean);
 }
 
-export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", sortBy = "", sortOrder = "" }) {
+export async function listStale({ user, page = 1, pageSize = 20, q = "", status = "", stage = "", planner = "", segment = "", advancedFilter = "", remarkFilter = "", statusChangedFrom = "", statusChangedTo = "", sortBy = "", sortOrder = "" }) {
   const timer = createProjectPoolTimer("stale", { page, pageSize, q: !!q, status: !!status, stage: !!stage, planner: !!planner, segment: !!segment, advancedFilter: !!advancedFilter, sortBy, sortOrder, admin: isAdmin(user) });
   try {
     // 临时停用状态流程时间:后面恢复时把 staleCutoffs() 放回 Promise.all，并传 cutoffs 给 soyoo。
@@ -1462,7 +1475,7 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
     }
     const idSet = new Set(extraIds);
     const scopedRows = filterProjectPoolRowsByTenantScope(await loadVisibleSnapshotRows({ user }), await getUserTenantScope(user));
-		const allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter, remarkFilter })
+    let allRows = filterProjectPoolRows(scopedRows, { q, status, stage, planner, segment, advancedFilter, remarkFilter })
       .map((row) => {
         const children = rowChildren(row);
         if (!children.length) return idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
@@ -1470,9 +1483,14 @@ export async function listStale({ user, page = 1, pageSize = 20, q = "", status 
         return matchedChildren.length ? { ...row, children: matchedChildren } : idSet.has(String(row.id)) && !isInactiveDeadlinePoolRow(row) ? row : null;
       })
       .filter(Boolean);
+    const hasStatusChangedRange = !!(statusChangedFrom || statusChangedTo);
+    if (hasStatusChangedRange) {
+      allRows = filterRowsByLatestStatusChangeRange(await attachLatestStatusChanges(allRows), { from: statusChangedFrom, to: statusChangedTo });
+    }
     sortProjectPoolRows(allRows, { sortBy: sortBy || "nextDeadline", sortOrder: sortOrder || "asc" });
     const total = allRows.length;
-    const rows = allRows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const slicedRows = allRows.slice((page - 1) * pageSize, (page - 1) * pageSize + pageSize);
+    const rows = hasStatusChangedRange ? slicedRows : await attachLatestStatusChanges(slicedRows);
     timer.mark("snapshot.staleRows", { rows: rows.length, total });
     timer.done({ rows: rows.length, total });
     return { rows, total, page, pageSize };

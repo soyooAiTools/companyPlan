@@ -8,7 +8,9 @@ import type { OpsProjectPoolRow, OpsProjectPoolSortBy, OpsRecycleState, OpsSegme
 import { PROJECT_STAGES, PROJECT_STATUSES, statusStyle } from "@/view/Ops/constants";
 import AdvancedFilterBuilder, { compactAdvancedFilter, type AdvancedFilterValue } from "@/components/common/AdvancedFilterBuilder";
 import { copyText } from "@/utils/copyText";
+import { fmtDateTime } from "@/utils/format";
 import HeaderMultiSelectDropdown from "../components/table/HeaderMultiSelectDropdown";
+import HeaderDateRangeDropdown, { type HeaderDateRangeValue } from "../components/table/HeaderDateRangeDropdown";
 import StageDeadlineCell from "../components/table/StageDeadlineCell";
 import { finalStageDeadline, fmtProjectDate, nextDeadlineDiffDays, nextStageDeadline, projectStartDate, stageRangeLabel } from "../deadlineUtils";
 import { NO_SEGMENT_FILTER_VALUE, UNSET_STAGE_FILTER_VALUE } from "../utils/filterProjectPoolRows";
@@ -35,12 +37,14 @@ export type ProjectPoolColumnFilters = {
 	plannerOptions: { id?: string; userId?: string; username?: string; name: string; avatar?: string; status?: string }[];
 	segmentFilter: number[];
 	segmentOptions: OpsSegment[];
+	statusChangedRange: HeaderDateRangeValue;
 	advancedFilter: AdvancedFilterValue;
 	remarkFilter: AdvancedFilterValue;
 	onStatusFilterChange: (value: string[]) => void;
 	onStageFilterChange: (value: string[]) => void;
 	onPlannerFilterChange: (value: string[]) => void;
 	onSegmentFilterChange: (value: number[]) => void;
+	onStatusChangedRangeChange: (value: HeaderDateRangeValue) => void;
 	onAdvancedFilterChange: (value: AdvancedFilterValue) => void;
 	onRemarkFilterChange: (value: AdvancedFilterValue) => void;
 };
@@ -765,6 +769,28 @@ export function useProjectPoolColumns(
 					</Tag>
 				</Space>
 			),
+		},
+		{
+			title: "状态更改时间",
+			key: "latestStatusChange",
+			width: 250,
+			filterDropdown: filters
+				? ({ close }) => <HeaderDateRangeDropdown value={filters.statusChangedRange} onApply={filters.onStatusChangedRangeChange} close={close} />
+				: undefined,
+			filterIcon: filters ? () => filterIcon(!!filters.statusChangedRange) : undefined,
+			render: (_: unknown, row) => {
+				const change = row.latestStatusChange;
+				if (!change?.changedAt) return null;
+				return (
+					<div style={{ display: "flex", alignItems: "center", minWidth: 0, whiteSpace: "nowrap" }}>
+						<Avatar size={22} src={change.actorAvatar || undefined} style={{ flexShrink: 0, background: "#e2e8f0", color: "#475569", fontSize: 10 }}>
+							{(change.actorName || " ").slice(0, 1)}
+						</Avatar>
+						<span title={change.actorName} style={{ width: 42, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", color: "#0f172a", fontSize: 13, margin: '0 4px' }}>{change.actorName}</span>
+						<span style={{ color: "#0f172a", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{fmtDateTime(change.changedAt)}</span>
+					</div>
+				);
+			},
 		},
 		{
 			title: "回收状态",

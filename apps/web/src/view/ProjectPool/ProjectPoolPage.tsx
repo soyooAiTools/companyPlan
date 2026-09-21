@@ -200,6 +200,8 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setPlannerFilter,
 		segmentFilter,
 		setSegmentFilter,
+		statusChangedRange,
+		setStatusChangedRange,
 		advancedFilter,
 		setAdvancedFilter,
 		remarkFilter,
@@ -227,6 +229,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			stageFilter: projectPoolPreferences.filters.stageFilter,
 			plannerFilter: projectPoolPreferences.filters.plannerFilter,
 			segmentFilter: projectPoolPreferences.filters.segmentFilter,
+			statusChangedRange: projectPoolPreferences.filters.statusChangedRange,
 			advancedFilter: projectPoolPreferences.filters.advancedFilter,
 			sortBy: projectPoolPreferences.sort.sortBy,
 			sortOrder: projectPoolPreferences.sort.sortOrder,
@@ -327,6 +330,11 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setStoredFilters({ segmentFilter: value });
 		setPage(1);
 	};
+	const changeStatusChangedRange = (value: [string, string] | null) => {
+		setStatusChangedRange(value);
+		setStoredFilters({ statusChangedRange: value });
+		setPage(1);
+	};
 	const changeAdvancedFilter = (value: typeof advancedFilter) => {
 		setAdvancedFilter(value);
 		setStoredFilters({ advancedFilter: value });
@@ -343,9 +351,10 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 		setStageFilter([]);
 		setPlannerFilter([]);
 		setSegmentFilter([]);
+		setStatusChangedRange(null);
 		setAdvancedFilter(empty);
 		setRemarkFilter(empty);
-		setStoredFilters({ search: "", statusFilter: [], stageFilter: [], plannerFilter: [], segmentFilter: [], advancedFilter: empty });
+		setStoredFilters({ search: "", statusFilter: [], stageFilter: [], plannerFilter: [], segmentFilter: [], statusChangedRange: null, advancedFilter: empty });
 		setPage(1);
 	};
 
@@ -384,6 +393,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 			setStageFilter([]);
 			setPlannerFilter([]);
 			setSegmentFilter([]);
+			setStatusChangedRange(null);
 			setAdvancedFilter(empty);
 			setRemarkFilter(empty);
 			setPage(1);
@@ -782,6 +792,7 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					plannerOptions,
 					segmentFilter,
 					segmentOptions,
+					statusChangedRange,
 					advancedFilter,
 					remarkFilter,
 					onAdvancedFilterChange: (value) => {
@@ -801,6 +812,9 @@ export default function ProjectPoolPage({ mine = false, isAdmin = false }: Proje
 					},
 					onSegmentFilterChange: (value) => {
 						changeSegmentFilter(value);
+					},
+					onStatusChangedRangeChange: (value) => {
+						changeStatusChangedRange(value);
 					},
 				},
 		{

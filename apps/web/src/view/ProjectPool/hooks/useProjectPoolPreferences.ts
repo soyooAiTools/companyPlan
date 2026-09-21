@@ -44,6 +44,7 @@ type ProjectPoolPreferences = {
 		stageFilter: string[];
 		plannerFilter: string[];
 		segmentFilter: number[];
+		statusChangedRange: [string, string] | null;
 		advancedFilter: AdvancedFilterValue;
 	};
 	sort: {
@@ -70,6 +71,7 @@ const DEFAULT_PREFERENCES: ProjectPoolPreferences = {
 		stageFilter: [],
 		plannerFilter: [],
 		segmentFilter: [],
+		statusChangedRange: null,
 		advancedFilter: emptyAdvancedFilter,
 	},
 	sort: {
@@ -94,6 +96,12 @@ function stringList(value: unknown) {
 
 function numberList(value: unknown) {
 	return Array.isArray(value) ? value.map(Number).filter(Number.isFinite) : [];
+}
+
+function dateRange(value: unknown): [string, string] | null {
+	if (!Array.isArray(value) || value.length !== 2) return null;
+	const [start, end] = value.map((item) => String(item || ""));
+	return /^\d{4}-\d{2}-\d{2}$/.test(start) && /^\d{4}-\d{2}-\d{2}$/.test(end) ? [start, end] : null;
 }
 
 function columnWidths(value: unknown) {
@@ -153,6 +161,7 @@ function normalizePreferences(value: Partial<ProjectPoolPreferences> | null): Pr
 			stageFilter: stringList(value?.filters?.stageFilter),
 			plannerFilter: stringList(value?.filters?.plannerFilter),
 			segmentFilter: numberList(value?.filters?.segmentFilter),
+			statusChangedRange: dateRange(value?.filters?.statusChangedRange),
 			advancedFilter: value?.filters?.advancedFilter || emptyAdvancedFilter,
 		},
 		sort: {
