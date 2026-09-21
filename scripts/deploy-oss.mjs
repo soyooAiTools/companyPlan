@@ -8,6 +8,9 @@ const DIST = path.resolve(__dirname, "..", "apps", "web", "dist");
 
 const { OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_REGION, OSS_BUCKET } = process.env;
 const OSS_UPLOAD_TIMEOUT_MS = Number(process.env.OSS_UPLOAD_TIMEOUT_MS || 600000);
+const MULTIPART_THRESHOLD_BYTES = 5 * 1024 * 1024;
+const MULTIPART_PART_SIZE_BYTES = 1024 * 1024;
+const MULTIPART_PARALLEL = 4;
 for (const [k, v] of Object.entries({ OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_REGION, OSS_BUCKET })) {
 	if (!v) {
 		console.error(`[deploy-oss] 缺少环境变量 ${k}`);
@@ -54,7 +57,20 @@ async function main() {
 	console.log(`[deploy-oss] 上传 ${files.length} 个文件 → oss://${OSS_BUCKET} (${OSS_REGION})`);
 	for (const rel of files) {
 		const cacheControl = NO_CACHE.has(rel) ? "no-cache" : "public, max-age=31536000, immutable";
-		await client.put(rel, path.join(DIST, rel), { headers: { "Cache-Control": cacheControl } });
+		const filePath = path.join(DIST, rel);
+		const fileSize = (await stat(filePath)).size;
+		const options = { headers: { "Cache-Control": cacheControl } };
+		if (fileSize >= MULTIPART_THRESHOLD_BYTES) {
+			console.log(`  ↳ ${rel} 使用分片上传 (${Math.ceil(fileSize / 1024 / 1024)}MB)`);
+			await client.multipartUpload(rel, filePath, {
+				...options,
+				parallel: MULTIPART_PARALLEL,
+				partSize: MULTIPART_PART_SIZE_BYTES,
+				timeout: OSS_UPLOAD_TIMEOUT_MS,
+			});
+		} else {
+			await client.put(rel, filePath, options);
+		}
 		console.log(`  ✓ ${rel}`);
 	}
 	console.log(`[deploy-oss] 完成 ✅ 共 ${files.length} 个文件`);
