@@ -35,7 +35,20 @@ export default function RichContentView({ html, linkText = "查看(含图片/视
 
 	useEffect(() => {
 		if (!open) return;
-		return bindImageLoadFallback(detailRef.current);
+		let cleanup = () => {};
+		let frame = 0;
+		const bind = () => {
+			if (detailRef.current) {
+				cleanup = bindImageLoadFallback(detailRef.current);
+				return;
+			}
+			frame = requestAnimationFrame(bind);
+		};
+		bind();
+		return () => {
+			cancelAnimationFrame(frame);
+			cleanup();
+		};
 	}, [html, open]);
 	if (!html) return null;
 

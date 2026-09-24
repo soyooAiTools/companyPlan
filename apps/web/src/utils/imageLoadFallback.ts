@@ -23,13 +23,21 @@ function replaceFailedImage(image: HTMLImageElement) {
 export function bindImageLoadFallback(container: HTMLElement | null) {
 	if (!container) return () => {};
 
-	const images = Array.from(container.querySelectorAll<HTMLImageElement>("img"));
-	const cleanups = images.map((image) => {
-		const onError = () => replaceFailedImage(image);
-		image.addEventListener("error", onError);
-		if (image.complete && image.naturalWidth === 0) onError();
-		return () => image.removeEventListener("error", onError);
-	});
+	const scanImages = () => {
+		container.querySelectorAll<HTMLImageElement>("img").forEach((image) => {
+			if (image.complete && image.naturalWidth === 0) replaceFailedImage(image);
+		});
+	};
+	const onError = (event: Event) => {
+		if (event.target instanceof HTMLImageElement) replaceFailedImage(event.target);
+	};
+	const observer = new MutationObserver(scanImages);
+	container.addEventListener("error", onError, true);
+	observer.observe(container, { childList: true, subtree: true });
+	scanImages();
 
-	return () => cleanups.forEach((cleanup) => cleanup());
+	return () => {
+		container.removeEventListener("error", onError, true);
+		observer.disconnect();
+	};
 }
