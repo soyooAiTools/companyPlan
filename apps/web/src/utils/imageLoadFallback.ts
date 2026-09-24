@@ -13,8 +13,10 @@ function getImageHost(src: string) {
 function replaceFailedImage(image: HTMLImageElement) {
 	if (image.dataset.opsImageFallback === "true") return;
 	image.dataset.opsImageFallback = "true";
-	const host = getImageHost(image.currentSrc || image.src);
+	const originalSrc = image.currentSrc || image.src;
+	const host = getImageHost(originalSrc);
 	const message = RESTRICTED_IMAGE_HOSTS.has(host) ? "该图片复制自钉钉，您可能没有查看权限" : "图片加载失败，可能无权限";
+	image.dataset.opsImageOriginalSrc = originalSrc;
 	image.alt = message;
 	image.classList.add("ops-image-load-failed");
 	image.src = noPermissionImage;
