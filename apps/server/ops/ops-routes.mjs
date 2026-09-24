@@ -580,6 +580,8 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
           { id: { contains: kw } },
         ],
       });
+    const ticketKw = String(qy.ticket ?? "").trim();
+    if (ticketKw) filters.push({ id: { contains: ticketKw } });
     const titleKw = String(qy.title ?? "").trim();
     if (titleKw)
       filters.push({

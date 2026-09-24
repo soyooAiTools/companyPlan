@@ -502,6 +502,7 @@ export const opsApi = {
 			page?: number;
 			pageSize?: number;
 			q?: string;
+			ticket?: string;
 			title?: string;
 			project?: string;
 			requester?: string;
@@ -519,6 +520,7 @@ export const opsApi = {
 		if (params.page) qs.set("page", String(params.page));
 		if (params.pageSize) qs.set("pageSize", String(params.pageSize));
 		if (params.q) qs.set("q", params.q);
+		if (params.ticket) qs.set("ticket", params.ticket);
 		if (params.title) qs.set("title", params.title);
 		if (params.project) qs.set("project", params.project);
 		if (params.requester) qs.set("requester", params.requester);

@@ -25,11 +25,13 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [tickets, setTickets] = useState<OpsTicket[]>([]);
 	const [loading, setLoading] = useState(false);
 	const [scope, setScope] = useState<OpsTicketScope>("all");
+	const [ticketSearch, setTicketSearch] = useState("");
 	const [titleSearch, setTitleSearch] = useState("");
 	const [projectSearch, setProjectSearch] = useState("");
 	const [requesterSearch, setRequesterSearch] = useState("");
 	const [ownerSearch, setOwnerSearch] = useState("");
 	const [debouncedTitleSearch, setDebouncedTitleSearch] = useState("");
+	const [debouncedTicketSearch, setDebouncedTicketSearch] = useState("");
 	const [debouncedProjectSearch, setDebouncedProjectSearch] = useState("");
 	const [debouncedRequesterSearch, setDebouncedRequesterSearch] = useState("");
 	const [debouncedOwnerSearch, setDebouncedOwnerSearch] = useState("");
@@ -96,6 +98,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				scope,
 				page,
 				pageSize,
+				ticket: debouncedTicketSearch.trim() || undefined,
 				title: debouncedTitleSearch.trim() || undefined,
 				project: debouncedProjectSearch.trim() || undefined,
 				requester: debouncedRequesterSearch.trim() || undefined,
@@ -119,10 +122,11 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	useEffect(() => {
 		void loadTickets();
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [scope, page, pageSize, statusFilter, priorityFilter, segmentFilter, overdueOnly, sortBy, sortOrder, debouncedTitleSearch, debouncedProjectSearch, debouncedRequesterSearch, debouncedOwnerSearch]);
+	}, [scope, page, pageSize, statusFilter, priorityFilter, segmentFilter, overdueOnly, sortBy, sortOrder, debouncedTitleSearch, debouncedTicketSearch, debouncedProjectSearch, debouncedRequesterSearch, debouncedOwnerSearch]);
 	// 搜索去抖(并回到第 1 页)
 	useEffect(() => {
 		const t = setTimeout(() => {
+			setDebouncedTicketSearch(ticketSearch);
 			setDebouncedTitleSearch(titleSearch);
 			setDebouncedProjectSearch(projectSearch);
 			setDebouncedRequesterSearch(requesterSearch);
@@ -131,7 +135,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		}, 400);
 		return () => clearTimeout(t);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [titleSearch, projectSearch, requesterSearch, ownerSearch]);
+	}, [ticketSearch, titleSearch, projectSearch, requesterSearch, ownerSearch]);
 	// 环节筛选下拉:列出全部环节(不只当前数据里出现的)
 	useEffect(() => {
 		opsApi
@@ -539,6 +543,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				page={page}
 				pageSize={pageSize}
 				total={total}
+				ticketSearch={ticketSearch}
 				titleSearch={titleSearch}
 				projectSearch={projectSearch}
 				requesterSearch={requesterSearch}
@@ -554,6 +559,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				priorityControl={priorityControl}
 				onTitleSearchChange={(value) => {
 					setTitleSearch(value);
+					setPage(1);
+				}}
+				onTicketSearchChange={(value) => {
+					setTicketSearch(value);
 					setPage(1);
 				}}
 				onProjectSearchChange={(value) => {

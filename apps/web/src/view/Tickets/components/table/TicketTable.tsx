@@ -15,6 +15,7 @@ type TicketTableProps = {
 	page: number;
 	pageSize: number;
 	total: number;
+	ticketSearch: string;
 	titleSearch: string;
 	projectSearch: string;
 	requesterSearch: string;
@@ -37,6 +38,7 @@ type TicketTableProps = {
 	onSegmentFilterChange: (value: number[]) => void;
 	onSortChange: (sortBy: "createdAt" | "remaining" | "", sortOrder: "asc" | "desc" | "") => void;
 	onPageChange: (page: number, pageSize: number) => void;
+	onTicketSearchChange: (value: string) => void;
 	onOpen: (ticket: OpsTicket) => void;
 	onEditAdminNote?: (ticket: OpsTicket) => void;
 };
@@ -109,6 +111,7 @@ export default function TicketTable({
 	page,
 	pageSize,
 	total,
+	ticketSearch,
 	titleSearch,
 	projectSearch,
 	requesterSearch,
@@ -131,6 +134,7 @@ export default function TicketTable({
 	onSegmentFilterChange,
 	onSortChange,
 	onPageChange,
+	onTicketSearchChange,
 	onOpen,
 	onEditAdminNote = () => {},
 }: TicketTableProps) {
@@ -154,6 +158,9 @@ export default function TicketTable({
 			title: "单号",
 			dataIndex: "id",
 			width: 116,
+			filteredValue: ticketSearch ? [ticketSearch] : null,
+			filterIcon: (filtered) => searchIcon(filtered),
+			filterDropdown: ({ confirm }) => searchDropdown(ticketSearch, "搜索 单号", onTicketSearchChange, confirm),
 			render: (id: string) => (
 				<Tooltip title={id}>
 					<span style={{ fontFamily: "monospace", fontSize: 12, color: "#475569" }}>#{shortNo(id)}</span>

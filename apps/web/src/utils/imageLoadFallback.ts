@@ -14,7 +14,7 @@ function replaceFailedImage(image: HTMLImageElement) {
 	if (image.dataset.opsImageFallback === "true") return;
 	image.dataset.opsImageFallback = "true";
 	const host = getImageHost(image.currentSrc || image.src);
-	const message = RESTRICTED_IMAGE_HOSTS.has(host) ? "钉钉图片无权限或已过期" : "图片加载失败，可能无权限";
+	const message = RESTRICTED_IMAGE_HOSTS.has(host) ? "该图片复制自钉钉，您可能没有查看权限" : "图片加载失败，可能无权限";
 	image.alt = message;
 	image.classList.add("ops-image-load-failed");
 	image.src = noPermissionImage;
