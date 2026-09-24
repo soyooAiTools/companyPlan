@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { Avatar, Descriptions, Divider, Drawer, Image, Space, Spin, Tag, Timeline, Typography } from "antd";
 import { ArrowRightOutlined } from "@ant-design/icons";
@@ -8,6 +8,7 @@ import { remainingView } from "@/view/Tickets/ticketUtils";
 import TicketEventNote from "@/components/TicketEventNote";
 import FeedbackSourceInlineLink from "@/components/FeedbackSourceInlineLink";
 import "../../../Ops/RichText.css";
+import { bindImageLoadFallback } from "@/utils/imageLoadFallback";
 
 type SegmentTicketDetailDrawerProps = {
 	open: boolean;
@@ -31,6 +32,9 @@ function Person({ avatar, name }: { avatar?: string; name?: string }) {
 function InlineRichContent({ html }: { html?: string | null }) {
 	const [previewSrc, setPreviewSrc] = useState("");
 	const [previewOpen, setPreviewOpen] = useState(false);
+	const contentRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => bindImageLoadFallback(contentRef.current), [html]);
 	if (!html) return null;
 	const onContentClick = (e: MouseEvent<HTMLDivElement>) => {
 		const t = e.target as HTMLElement;
@@ -46,7 +50,7 @@ function InlineRichContent({ html }: { html?: string | null }) {
 				.pool-ticket-content img { max-width: 100%; height: auto; border-radius: 6px; cursor: zoom-in; }
 				.pool-ticket-content video { max-width: 100%; height: auto; border-radius: 6px; }
 			`}</style>
-			<div className="ops-rich pool-ticket-content" onClick={onContentClick} dangerouslySetInnerHTML={{ __html: html }} />
+			<div ref={contentRef} className="ops-rich pool-ticket-content" onClick={onContentClick} dangerouslySetInnerHTML={{ __html: html }} />
 			<Image style={{ display: "none" }} src={previewSrc} preview={{ visible: previewOpen, src: previewSrc, onVisibleChange: (v) => setPreviewOpen(v) }} />
 		</>
 	);

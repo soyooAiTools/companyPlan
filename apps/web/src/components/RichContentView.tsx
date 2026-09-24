@@ -2,10 +2,11 @@
 //  - 纯文字 → 直接内联显示(textViewable=true 时再附一个「查看详情」眼睛图标,点开看完整内容)
 //  - 含图片/视频等媒体 → 收成「查看」链接,点开弹框看(弹框内图片可点击放大)
 // 需求说明、项目状态/阶段备注等富文本统一用它。
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, MouseEvent } from "react";
 import { Button, Image, Modal, Tooltip } from "antd";
 import { PictureOutlined, EyeOutlined } from "@ant-design/icons";
+import { bindImageLoadFallback } from "@/utils/imageLoadFallback";
 
 // 是否含图片/视频等媒体
 const hasMedia = (html: string): boolean => /<(img|video|audio|iframe|source)\b/i.test(html);
@@ -30,6 +31,12 @@ export default function RichContentView({ html, linkText = "查看(含图片/视
 	const [open, setOpen] = useState(false);
 	const [previewSrc, setPreviewSrc] = useState("");
 	const [previewOpen, setPreviewOpen] = useState(false);
+	const detailRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		if (!open) return;
+		return bindImageLoadFallback(detailRef.current);
+	}, [html, open]);
 	if (!html) return null;
 
 	const media = hasMedia(html);
@@ -69,7 +76,7 @@ export default function RichContentView({ html, linkText = "查看(含图片/视
 			)}
 			<Modal title={modalTitle} open={open} onCancel={() => setOpen(false)} footer={null} width={modalWidth} styles={{ body: { maxHeight: "72vh", overflow: "auto" } }}>
 				<style>{`.rcv-detail img { max-width: 100%; height: auto; border-radius: 6px; cursor: zoom-in; } .rcv-detail video { max-width: 100%; height: auto; border-radius: 6px; }`}</style>
-				<div className="ops-rich rcv-detail" onClick={onContentClick} dangerouslySetInnerHTML={{ __html: html }} />
+				<div ref={detailRef} className="ops-rich rcv-detail" onClick={onContentClick} dangerouslySetInnerHTML={{ __html: html }} />
 				{/* 受控图片预览:点正文图片放大 */}
 				<Image style={{ display: "none" }} src={previewSrc} preview={{ visible: previewOpen, src: previewSrc, onVisibleChange: (v) => setPreviewOpen(v) }} />
 			</Modal>

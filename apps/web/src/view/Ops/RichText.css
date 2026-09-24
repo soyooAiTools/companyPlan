@@ -109,6 +109,10 @@
   display: block;
   margin: 6px 0;
 }
+.ops-rich img.ops-image-load-failed {
+  background: #fff;
+  object-fit: contain;
+}
 .ops-editor .ProseMirror img {
   width: auto;
   max-width: min(360px, 100%);
