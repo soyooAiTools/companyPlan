@@ -251,6 +251,7 @@ export interface OpsProjectPoolRow {
 	customerContact?: string; // 客户侧具体对接人,对应飞书「客户」列
 	requirementDoc?: string; // 客户需求文档链接,对应飞书「需求文档」列
 	svnRepoName?: string; // 当前版本 SVN 仓库名
+	svnBranchPath?: string; // 当前版本 SVN 分支路径
 	svnUrl?: string; // 当前版本 SVN 地址
 	status: string;
 	recycleStatus?: OpsProjectRecycleStatus;

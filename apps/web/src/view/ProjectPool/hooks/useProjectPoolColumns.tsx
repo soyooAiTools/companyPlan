@@ -118,9 +118,10 @@ function RecycleTag({
 
 const svnInternalBaseUrl = String(import.meta.env.VITE_SVN_INTERNAL_BASE_URL || "").replace(/\/+$/, "");
 
-function SvnCopyButton({ projectName, externalUrl, repoName }: { projectName: string; externalUrl: string; repoName?: string }) {
+function SvnCopyButton({ projectName, externalUrl, repoName, branchPath }: { projectName: string; externalUrl: string; repoName?: string; branchPath?: string }) {
 	const [copied, setCopied] = useState<"online" | "offline" | "">("");
-	const internalUrl = svnInternalBaseUrl && repoName ? `${svnInternalBaseUrl}/${String(repoName).replace(/^\/+/, "")}` : "";
+	const internalParts = [repoName, branchPath].map((value) => String(value || "").replace(/^\/+|\/+$/g, "")).filter(Boolean);
+	const internalUrl = svnInternalBaseUrl && internalParts.length ? `${svnInternalBaseUrl}/${internalParts.join("/")}` : "";
 	const copyAddress = (type: "online" | "offline", value: string) => {
 		void copyText(value).then(() => {
 			setCopied(type);
@@ -596,7 +597,7 @@ export function useProjectPoolColumns(
 						</div>
 						{showActions ? (
 							<div style={{ display: "grid", gridTemplateColumns: "48px 48px", alignItems: "center", gap: 4, width: 100, flexShrink: 0 }}>
-								{svnCopyValue ? <SvnCopyButton projectName={row.name || "未命名项目"} externalUrl={String(row.svnUrl || "").trim()} repoName={row.svnRepoName} /> : <span />}
+								{svnCopyValue ? <SvnCopyButton projectName={row.name || "未命名项目"} externalUrl={String(row.svnUrl || "").trim()} repoName={row.svnRepoName} branchPath={row.svnBranchPath} /> : <span />}
 								{canCreateTicket ? (
 									<Button
 										type="link"
