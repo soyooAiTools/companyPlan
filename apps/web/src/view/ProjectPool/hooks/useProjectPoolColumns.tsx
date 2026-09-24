@@ -118,10 +118,21 @@ function RecycleTag({
 
 const svnInternalBaseUrl = String(import.meta.env.VITE_SVN_INTERNAL_BASE_URL || "").replace(/\/+$/, "");
 
+function buildInternalSvnUrl(externalUrl: string, repoName?: string, branchPath?: string) {
+	if (!svnInternalBaseUrl) return "";
+	try {
+		const external = new URL(externalUrl);
+		const internal = new URL(svnInternalBaseUrl);
+		return `${internal.protocol}//${internal.host}${external.pathname}`;
+	} catch {
+		const internalParts = [repoName, branchPath].map((value) => String(value || "").replace(/^\/+|\/+$/g, "")).filter(Boolean);
+		return internalParts.length ? `${svnInternalBaseUrl}/${internalParts.join("/")}` : "";
+	}
+}
+
 function SvnCopyButton({ projectName, externalUrl, repoName, branchPath }: { projectName: string; externalUrl: string; repoName?: string; branchPath?: string }) {
 	const [copied, setCopied] = useState<"online" | "offline" | "">("");
-	const internalParts = [repoName, branchPath].map((value) => String(value || "").replace(/^\/+|\/+$/g, "")).filter(Boolean);
-	const internalUrl = svnInternalBaseUrl && internalParts.length ? `${svnInternalBaseUrl}/${internalParts.join("/")}` : "";
+	const internalUrl = buildInternalSvnUrl(externalUrl, repoName, branchPath);
 	const copyAddress = (type: "online" | "offline", value: string) => {
 		void copyText(value).then(() => {
 			setCopied(type);

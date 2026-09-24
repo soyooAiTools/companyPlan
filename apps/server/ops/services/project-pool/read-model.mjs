@@ -196,8 +196,9 @@ function defaultStageFromDeadlines(items) {
 }
 
 export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, extMap, options = {}) {
-  const rowId = String(options.rowId || project.id);
-  const version = options.version || (!options.hasVersionChildren ? null : defaultVersion(project));
+	const rowId = String(options.rowId || project.id);
+	const version = options.version || (!options.hasVersionChildren ? null : defaultVersion(project));
+	const isVersionParent = !!options.hasVersionChildren && !options.isVersionRow;
   const agg = options.ticketAggOverride || ticketAgg[rowId] || {};
   const ext = extMap?.[rowId] || {};
   const status = version ? versionValue(version, project, "status") : project.status;
@@ -225,9 +226,9 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
     tenantName: project.tenant_name ?? "",
     customerContact: (version ? versionValue(version, project, "customer_contact") : project.customer_contact) ?? "",
     requirementDoc: (version ? versionValue(version, project, "requirement_doc") : project.requirement_doc) ?? "",
-    svnRepoName: (version ? versionValue(version, project, "svn_repo_name") : (project.svn_repo_name ?? project.svnRepoName)) ?? "",
-    svnBranchPath: (version ? versionValue(version, project, "svn_branch_path") : (project.svn_branch_path ?? project.svnBranchPath)) ?? "",
-    svnUrl: (version ? versionValue(version, project, "svn_url") : (project.svn_url ?? project.svnUrl)) ?? "",
+    svnRepoName: isVersionParent ? "" : (version ? versionValue(version, project, "svn_repo_name") : (project.svn_repo_name ?? project.svnRepoName)) ?? "",
+    svnBranchPath: isVersionParent ? "" : (version ? versionValue(version, project, "svn_branch_path") : (project.svn_branch_path ?? project.svnBranchPath)) ?? "",
+    svnUrl: isVersionParent ? "" : (version ? versionValue(version, project, "svn_url") : (project.svn_url ?? project.svnUrl)) ?? "",
     status: status ?? "",
     plannerName: project.planner_name ?? "",
     planners: normalizePlanners(project),
