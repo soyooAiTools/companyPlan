@@ -21,6 +21,10 @@ function versionScopedProjectId(project?: OpsProjectPoolRow | null) {
 	return project?.versionId ? `${baseId}::version-${project.versionId}` : baseId;
 }
 
+function baseProjectId(project?: OpsProjectPoolRow | null) {
+	return String(project?.projectId || project?.parentId || project?.id || "").replace(/::version-[^:]+$/, "");
+}
+
 function projectTenantId(project?: OpsProjectPoolRow | null) {
 	const tenantId = project?.tenantId;
 	return tenantId == null || tenantId === "" ? "" : String(tenantId);
@@ -102,8 +106,9 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 			}
 			setTenants(nextTenants);
 			if (!project) return;
+			const baseId = baseProjectId(project);
 			const fallbackProject: OpsProject = {
-				id: project.id,
+				id: baseId,
 				name: project.name,
 				tenantId,
 				client: project.tenantName || "",
@@ -112,15 +117,15 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 				status: project.status || "",
 			};
 			setProjects([fallbackProject]);
-			form.setFieldsValue({ tenantId: tenantId || undefined, projectId: project.id, projectVersionId: clickedVersion?.id || defaultVersionId(fallbackProject), priority: "普通", tickets: [{}] });
+			form.setFieldsValue({ tenantId: tenantId || undefined, projectId: baseId, projectVersionId: clickedVersion?.id || defaultVersionId(fallbackProject), priority: "普通", tickets: [{}] });
 			void loadResponsibles(versionScopedProjectId(project));
 			const allProjects = await opsApi.projects(tenantId).catch(() => null);
 			if (!active || !allProjects) return;
-			const current = allProjects.projects.find((item) => String(item.id) === String(project.id));
+			const current = allProjects.projects.find((item) => String(item.id) === baseId);
 			const resolvedTenantId = tenantId || (current?.tenantId ? String(current.tenantId) : "");
 			if (resolvedTenantId && !tenantId) form.setFieldValue("tenantId", resolvedTenantId);
 			const nextProjects = resolvedTenantId ? allProjects.projects.filter((item) => String(item.tenantId) === resolvedTenantId) : allProjects.projects;
-			const syncedProject = nextProjects.find((item) => String(item.id) === String(project.id));
+			const syncedProject = nextProjects.find((item) => String(item.id) === baseId);
 			const syncedVersionId = clickedVersion?.id || defaultVersionId(syncedProject);
 			if (syncedVersionId) form.setFieldValue("projectVersionId", syncedVersionId);
 			setProjects(nextProjects);

@@ -291,7 +291,7 @@ export interface OpsProjectPoolRow {
 	stageOverByHours?: number | null; // 阶段超出阈值工时
 	stageStale?: boolean; // 阶段停留超时
 }
-export type OpsProjectPoolSortBy = "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd" | "settledAt";
+export type OpsProjectPoolSortBy = "name" | "nextDeadline" | "nextDeadlineOverdue" | "projectStart" | "projectEnd" | "settledAt";
 export type OpsProjectPoolSortOrder = "asc" | "desc";
 export type ProjectRemarkField = "remark" | "remark2" | "remark3" | "remark4" | "remark5" | "remark6";
 type OpsProjectPoolListParams = {

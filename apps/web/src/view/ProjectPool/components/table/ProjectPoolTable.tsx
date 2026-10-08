@@ -258,6 +258,10 @@ export default function ProjectPoolTable({ rows, columns, loading, page, pageSiz
             onSortChange("settledAt", current.order === "ascend" ? "asc" : "desc");
             return;
           }
+          if (key === "name" && current?.order) {
+            onSortChange("name", current.order === "ascend" ? "asc" : "desc");
+            return;
+          }
           onSortChange(undefined, undefined);
         }}
         onRow={(row) => ({

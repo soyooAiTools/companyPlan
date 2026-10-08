@@ -438,6 +438,17 @@ export function useProjectPoolColumns(
 	const deadlineSortBy: OpsProjectPoolSortBy = deadlineSortMode === "overdue" ? "nextDeadlineOverdue" : "nextDeadline";
 	const deadlineSortActive = options.sortBy === deadlineSortBy && !!options.sortOrder;
 	const deadlineSorter = deadlineSortMode === "overdue" ? (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDiffDays(b) - nextDeadlineDiffDays(a) : (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => nextDeadlineDateSortValue(a) - nextDeadlineDateSortValue(b);
+	const projectNameSorter = (a: OpsProjectPoolRow, b: OpsProjectPoolRow) => {
+		const left = String(a.name || "").trim();
+		const right = String(b.name || "").trim();
+		if (!left && !right) return 0;
+		if (!left) return 1;
+		if (!right) return -1;
+		const leftStartsWithNumber = /^\d/.test(left);
+		const rightStartsWithNumber = /^\d/.test(right);
+		if (leftStartsWithNumber !== rightStartsWithNumber) return leftStartsWithNumber ? -1 : 1;
+		return left.localeCompare(right, "zh-CN", { numeric: true, sensitivity: "base" });
+	};
 	const deadlineTitle = (
 		<div style={{ display: "flex", alignItems: "center", width: "100%", minWidth: 0, gap: 6, overflow: "hidden", whiteSpace: "nowrap" }}>
 			{headerTip("下版交付时间", "根据当前阶段显示下版交付时间;鼠标悬停可查看完整阶段交付计划。超时关注按这个时间是否逾期判断。")}
@@ -561,6 +572,8 @@ export function useProjectPoolColumns(
 			key: "name",
 			width: 270,
 			fixed: "left",
+			sorter: options.serverSort ? true : projectNameSorter,
+			sortOrder: options.sortBy === "name" ? options.sortOrder : null,
 			filterDropdown: filters
 				? ({ close }) => <AdvancedFilterBuilder value={filters.advancedFilter} fields={advancedFilterFields} onChange={filters.onAdvancedFilterChange} onApply={close} />
 				: undefined,

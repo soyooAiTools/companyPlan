@@ -62,6 +62,7 @@ const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "planner
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
 const NO_SEGMENT_FILTER_VALUE = 0;
 const ARCHIVE_PROJECT_STATUSES = ["结算完成", "已完成", "回收中"];
+const projectNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 function parseAdvancedFilter(input) {
   if (!input) return null;
@@ -305,6 +306,24 @@ function projectEndSortValue(row) {
   return /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : null;
 }
 
+function projectNameSortValue(row) {
+  const name = String(row?.name || "").trim();
+  return name || null;
+}
+
+function compareProjectNames(a, b) {
+  const left = String(a || "").trim();
+  const right = String(b || "").trim();
+  if (!left && !right) return 0;
+  if (!left) return 1;
+  if (!right) return -1;
+
+  const leftStartsWithNumber = /^\d/.test(left);
+  const rightStartsWithNumber = /^\d/.test(right);
+  if (leftStartsWithNumber !== rightStartsWithNumber) return leftStartsWithNumber ? -1 : 1;
+  return projectNameCollator.compare(left, right);
+}
+
 // 支持同一个排序器同时比较日期字符串和逾期天数数字。
 function compareSortValue(a, b) {
   if (typeof a === "number" && typeof b === "number") return a - b;
@@ -314,6 +333,7 @@ function compareSortValue(a, b) {
 function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
   const order = sortOrder === "asc" ? "asc" : sortOrder === "desc" ? "desc" : "";
   const valueBySort = {
+    name: projectNameSortValue,
     nextDeadline: nextDeadlineSortValue,
     nextDeadlineOverdue: nextDeadlineOverdueSortValue,
     projectStart: projectStartSortValue,
@@ -338,7 +358,7 @@ function sortProjectPoolRows(rows, { sortBy = "", sortOrder = "" } = {}) {
     if (av == null && bv == null) return Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id));
     if (av == null) return 1;
     if (bv == null) return -1;
-    const cmp = compareSortValue(av, bv);
+    const cmp = sortBy === "name" ? compareProjectNames(av, bv) : compareSortValue(av, bv);
     return cmp === 0 ? Number(soyooProjectId(b.id)) - Number(soyooProjectId(a.id)) || String(b.id).localeCompare(String(a.id)) : cmp * direction;
   }).map(sortChildren);
 }
