@@ -126,6 +126,10 @@ export const soyooClient = {
   tags: () => cached("tags", () => call(`/integration/tags`)),
 	changes: (after = 0, limit = 200) => call(`/integration/changes?after=${after}&limit=${limit}`),
 	playableFeedbackBatch: (batchId) => call(`/integration/playable-feedback/batches/${encodeURIComponent(batchId)}`),
+	playableFeedbackVerificationStatus: (reviewId, targetPlayableVersionId) => {
+		const query = new URLSearchParams({ target_playable_version_id: String(targetPlayableVersionId || "") });
+		return call(`/integration/playable-feedback/reviews/${encodeURIComponent(reviewId)}/verification-status?${query.toString()}`);
+	},
   // 项目池:列表(返回 {data,total,page,limit})/ 改状态 / 超时筛
   projectsList: (opts = {}) => {
     const q = new URLSearchParams({ page: String(opts.page ?? 1), limit: String(opts.limit ?? 20) });

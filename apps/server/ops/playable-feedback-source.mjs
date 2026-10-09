@@ -20,7 +20,7 @@ export async function loadPlayableFeedbackSource(database, ticketId) {
   const source = rows[0];
   if (!source) return null;
   const url = buildPlayableFeedbackSourceUrl(source.source_url, source.source_review_id, source.source_assignment_id, ticketId);
-  return url ? { url, reviewId: source.source_review_id, reviewNumber: source.source_review_number, assignmentId: source.source_assignment_id } : null;
+  return { url, reviewId: source.source_review_id, reviewNumber: source.source_review_number, assignmentId: source.source_assignment_id };
 }
 
 export function registerPlayableFeedbackSourceRoute(app, { requireAuth, database, getAccess, canView }) {

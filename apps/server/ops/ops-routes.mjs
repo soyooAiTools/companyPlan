@@ -1,6 +1,7 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
 import { registerPlayableFeedbackSourceRoute } from "./playable-feedback-source.mjs";
+import { assertPlayableFeedbackTicketCompletion } from "./playable-feedback-completion.mjs";
 import { addBusinessHours, remainingBusinessHours } from "./business-hours.mjs";
 import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "../utils/rich-html.mjs";
 import { prisma } from "./prisma.mjs";
@@ -750,6 +751,13 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const user = req.user;
     const access = await buildTicketCollaborationAccess(user);
     if (!canHandleTicket(access, t)) return res.status(403).json({ error: "无权修改(仅负责人、协作处理人或管理员)" });
+    if (status === "已完成" && t.status !== "已完成") {
+      try {
+        await assertPlayableFeedbackTicketCompletion(t, { database: prisma });
+      } catch (error) {
+        return soyooErrorResponse(res, error);
+      }
+    }
     const now = nowIso();
     const reason = clip(req.body?.reason, 500) || null; // 完成/阻塞 的备注都记进流转记录
     const data = { status, updated_at: now, status_updated_at: now };
