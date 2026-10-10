@@ -62,6 +62,7 @@ const ADVANCED_FILTER_FIELDS = new Set(["name", "tenantName", "tenant", "planner
 const UNSET_STAGE_FILTER_VALUE = "__unset_stage";
 const NO_SEGMENT_FILTER_VALUE = 0;
 const ARCHIVE_PROJECT_STATUSES = ["结算完成", "已完成", "回收中"];
+const INTERNAL_PAUSED_STATUS = "内部暂停";
 const projectNameCollator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
 
 function parseAdvancedFilter(input) {
@@ -976,6 +977,31 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
   const { project, members, baseProjectId } = await getProjectAndMembersForOps(projectId);
   if (!project) return { error: "项目不存在", code: 404 };
   const from = project.status;
+  if (status === INTERNAL_PAUSED_STATUS) {
+    const now = nowIso();
+    await prisma.ops_project_ext.upsert({
+      where: { project_id: String(projectId) },
+      create: { project_id: String(projectId), internal_status: INTERNAL_PAUSED_STATUS, internal_status_changed_at: now, updated_at: now },
+      update: { internal_status: INTERNAL_PAUSED_STATUS, internal_status_changed_at: now, updated_at: now },
+    });
+    await prisma.ops_project_status_logs.create({
+      data: {
+        project_id: String(projectId),
+        project_name: project.name,
+        kind: "status",
+        from_status: from || null,
+        to_status: INTERNAL_PAUSED_STATUS,
+        actor_id: meId(user),
+        actor_name: user?.name || user?.username || "",
+        comment_html: commentHtml || null,
+        created_at: now,
+      },
+    });
+    await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
+      logger.warn("project-pool snapshot refresh failed after internal pause", { projectId: baseProjectId, error });
+    });
+    return { ok: true, status: INTERNAL_PAUSED_STATUS };
+  }
   if (status === settlementDoneStatus) {
     if (!isAdmin(user)) return { error: "仅管理员可结算完成项目", code: 403 };
     const helperResult = await soyooClient.setProjectStatus(projectId, settlementDoneStatus, { operator_id: Number(meId(user)) || undefined });
@@ -1022,6 +1048,10 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
         },
       });
     }
+    await prisma.ops_project_ext.updateMany({
+      where: { project_id: String(projectId) },
+      data: { internal_status: null, internal_status_changed_at: null, updated_at: nowIso() },
+    });
     await refreshProjectPoolSnapshot(baseProjectId).catch((error) => {
       logger.warn("project-pool snapshot refresh failed after settlement done", { projectId: baseProjectId, error });
     });
@@ -1033,6 +1063,10 @@ export async function changeProjectStatus({ user, projectId, status, commentHtml
     operator_id: Number(meId(user)) || undefined,
     recycle_handoff_username: status === "回收中" ? recycleHandoffUsername || undefined : undefined,
   }); // 抛错 → 路由转 502,不写日志(保证一致)
+  await prisma.ops_project_ext.updateMany({
+    where: { project_id: String(projectId) },
+    data: { internal_status: null, internal_status_changed_at: null, updated_at: nowIso() },
+  });
   await prisma.ops_project_status_logs.create({
     data: {
       project_id: String(projectId),

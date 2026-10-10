@@ -25,7 +25,7 @@ export const OPS_TICKETS_DEFAULT_VIEW: OpsTicketsView = "table";
 // ===== 项目池公用常量 =====
 
 /** 项目状态(与 soyoo 项目状态枚举一致) */
-export const PROJECT_STATUSES = ["未启动", "推进中", "已完成", "已反馈", "待反馈", "打包中", "回收中", "结算完成", "客户暂停"];
+export const PROJECT_STATUSES = ["未启动", "推进中", "已完成", "已反馈", "待反馈", "打包中", "内部暂停", "回收中", "结算完成", "客户暂停"];
 
 /** ops 端可手动流转的项目状态；结算完成只在回收中且管理员操作时单独追加。 */
 export const OPS_EDITABLE_PROJECT_STATUSES = PROJECT_STATUSES.filter((status) => status !== "结算完成");
@@ -44,6 +44,7 @@ export const STATUS_COLOR: Record<string, { bg: string; text: string }> = {
 	回收中: { bg: "#fee3e2", text: "#000000" },
 	结算完成: { bg: "#b7eb8f", text: "#000000" },
 	客户暂停: { bg: "#efe6fe", text: "#000000" },
+	内部暂停: { bg: "#e5e7eb", text: "#374151" },
 };
 
 /** 项目状态内联样式(背景 + 文字色);未知/空按「未启动」,再兜底灰 */

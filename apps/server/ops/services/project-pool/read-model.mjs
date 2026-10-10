@@ -7,7 +7,7 @@ export async function loadProjectExtMap(projectIds) {
   const out = {};
   if (!projectIds.length) return out;
   const ids = projectIds.map(String);
-  const rows = await prisma.$queryRawUnsafe(`SELECT project_id, stage, stage_changed_at, remark, remark2, remark3, remark4, remark5, remark6, asset_recycle_status FROM ops_project_ext WHERE project_id IN (${ids.map(() => "?").join(",")})`, ...ids);
+  const rows = await prisma.$queryRawUnsafe(`SELECT project_id, stage, stage_changed_at, remark, remark2, remark3, remark4, remark5, remark6, asset_recycle_status, internal_status, internal_status_changed_at FROM ops_project_ext WHERE project_id IN (${ids.map(() => "?").join(",")})`, ...ids);
   for (const r of rows) out[r.project_id] = {
     stage: r.stage,
     stageChangedAt: r.stage_changed_at,
@@ -18,6 +18,8 @@ export async function loadProjectExtMap(projectIds) {
     remark5: r.remark5,
     remark6: r.remark6,
     assetRecycleStatus: r.asset_recycle_status,
+    internalStatus: r.internal_status,
+    internalStatusChangedAt: r.internal_status_changed_at,
   };
   return out;
 }
@@ -201,12 +203,13 @@ export function buildProjectPoolRow(project, ticketAgg, segMap, statusSettings, 
 	const isVersionParent = !!options.hasVersionChildren && !options.isVersionRow;
   const agg = options.ticketAggOverride || ticketAgg[rowId] || {};
   const ext = extMap?.[rowId] || {};
-  const status = version ? versionValue(version, project, "status") : project.status;
+  const sourceStatus = version ? versionValue(version, project, "status") : project.status;
+  const status = ext.internalStatus || sourceStatus;
   const stageDeadlines = normalizeStageDeadlinesValue(version ? versionValue(version, project, "stage_deadlines", "stage_deadlines") : (project.stage_deadlines ?? project.stageDeadlines));
   const memberCount = version ? Number(version.member_count ?? project.member_count ?? 0) : project.member_count ?? 0;
   const now = nowIso();
   const setting = statusSettings?.[status];
-  const statusChangedAt = version ? versionValue(version, project, "status_changed_at") : project.status_changed_at;
+  const statusChangedAt = ext.internalStatusChangedAt || (version ? versionValue(version, project, "status_changed_at") : project.status_changed_at);
   const stuckHours = statusChangedAt ? Math.round(businessHoursBetween(statusChangedAt, now)) : null;
   const staleHours = setting?.enabled ? setting.staleHours : 0;
   const isStale = !!(setting?.enabled && setting.staleHours > 0 && stuckHours != null && stuckHours > setting.staleHours);
