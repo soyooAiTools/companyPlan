@@ -118,6 +118,12 @@ export interface OpsTicket {
 	createdAt: string;
 	statusUpdatedAt: string;
 }
+
+export interface OpsPlayableFeedbackCompletion {
+	source: { reviewId: string; assignmentId: string };
+	revision: string;
+	items: Array<{ feedbackId: string; displayOrder: number; feedbackText: string; completed: boolean; completedAt?: string | null }>;
+}
 export interface OpsTicketEvent {
 	id: number;
 	actorName: string;
@@ -542,6 +548,9 @@ export const opsApi = {
 	// 按需拉富文本正文(列表不返 contentHtml)
 	ticketContent: (id: string) => requestJson<{ contentHtml: string }>(`/api/ops/tickets/${encodeURIComponent(id)}/content`),
 	ticketFeedbackSource: (id: string) => requestJson<{ source: { url: string; reviewId: string; reviewNumber?: number | null; assignmentId: string } | null }>(`/api/ops/tickets/${encodeURIComponent(id)}/feedback-source`),
+	ticketFeedbackCompletion: (id: string) => requestJson<{ completion: OpsPlayableFeedbackCompletion | null }>(`/api/ops/tickets/${encodeURIComponent(id)}/feedback-completion`),
+	updateTicketFeedbackCompletion: (id: string, completedFeedbackIds: string[], expectedRevision: string) =>
+		requestJson<{ completion: OpsPlayableFeedbackCompletion | null }>(`/api/ops/tickets/${encodeURIComponent(id)}/feedback-completion`, { method: "PUT", body: JSON.stringify({ completedFeedbackIds, expectedRevision, requestId: crypto.randomUUID() }) }),
 	updateTicketContent: (id: string, contentHtml: string) =>
 		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ contentHtml }) }),
 	updateTicketAdminNote: (id: string, adminNote: string) =>

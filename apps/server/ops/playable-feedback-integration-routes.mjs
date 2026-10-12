@@ -193,10 +193,12 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       reviewId: clip(body.source.reviewId, 64).trim(),
       reviewNumber: Number.isInteger(Number(body.source.reviewNumber)) && Number(body.source.reviewNumber) > 0 ? Number(body.source.reviewNumber) : null,
       feedbackId: clip(body.source.feedbackId, 160).trim(),
+		feedbackIds: [...new Set((Array.isArray(body.source.feedbackIds) ? body.source.feedbackIds : []).map((id) => clip(id, 160).trim()).filter(Boolean))],
       url: clip(body.source.url, 500).trim(),
     };
     const normalized = body.tickets.map((item) => ({
       sourceAssignmentId: clip(item.sourceAssignmentId, 64).trim(),
+			feedbackIds: [...new Set((Array.isArray(item.feedbackIds) ? item.feedbackIds : []).map((id) => clip(id, 160).trim()).filter(Boolean))],
       ownerId: clip(item.ownerId, 64).trim(),
       segmentId: Number(item.segmentId),
       title: clip(item.title, 160).trim(),
@@ -206,6 +208,9 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
       needType: clip(item.needType, 120),
       dueInHours: item.dueInHours == null || item.dueInHours === "" ? undefined : Number(item.dueInHours),
     }));
+		if (source.feedbackIds.length > 1 && normalized.some((item) => !item.feedbackIds.length)) {
+			return response.status(409).json({ error: "反馈指派数据缺少每张工单的反馈映射，请等待反馈服务升级后重试" });
+		}
 
     if (normalized.some((item) => !Number.isInteger(item.segmentId) || item.segmentId <= 0)) {
       try {
@@ -293,6 +298,15 @@ export function registerPlayableFeedbackIntegrationRoutes(app, { requireServiceA
             source_url: buildPlayableFeedbackSourceUrl(source.url, source.reviewId, entry.item.sourceAssignmentId) || null,
             created_at: nowIso(),
           });
+			const feedbackIds = entry.item.feedbackIds.length ? entry.item.feedbackIds : [source.feedbackId];
+			for (const [index, feedbackId] of feedbackIds.entries()) {
+				await tx.$executeRawUnsafe(
+					`INSERT INTO ops_ticket_playable_feedback_items
+					 (ticket_id, source_review_id, source_assignment_id, source_feedback_id, display_order, feedback_text, completed, updated_at)
+					 VALUES (?, ?, ?, ?, ?, '', 0, ?)`,
+					ticket.id, source.reviewId, entry.item.sourceAssignmentId, feedbackId, index + 1, nowIso(),
+				);
+			}
           rows.push(ticket);
         }
         return rows;

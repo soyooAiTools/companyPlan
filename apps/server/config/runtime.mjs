@@ -75,6 +75,10 @@ export const playableFeedbackIntegration = {
   sharedSecret: resolvePlayableFeedbackSharedSecret(),
   maxClockSkewSeconds: Math.max(30, Number(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_MAX_CLOCK_SKEW_SECONDS ?? "300") || 300),
 };
+export const playableFeedbackCompletionSync = {
+  intervalSeconds: Math.max(30, Number(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_COMPLETION_SYNC_INTERVAL_SECONDS ?? "120") || 120),
+  batchSize: Math.min(200, Math.max(1, Number(process.env.COMPANYPLAN_PLAYABLE_FEEDBACK_COMPLETION_SYNC_BATCH_SIZE ?? "50") || 50)),
+};
 // 阿里云 OSS（富文本编辑器图片上传）。凭证放根 .env：OSS_ACCESS_KEY_ID / OSS_ACCESS_KEY_SECRET。
 export const ossConfig = {
   accessKeyId: process.env.OSS_ACCESS_KEY_ID ?? "",

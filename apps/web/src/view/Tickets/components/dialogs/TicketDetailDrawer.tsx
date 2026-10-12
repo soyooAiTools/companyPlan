@@ -7,6 +7,7 @@ import FeedbackSourceInlineLink from "../../../../components/FeedbackSourceInlin
 import TicketEventNote from "../../../../components/TicketEventNote";
 import { fmtDateTime } from "../../../../utils/format";
 import { remainingView } from "../../ticketUtils";
+import TicketPlayableFeedbackCompletionPanel from "./TicketPlayableFeedbackCompletionPanel";
 
 type TicketDetailDrawerProps = {
 	detail: OpsTicket | null;
@@ -18,9 +19,12 @@ type TicketDetailDrawerProps = {
 	onClose: () => void;
 	onAssign: () => void;
 	onEditContent: () => void;
+	feedbackCompletion: import("../../../../api/modules/ops").OpsPlayableFeedbackCompletion | null;
+	onSaveFeedbackCompletion: (ids: string[], expectedRevision: string) => Promise<void>;
+	onFeedbackCompletionDirtyChange: (dirty: boolean) => void;
 };
 
-export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent }: TicketDetailDrawerProps) {
+export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent, feedbackCompletion, onSaveFeedbackCompletion, onFeedbackCompletionDirtyChange }: TicketDetailDrawerProps) {
 	return (
 		<Drawer title={detail?.title} open={!!detail} onClose={onClose} size={480} destroyOnHidden>
 			{detail &&
@@ -71,14 +75,16 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 							<Typography.Title level={5} style={{ margin: 0 }}>
 								需求说明
 							</Typography.Title>
-							{detail.canEditContent && detail.status !== "已完成" ? (
+							{!feedbackCompletion && detail.canEditContent && detail.status !== "已完成" ? (
 								<Button size="small" icon={<EditOutlined />} onClick={onEditContent}>
 									编辑
 								</Button>
 							) : null}
 						</div>
 						<div style={{ marginTop: 10, marginBottom: 20 }}>
-							{detail.contentHtml ? (
+							{feedbackCompletion?.items.length ? (
+								<TicketPlayableFeedbackCompletionPanel ticket={detail} completion={feedbackCompletion} onSave={onSaveFeedbackCompletion} onDirtyChange={onFeedbackCompletionDirtyChange} />
+							) : detail.contentHtml ? (
 								<RichContentView html={detail.contentHtml} textViewable linkText="点击查看需求(含图片/视频)" modalTitle={`需求说明 · ${detail.title}`} modalWidth={900} inlineClassName="text-sm leading-relaxed font-bold" />
 							) : detail.summary || detail.hyperlink ? (
 								<div className="text-sm leading-relaxed font-bold">

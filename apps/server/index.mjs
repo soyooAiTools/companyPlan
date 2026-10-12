@@ -33,6 +33,7 @@ import { registerAudioEditRoutes } from "./ops/audio-edit-routes.mjs";
 import { registerPlayableFeedbackIntegrationRoutes } from "./ops/playable-feedback-integration-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
+import { startPlayableFeedbackCompletionSync } from "./ops/playable-feedback-completion-sync.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
 
 mkdirSync(dataDir, { recursive: true });
@@ -106,6 +107,9 @@ app.listen(port, () => {
   startOpsChangeConsumer({ logger });
   // 通知扫描:周期性发现超时工单/项目并落库 + SSE 推送(间隔后台可改)
   startNotificationScan({ logger });
+	// OPS confirmation is durable locally; this worker mirrors its audit trail
+	// into Preview in batches without coupling an operator's click to Preview.
+	startPlayableFeedbackCompletionSync({ logger });
 });
 
 function jsonGzip(request, response, next) {

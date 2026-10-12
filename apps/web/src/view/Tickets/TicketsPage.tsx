@@ -11,6 +11,7 @@ import CreateTicketModal from "./components/dialogs/CreateTicketModal";
 import EditTicketContentModal from "./components/dialogs/EditTicketContentModal";
 import EditTicketAdminNoteModal from "./components/dialogs/EditTicketAdminNoteModal";
 import TicketDetailDrawer from "./components/dialogs/TicketDetailDrawer";
+import type { OpsPlayableFeedbackCompletion } from "../../api/modules/ops";
 import TicketTable from "./components/table/TicketTable";
 import PersonCell from "./components/table/PersonCell";
 import TicketStatusNoteModal from "./components/dialogs/TicketStatusNoteModal";
@@ -48,6 +49,8 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [detail, setDetail] = useState<OpsTicket | null>(null);
 	const [detailLoading, setDetailLoading] = useState(false); // 详情打开/切换时的加载态(避免闪上一条数据)
 	const [events, setEvents] = useState<OpsTicketEvent[]>([]);
+	const [feedbackCompletion, setFeedbackCompletion] = useState<OpsPlayableFeedbackCompletion | null>(null);
+	const [feedbackCompletionDirty, setFeedbackCompletionDirty] = useState(false);
 	const [editContentOpen, setEditContentOpen] = useState(false); // 编辑需求说明
 	const [editContentHtml, setEditContentHtml] = useState("");
 	const [savingContent, setSavingContent] = useState(false);
@@ -146,6 +149,8 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 
 	useEffect(() => {
 		setEvents([]); // 切换/关闭先清空,避免闪现上一条工单的数据
+		setFeedbackCompletion(null);
+		setFeedbackCompletionDirty(false);
 		setEditingPriorityId(null);
 		if (!detail) {
 			setDetailLoading(false);
@@ -164,6 +169,9 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 					if (active) setEvents([]);
 				}),
 		];
+		tasks.push(
+			opsApi.ticketFeedbackCompletion(id).then((result) => { if (active) setFeedbackCompletion(result.completion); }).catch(() => { if (active) setFeedbackCompletion(null); }),
+		);
 		if (!detail.contentHtml) {
 			tasks.push(
 				opsApi
@@ -182,11 +190,66 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		};
 	}, [detail?.id]);
 
+	const saveFeedbackCompletion = async (ids: string[], expectedRevision: string) => {
+		if (!detail) return;
+		try {
+			const result = await opsApi.updateTicketFeedbackCompletion(detail.id, ids, expectedRevision);
+			setFeedbackCompletion(result.completion);
+			setFeedbackCompletionDirty(false);
+			const eventsResult = await opsApi.ticketEvents(detail.id);
+			setEvents(eventsResult.events);
+		} catch (error) {
+			messageApi.error(error instanceof Error ? error.message : "保存反馈完成标记失败");
+			throw error;
+		}
+	};
+
 	// 打开详情:进入加载态(配合 effect 拉数据 + destroyOnHidden,避免显示上一条)
-	const openDetail = (t: OpsTicket) => {
+	const showDetail = (t: OpsTicket) => {
 		setDetailLoading(true);
 		setDetail(t);
 	};
+	const openDetail = (t: OpsTicket) => {
+		if (!feedbackCompletionDirty || detail?.id === t.id) {
+			showDetail(t);
+			return;
+		}
+		Modal.confirm({
+			title: "放弃未保存的反馈标记？",
+			content: "当前反馈完成标记尚未确认，切换工单后本次修改不会保存。",
+			okText: "放弃并切换",
+			cancelText: "继续编辑",
+			okButtonProps: { danger: true },
+			onOk: () => showDetail(t),
+		});
+	};
+	const closeDetail = () => {
+		const close = () => {
+			setDetail(null);
+			if (ticketParam) {
+				searchParams.delete("ticket");
+				setSearchParams(searchParams, { replace: true });
+			}
+		};
+		if (!feedbackCompletionDirty) {
+			close();
+			return;
+		}
+		Modal.confirm({
+			title: "放弃未保存的反馈标记？",
+			content: "请先确认保存，或选择放弃后关闭工单。",
+			okText: "放弃并关闭",
+			cancelText: "继续编辑",
+			okButtonProps: { danger: true },
+			onOk: close,
+		});
+	};
+	useEffect(() => {
+		if (!feedbackCompletionDirty) return;
+		const warnBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+		window.addEventListener("beforeunload", warnBeforeUnload);
+		return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+	}, [feedbackCompletionDirty]);
 
 	// 通知深链:URL 带 ?ticket=<id> 时拉该工单并打开详情(可能不在当前列表/筛选内)
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -240,6 +303,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	// 选状态:进行中/排队中 直接改;完成/阻塞 弹框填备注
 	const onPickStatus = (t: OpsTicket, next: string) => {
 		if (next === t.status) return;
+		if (next === "已完成" && detail?.id === t.id && feedbackCompletionDirty) {
+			messageApi.warning("请先确认保存或放弃本次反馈完成标记，再完成工单");
+			return;
+		}
 		if (NEED_NOTE.has(next)) {
 			setNoteId(t.id);
 			setNoteStatus(next);
@@ -609,15 +676,12 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				statusControl={statusControl}
 				priorityControl={priorityControl}
 				personCell={personCell}
-				onClose={() => {
-					setDetail(null);
-					if (ticketParam) {
-						searchParams.delete("ticket");
-						setSearchParams(searchParams, { replace: true });
-					}
-				}}
+				onClose={closeDetail}
 				onAssign={openAssign}
 				onEditContent={openEditContent}
+				feedbackCompletion={feedbackCompletion}
+				onSaveFeedbackCompletion={saveFeedbackCompletion}
+				onFeedbackCompletionDirtyChange={setFeedbackCompletionDirty}
 			/>
 
 			<EditTicketContentModal open={editContentOpen} value={editContentHtml} saving={savingContent} projectId={detail?.projectId} onChange={setEditContentHtml} onSave={saveContent} onCancel={() => setEditContentOpen(false)} />

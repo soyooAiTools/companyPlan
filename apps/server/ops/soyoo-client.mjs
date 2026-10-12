@@ -126,6 +126,8 @@ export const soyooClient = {
   tags: () => cached("tags", () => call(`/integration/tags`)),
 	changes: (after = 0, limit = 200) => call(`/integration/changes?after=${after}&limit=${limit}`),
 	playableFeedbackBatch: (batchId) => call(`/integration/playable-feedback/batches/${encodeURIComponent(batchId)}`),
+	playableFeedbackAssignment: (assignmentId) => call(`/integration/playable-feedback/assignments/${encodeURIComponent(assignmentId)}`),
+	recordPlayableFeedbackCompletion: (reviewId, body) => callRaw(`/integration/playable-feedback/reviews/${encodeURIComponent(reviewId)}/ops-completions`, { method: "POST", body }),
 	playableFeedbackVerificationStatus: (reviewId, targetPlayableVersionId) => {
 		const query = new URLSearchParams({ target_playable_version_id: String(targetPlayableVersionId || "") });
 		return call(`/integration/playable-feedback/reviews/${encodeURIComponent(reviewId)}/verification-status?${query.toString()}`);

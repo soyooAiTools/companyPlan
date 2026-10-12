@@ -236,6 +236,59 @@ async function initializeSchema() {
       UNIQUE KEY uniq_otsl_ticket (ticket_id),
       KEY idx_otsl_feedback (source_review_id, source_feedback_id)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    -- OPS 对预览反馈的处理标记。只服务 source_system=playable-feedback 的工单。
+    CREATE TABLE IF NOT EXISTS ops_ticket_playable_feedback_items (
+      ticket_id VARCHAR(64) NOT NULL,
+      source_review_id VARCHAR(64) NOT NULL,
+      source_assignment_id VARCHAR(64) NOT NULL,
+      source_feedback_id VARCHAR(160) NOT NULL,
+      display_order INT NOT NULL,
+      feedback_text VARCHAR(500) NOT NULL DEFAULT '',
+      completed TINYINT(1) NOT NULL DEFAULT 0,
+      last_batch_id VARCHAR(96),
+      completed_by_user_id VARCHAR(64),
+      completed_at VARCHAR(40),
+      updated_at VARCHAR(40) NOT NULL,
+      PRIMARY KEY (ticket_id, source_feedback_id),
+      KEY idx_otpf_assignment (source_assignment_id),
+      KEY idx_otpf_ticket_completed (ticket_id, completed)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    -- One confirmation action maps to one human-readable ticket timeline event.
+    CREATE TABLE IF NOT EXISTS ops_ticket_playable_feedback_batches (
+      id VARCHAR(96) NOT NULL PRIMARY KEY,
+      ticket_id VARCHAR(64) NOT NULL,
+      actor_id VARCHAR(64) NOT NULL,
+      actor_name VARCHAR(191) NOT NULL,
+      actor_avatar VARCHAR(1024) NOT NULL,
+      changes_json LONGTEXT NOT NULL,
+      created_at VARCHAR(40) NOT NULL,
+      KEY idx_otpfb_ticket (ticket_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+    -- Durable outbound records. A failed Preview write is retried without
+    -- losing the locally confirmed OPS decision.
+    CREATE TABLE IF NOT EXISTS ops_ticket_playable_feedback_outbox (
+      id VARCHAR(96) NOT NULL PRIMARY KEY,
+      batch_id VARCHAR(96) NOT NULL,
+      ticket_id VARCHAR(64) NOT NULL,
+      source_review_id VARCHAR(64) NOT NULL,
+      source_assignment_id VARCHAR(64) NOT NULL,
+      source_feedback_id VARCHAR(160) NOT NULL,
+      completed TINYINT(1) NOT NULL,
+      actor_id VARCHAR(64) NOT NULL,
+      actor_name VARCHAR(191) NOT NULL,
+      actor_avatar VARCHAR(1024) NOT NULL,
+      occurred_at VARCHAR(40) NOT NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      next_attempt_at VARCHAR(40) NOT NULL,
+      last_error VARCHAR(500),
+      delivered_at VARCHAR(40),
+      created_at VARCHAR(40) NOT NULL,
+      KEY idx_otpf_outbox_due (status, next_attempt_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
   await ensureIndex("idx_tickets_project", "tickets", "project_id");
   await ensureIndex("idx_tickets_requester", "tickets", "requester_id");
@@ -378,6 +431,14 @@ async function ensureSystemPerson() {
 }
 
 async function migrateSchema() {
+	// OPS 反馈完成历史必须在确认时固化操作者资料和发生时间。老库先以空值补列，
+	// 新事件写入前会强制要求完整快照，避免异步投递时改名/换头像污染历史。
+	await ensureColumn("ops_ticket_playable_feedback_batches", "actor_name", "VARCHAR(191) NOT NULL DEFAULT ''");
+	await ensureColumn("ops_ticket_playable_feedback_batches", "actor_avatar", "VARCHAR(1024) NOT NULL DEFAULT ''");
+	await ensureColumn("ops_ticket_playable_feedback_outbox", "actor_name", "VARCHAR(191) NOT NULL DEFAULT ''");
+	await ensureColumn("ops_ticket_playable_feedback_outbox", "actor_avatar", "VARCHAR(1024) NOT NULL DEFAULT ''");
+	await ensureColumn("ops_ticket_playable_feedback_outbox", "occurred_at", "VARCHAR(40) NOT NULL DEFAULT ''");
+	await ensureColumn("ops_ticket_playable_feedback_items", "last_batch_id", "VARCHAR(96)");
 	await ensureColumn("ops_ticket_source_links", "source_review_number", "INT");
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
   await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");

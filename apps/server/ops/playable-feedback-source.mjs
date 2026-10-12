@@ -14,13 +14,13 @@ export function buildPlayableFeedbackSourceUrl(sourceUrl, reviewId, assignmentId
 
 export async function loadPlayableFeedbackSource(database, ticketId) {
   const rows = await database.$queryRawUnsafe(
-    "SELECT source_review_id, source_review_number, source_assignment_id, source_url FROM ops_ticket_source_links WHERE source_system = ? AND ticket_id = ? LIMIT 1",
+    "SELECT source_review_id, source_review_number, source_assignment_id, source_feedback_id, source_url FROM ops_ticket_source_links WHERE source_system = ? AND ticket_id = ? LIMIT 1",
     "playable-feedback", ticketId,
   );
   const source = rows[0];
   if (!source) return null;
   const url = buildPlayableFeedbackSourceUrl(source.source_url, source.source_review_id, source.source_assignment_id, ticketId);
-  return { url, reviewId: source.source_review_id, reviewNumber: source.source_review_number, assignmentId: source.source_assignment_id };
+  return { url, reviewId: source.source_review_id, reviewNumber: source.source_review_number, assignmentId: source.source_assignment_id, feedbackId: source.source_feedback_id };
 }
 
 export function registerPlayableFeedbackSourceRoute(app, { requireAuth, database, getAccess, canView }) {

@@ -1,7 +1,8 @@
 // 需求提单 —— 新接口(Prisma,挂 /api/ops/*)。环节=ops 自定义"分类",绑定 soyoo 标签。
 import crypto from "node:crypto";
-import { registerPlayableFeedbackSourceRoute } from "./playable-feedback-source.mjs";
-import { assertPlayableFeedbackTicketCompletion } from "./playable-feedback-completion.mjs";
+import { loadPlayableFeedbackSource, registerPlayableFeedbackSourceRoute } from "./playable-feedback-source.mjs";
+import { ensurePlayableFeedbackItems, savePlayableFeedbackCompletion, updateTicketStatusWithFeedbackGate } from "./playable-feedback-completion.mjs";
+import { listPlayableFeedbackCompletionFailures, retryPlayableFeedbackCompletionFailure } from "./playable-feedback-completion-sync.mjs";
 import { addBusinessHours, remainingBusinessHours } from "./business-hours.mjs";
 import { MAX_CONTENT_HTML, sanitizeRichHtml, htmlToPlain, isBlankRich } from "../utils/rich-html.mjs";
 import { prisma } from "./prisma.mjs";
@@ -751,22 +752,35 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const user = req.user;
     const access = await buildTicketCollaborationAccess(user);
     if (!canHandleTicket(access, t)) return res.status(403).json({ error: "无权修改(仅负责人、协作处理人或管理员)" });
-    if (status === "已完成" && t.status !== "已完成") {
-      try {
-        await assertPlayableFeedbackTicketCompletion(t, { database: prisma });
-      } catch (error) {
-        return soyooErrorResponse(res, error);
-      }
-    }
     const now = nowIso();
     const reason = clip(req.body?.reason, 500) || null; // 完成/阻塞 的备注都记进流转记录
-    const data = { status, updated_at: now, status_updated_at: now };
-    if (status === "阻塞") data.block_reason = reason;
-    const updated = await prisma.tickets.update({ where: { id }, data });
-    await logTicketEvent({ ticketId: id, user, action: statusActionLabel(t.status, status), fromStatus: t.status, toStatus: status, note: reason });
-    await notif.notifyStatusChanged(updated, t.status, status, meId(user)); // 通知负责人(自己改自己的单不通知)
-    void refreshProjectPoolSnapshot(updated.project_id).catch(() => {});
-    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
+    let sourceState = null;
+    try {
+      if (status === "已完成") {
+        sourceState = await ensurePlayableFeedbackItems(prisma, t);
+      }
+      const data = { status, updated_at: now, status_updated_at: now };
+      if (status === "阻塞") data.block_reason = reason;
+      const result = await updateTicketStatusWithFeedbackGate(prisma, {
+        ticketId: id,
+        status,
+        gateFeedback: !!sourceState,
+        data,
+        eventData: (current) => ({
+          ticket_id: id,
+          actor_id: user?.id ?? null,
+          actor_name: user?.name ?? user?.username ?? "",
+          action: statusActionLabel(current.status, status),
+          note: reason,
+          created_at: now,
+        }),
+      });
+      if (result.changed) await notif.notifyStatusChanged(result.updated, result.previous.status, status, meId(user));
+      void refreshProjectPoolSnapshot(result.updated.project_id).catch(() => {});
+      return res.json({ ticket: await decorateTickets(result.updated, user, await loadSegNameMap()) });
+    } catch (error) {
+      return soyooErrorResponse(res, error);
+    }
   });
 
   // 改优先级(管理员或策划),记入流转记录,并通知负责人
@@ -794,6 +808,9 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const id = String(req.params.id);
     const t = await prisma.tickets.findUnique({ where: { id } });
     if (!t) return res.status(404).json({ error: "提单不存在" });
+    if (await loadPlayableFeedbackSource(prisma, id)) {
+      return res.status(409).json({ error: "预览反馈提单的需求说明由反馈内容生成，不允许修改" });
+    }
     const user = req.user;
     if (!isAdmin(user) && t.requester_id !== meId(user)) return res.status(403).json({ error: "无权修改(仅提单人或管理员)" });
     const rawHtml = req.body?.contentHtml != null ? String(req.body.contentHtml) : "";
@@ -834,6 +851,52 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     res.json({
       events: events.map((e) => ({ id: e.id, actorName: e.actor_name ?? "", action: e.action, fromStatus: e.from_status ?? "", toStatus: e.to_status ?? "", note: e.note ?? "", createdAt: e.created_at })),
     });
+  });
+
+  // OPS-only program completion marker. This never changes Preview's own
+  // validation state; it is an auditable per-ticket delivery checklist.
+  app.get("/api/ops/tickets/:id/feedback-completion", requireAuth, async (req, res) => {
+    const ticket = await prisma.tickets.findUnique({ where: { id: String(req.params.id) } });
+    if (!ticket) return res.status(404).json({ error: "提单不存在" });
+    const access = await buildTicketCollaborationAccess(req.user);
+    if (!canViewTicket(access, ticket)) return res.status(403).json({ error: "无权查看" });
+    try {
+      const completion = await ensurePlayableFeedbackItems(prisma, ticket);
+      return res.json({ completion });
+    } catch (error) {
+      return soyooErrorResponse(res, error);
+    }
+  });
+
+  app.put("/api/ops/tickets/:id/feedback-completion", requireAuth, async (req, res) => {
+    const ticket = await prisma.tickets.findUnique({ where: { id: String(req.params.id) } });
+    if (!ticket) return res.status(404).json({ error: "提单不存在" });
+    const access = await buildTicketCollaborationAccess(req.user);
+    if (!canHandleTicket(access, ticket)) return res.status(403).json({ error: "无权修改(仅负责人、协作处理人或管理员)" });
+    try {
+      const completion = await savePlayableFeedbackCompletion(prisma, {
+        ticket,
+        user: req.user,
+        completedFeedbackIds: req.body?.completedFeedbackIds,
+        expectedRevision: req.body?.expectedRevision,
+        requestId: req.body?.requestId,
+      });
+      return res.json({ completion });
+    } catch (error) {
+      return soyooErrorResponse(res, error);
+    }
+  });
+
+  // 管理员可查看明确不可恢复的 Preview 回写失败并手动重新入队。
+  app.get("/api/ops/playable-feedback-completion-sync/failures", requireAuth, requireAdmin, async (req, res) => {
+    const events = await listPlayableFeedbackCompletionFailures(prisma, req.query?.limit);
+    res.json({ events });
+  });
+
+  app.post("/api/ops/playable-feedback-completion-sync/failures/:id/retry", requireAuth, requireAdmin, async (req, res) => {
+    const retried = await retryPlayableFeedbackCompletionFailure(prisma, req.params.id);
+    if (!retried) return res.status(404).json({ error: "待处理同步事件不存在或已被处理" });
+    res.json({ ok: true });
   });
 
   registerPlayableFeedbackSourceRoute(app, { requireAuth, database: prisma, getAccess: buildTicketCollaborationAccess, canView: canViewTicket });
