@@ -4,6 +4,7 @@ import { opsApi } from "../../../api/modules/ops";
 import type { OpsProject, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant } from "../../../api/modules/ops";
 import { stripHtmlText } from "../../Tickets/ticketsUtils";
 import CreateTicketModal from "../../Tickets/components/dialogs/CreateTicketModal";
+import { getDeadlineHours, isValidTicketDeadline } from "../../Tickets/ticketDeadline";
 import type { PeopleProgressRow } from "../types";
 
 type PeopleAssignTicketModalProps = {
@@ -31,13 +32,16 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 	const selectedSegment = (segmentId?: unknown) => segments.find((segment) => String(segment.id) === String(segmentId));
 	const resolveDueTime = (ticket: Record<string, unknown>, index: number) => {
 		const fieldValue = ticket.dueInHours ?? form.getFieldValue(["tickets", index, "dueInHours"]);
+		const deadlineHours = getDeadlineHours(ticket.dueAt);
 		const segment = selectedSegment(ticket.segmentId);
 		if (segment?.name === "制片") return Number(segment.defaultDeliveryHours ?? 1);
-		return fieldValue;
+		return deadlineHours ?? (fieldValue == null || fieldValue === "" ? undefined : Number(fieldValue));
 	};
 	const hasValidDueTime = (ticket: Record<string, unknown>, index: number) => {
 		const hours = resolveDueTime(ticket, index);
-		return Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 720;
+		const numericHours = Number(hours);
+		if (ticket.dueAt != null && !isValidTicketDeadline(ticket.dueAt)) return false;
+		return Number.isFinite(numericHours) && numericHours >= 0.5 && numericHours <= 24;
 	};
 	const defaultVersionId = (project?: OpsProject) =>
 		(project?.versions || []).find((version) => version.isDefault || String(version.code || "").toLowerCase() === "v1")?.id || project?.versions?.[0]?.id;

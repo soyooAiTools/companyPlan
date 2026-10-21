@@ -19,12 +19,13 @@ type TicketDetailDrawerProps = {
 	onClose: () => void;
 	onAssign: () => void;
 	onEditContent: () => void;
+	onEditDueTime: () => void;
 	feedbackCompletion: import("../../../../api/modules/ops").OpsPlayableFeedbackCompletion | null;
 	onSaveFeedbackCompletion: (ids: string[], expectedRevision: string) => Promise<void>;
 	onFeedbackCompletionDirtyChange: (dirty: boolean) => void;
 };
 
-export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent, feedbackCompletion, onSaveFeedbackCompletion, onFeedbackCompletionDirtyChange }: TicketDetailDrawerProps) {
+export default function TicketDetailDrawer({ detail, loading, events, statusControl, priorityControl, personCell, onClose, onAssign, onEditContent, onEditDueTime, feedbackCompletion, onSaveFeedbackCompletion, onFeedbackCompletionDirtyChange }: TicketDetailDrawerProps) {
 	return (
 		<Drawer title={detail?.title} open={!!detail} onClose={onClose} size={480} destroyOnHidden>
 			{detail &&
@@ -67,6 +68,10 @@ export default function TicketDetailDrawer({ detail, loading, events, statusCont
 									const x = remainingView(detail);
 									return <span style={{ color: x.color }}>{x.text}</span>;
 								})()}
+							</Descriptions.Item>
+							<Descriptions.Item label="期望完成时长">
+								{detail.dueInHours} 小时
+								{detail.canEditDueTime ? <Button size="small" type="link" icon={<EditOutlined />} onClick={onEditDueTime}>修改</Button> : null}
 							</Descriptions.Item>
 							{detail.status === "阻塞" && detail.blockReason ? <Descriptions.Item label="阻塞原因">{detail.blockReason}</Descriptions.Item> : null}
 						</Descriptions>

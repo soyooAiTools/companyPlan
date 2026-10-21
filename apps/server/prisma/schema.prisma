@@ -177,7 +177,7 @@ model tickets {
   age_days                            Int           @default(0)
   status_age_days                     Int           @default(0)
   due_in_days                         Int           @default(3)
-  due_in_hours                        Int           @default(72)
+  due_in_hours                        Float         @default(72)
   timeline_offset_days                Int?          @default(0)
   timeline_offset_hours               Int?          @default(0)
   timeline_span_hours                 Int?          @default(72)

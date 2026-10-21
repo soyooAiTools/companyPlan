@@ -12,7 +12,6 @@ import { soyooId } from "./soyoo-client.mjs";
 import { isAdmin, meId, nowIso, clip, isPlanner, soyooErrorResponse } from "./ops-helpers.mjs";
 import { listMyProjects, listAllProjects, getTicketProjectMembers, listTenants, listTags, getResponsibles, buildTicketSnapshot, getUser } from "./ops-realtime.mjs";
 import * as notif from "./services/ops-notifications.mjs";
-import { refreshProjectPoolSnapshot } from "./services/ops-project-pool.mjs";
 import { effectiveSegmentTagIds } from "./segment-tag-match.mjs";
 import {
   buildTicketCollaborationAccess,
@@ -107,6 +106,7 @@ function withCanEdit(t, user, segNameById, planner = false, access = null) {
     canEditContent: admin || t.requester_id === userId,
     canAssign: canHandle || t.requester_id === userId,
     canEditPriority: admin || planner,
+		canEditDueTime: admin,
     canEditAdminNote: admin,
   };
 }
@@ -682,12 +682,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
       for (const created of createdRows) {
         await notif.notifyTicketAssigned(created, meId(user));
       }
-      const projectRows = [];
-      for (const projectId of new Set(createdRows.map((ticket) => ticket.project_id))) {
-        const row = await refreshProjectPoolSnapshot(projectId).catch(() => null);
-        if (row) projectRows.push(row);
-      }
-      return res.status(201).json({ tickets: await decorateTickets(createdRows, user, await loadSegNameMap()), projectRows });
+      return res.status(201).json({ tickets: await decorateTickets(createdRows, user, await loadSegNameMap()), projectRows: [] });
     }
 
     const prepared = await prepareTicketCreate({ user, body: b });
@@ -698,8 +693,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中", note: ticketDueTimeNote(prepared.data) });
     await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
-    const projectRow = await refreshProjectPoolSnapshot(created.project_id).catch(() => null);
-    res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()), projectRow });
+    res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()), projectRow: null });
   });
 
   // 项目成员(指派候选 / 选负责人):实时查 soyoo
@@ -750,7 +744,6 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: id, user, action: "指派", note: `指派给 ${member.name}` });
     await notif.notifyTicketAssigned(updated, meId(user)); // 改派后通知新负责人(指给自己不通知)
-    void refreshProjectPoolSnapshot(updated.project_id).catch(() => {});
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 
@@ -788,7 +781,6 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
         }),
       });
       if (result.changed) await notif.notifyStatusChanged(result.updated, result.previous.status, status, meId(user));
-      void refreshProjectPoolSnapshot(result.updated.project_id).catch(() => {});
       return res.json({ ticket: await decorateTickets(result.updated, user, await loadSegNameMap()) });
     } catch (error) {
       return soyooErrorResponse(res, error);
@@ -812,6 +804,32 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     });
     await logTicketEvent({ ticketId: id, user, action: "修改优先级", note: `优先级「${t.priority}」→「${priority}」` });
     await notif.notifyPriorityChanged(updated, t.priority, priority, meId(user)); // 通知负责人(自己改自己不通知)
+    res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
+  });
+
+  // 改期望完成时长(仅管理员),同步重算截止/预警时间并记录流转。
+  app.patch("/api/ops/tickets/:id/due-time", requireAuth, async (req, res) => {
+    const id = String(req.params.id);
+    const user = req.user;
+    if (!isAdmin(user)) return res.status(403).json({ error: "仅管理员可修改期望完成时间" });
+    const hours = Number(req.body?.dueInHours);
+    if (!Number.isFinite(hours) || hours <= 0) return res.status(400).json({ error: "期望完成时长必须大于 0" });
+    const ticket = await prisma.tickets.findUnique({ where: { id } });
+    if (!ticket) return res.status(404).json({ error: "提单不存在" });
+    if (Number(ticket.due_in_hours) === hours) return res.json({ ticket: await decorateTickets(ticket, user, await loadSegNameMap()) });
+    const now = nowIso();
+    const updated = await prisma.tickets.update({
+      where: { id },
+      data: {
+        due_in_hours: hours,
+        due_in_days: Math.max(1, Math.ceil(hours / 24)),
+        timeline_span_hours: Math.max(4, hours),
+        due_at: addBusinessHours(now, hours),
+        warn_at: addBusinessHours(now, Number(ticket.risk_warning_hours ?? 8)),
+        updated_at: now,
+      },
+    });
+    await logTicketEvent({ ticketId: id, user, action: "修改期望完成时间", note: `期望完成时间：「${Number(ticket.due_in_hours)} 小时」→「${hours} 小时」` });
     res.json({ ticket: await decorateTickets(updated, user, await loadSegNameMap()) });
   });
 

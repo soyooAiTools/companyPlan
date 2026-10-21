@@ -116,6 +116,7 @@ export interface OpsTicket {
 	canEditContent: boolean; // 能否改需求说明(提单人/管理员)
 	canAssign?: boolean; // 能否指派(负责人/提单人/管理员)
 	canEditPriority?: boolean; // 能否改优先级(管理员)
+	canEditDueTime?: boolean; // 能否改期望完成时长(管理员)
 	canEditAdminNote?: boolean; // 能否改管理员内部备注
 	createdAt: string;
 	statusUpdatedAt: string;
@@ -577,6 +578,11 @@ export const opsApi = {
 		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/priority`, {
 			method: "PATCH",
 			body: JSON.stringify({ priority }),
+		}),
+	updateTicketDueTime: (id: string, dueInHours: number) =>
+		requestJson<{ ticket: OpsTicket }>(`/api/ops/tickets/${encodeURIComponent(id)}/due-time`, {
+			method: "PATCH",
+			body: JSON.stringify({ dueInHours }),
 		}),
 	peopleProgressRoles: () => requestJson<{ roles: OpsPeopleProgressRole[] }>("/api/ops/people-progress/roles"),
 	peopleProgress: (params: { role?: string; q?: string; overdueOnly?: boolean; newcomerOnly?: boolean } = {}) => {

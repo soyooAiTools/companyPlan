@@ -33,6 +33,7 @@ import { registerAudioEditRoutes } from "./ops/audio-edit-routes.mjs";
 import { registerPlayableFeedbackIntegrationRoutes } from "./ops/playable-feedback-integration-routes.mjs";
 import { startOpsChangeConsumer } from "./ops/ops-sync-consumer.mjs";
 import { startNotificationScan } from "./ops/ops-notification-scan.mjs";
+import { startProjectPoolSnapshotScan } from "./ops/ops-project-pool-snapshot-scan.mjs";
 import { startPlayableFeedbackCompletionSync } from "./ops/playable-feedback-completion-sync.mjs";
 import { createCompanyPlanService } from "./service/company-plan-service.mjs";
 
@@ -107,6 +108,8 @@ app.listen(port, () => {
   startOpsChangeConsumer({ logger });
   // 通知扫描:周期性发现超时工单/项目并落库 + SSE 推送(间隔后台可改)
   startNotificationScan({ logger });
+  // 项目池统计:定时刷新逾期、未完成和目前环节快照
+  startProjectPoolSnapshotScan({ logger });
 	// OPS confirmation is durable locally; this worker mirrors its audit trail
 	// into Preview in batches without coupling an operator's click to Preview.
 	startPlayableFeedbackCompletionSync({ logger });

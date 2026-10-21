@@ -4,7 +4,7 @@ import { getFeedbackResponsibles, getUser } from "../ops-realtime.mjs";
 import { loadSegments, prepareTicketCreate } from "../ops-routes.mjs";
 import { nowIso } from "../ops-helpers.mjs";
 import * as notifications from "./ops-notifications.mjs";
-import { findAutoProgramSegment, refreshProjectPoolSnapshot } from "./ops-project-pool.mjs";
+import { findAutoProgramSegment } from "./ops-project-pool.mjs";
 import { buildPlayableFeedbackSourceUrl } from "../playable-feedback-source.mjs";
 
 const SOURCE_SYSTEM = "playable-feedback";
@@ -168,7 +168,6 @@ export async function consumePlayableFeedbackBatch(payload, dependencies = {}) {
 	});
 
 	for (const ticket of created) await (dependencies.notifyTicketAssigned || notifications.notifyTicketAssigned)(ticket, requester.id);
-	if (created.length) await (dependencies.refreshProjectPoolSnapshot || refreshProjectPoolSnapshot)(projectId).catch(() => null);
 	const result = { created: created.length, idempotent: prepared.length === 0 };
 	return conflicts.length ? { ...result, conflicts } : result;
 }

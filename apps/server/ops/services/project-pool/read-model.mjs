@@ -57,8 +57,8 @@ export async function aggregateProjectTickets(projectIds) {
   const base = { project_id: { in: projectIds }, status: { not: "已完成" } };
   const [byStatus, overdue, atRisk, bySegment] = await Promise.all([
     prisma.tickets.groupBy({ by: ["project_id", "status"], where: base, _count: { _all: true } }),
-    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, warn_at: { lt: now } }, _count: { _all: true } }),
-    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, due_at: { lt: now }, warn_at: { gte: now } }, _count: { _all: true } }),
+    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, due_at: { lt: now } }, _count: { _all: true } }),
+    prisma.tickets.groupBy({ by: ["project_id"], where: { ...base, due_at: { gte: now }, warn_at: { lt: now } }, _count: { _all: true } }),
     prisma.tickets.groupBy({ by: ["project_id", "segment_id"], where: { ...base, segment_id: { not: null } }, _count: { _all: true } }),
   ]);
   for (const g of byStatus) {

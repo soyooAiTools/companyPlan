@@ -65,8 +65,8 @@ export async function listSegmentTickets(projectId, segmentId) {
     ownerAvatar: t.owner_avatar || "",
     dueAt: t.due_at,
     remainingHours: remainingBusinessHours(t.due_at, now),
-    overdue: !!(t.warn_at && t.warn_at < now),
-    atRisk: !!(t.due_at && t.due_at < now && t.warn_at && t.warn_at >= now),
+    overdue: !!(t.due_at && t.due_at < now),
+    atRisk: !!(t.due_at && t.due_at >= now && t.warn_at && t.warn_at < now),
   }));
 }
 
@@ -80,7 +80,7 @@ export async function listProjectPoolTickets({ projectIds = [], mode = "unfinish
     status: { not: "已完成" },
   };
   if (mode === "overdue") {
-    where.warn_at = { not: null, lt: now };
+    where.due_at = { not: null, lt: now };
   }
   if (segmentFilter.length) {
     where.segment_id = { in: segmentFilter };
@@ -125,8 +125,8 @@ export async function listProjectPoolTickets({ projectIds = [], mode = "unfinish
     ownerAvatar: t.owner_avatar || "",
     dueAt: t.due_at,
     remainingHours: remainingBusinessHours(t.due_at, now),
-    overdue: !!(t.warn_at && t.warn_at < now),
-    atRisk: !!(t.due_at && t.due_at < now && t.warn_at && t.warn_at >= now),
+    overdue: !!(t.due_at && t.due_at < now),
+    atRisk: !!(t.due_at && t.due_at >= now && t.warn_at && t.warn_at < now),
   }));
 }
 

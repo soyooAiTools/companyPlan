@@ -88,7 +88,7 @@ async function initializeSchema() {
       age_days INT NOT NULL DEFAULT 0,
       status_age_days INT NOT NULL DEFAULT 0,
       due_in_days INT NOT NULL DEFAULT 3,
-      due_in_hours INT NOT NULL DEFAULT 72,
+      due_in_hours DOUBLE NOT NULL DEFAULT 72,
       timeline_offset_days INT DEFAULT 0,
       timeline_offset_hours INT DEFAULT 0,
       timeline_span_hours INT DEFAULT 72,
@@ -441,7 +441,8 @@ async function migrateSchema() {
 	await ensureColumn("ops_ticket_playable_feedback_items", "last_batch_id", "VARCHAR(96)");
 	await ensureColumn("ops_ticket_source_links", "source_review_number", "INT");
   await ensureColumn("tickets", "project_name", "VARCHAR(160)");
-  await ensureColumn("tickets", "due_in_hours", "INT NOT NULL DEFAULT 72");
+  await ensureColumn("tickets", "due_in_hours", "DOUBLE NOT NULL DEFAULT 72");
+  await ensureTicketDueHoursType();
   await ensureColumn("tickets", "timeline_offset_hours", "INT DEFAULT 0");
   await ensureColumn("tickets", "timeline_span_hours", "INT DEFAULT 72");
 
@@ -760,6 +761,17 @@ async function migrateSchema() {
 async function ensureColumn(tableName, columnName, definition) {
   if (!(await db.columnExists(tableName, columnName))) {
     await db.prepare(`ALTER TABLE ${safeIdentifier(tableName)} ADD COLUMN ${safeIdentifier(columnName)} ${definition}`).run();
+  }
+}
+
+async function ensureTicketDueHoursType() {
+  const row = await db
+    .prepare(
+      "SELECT DATA_TYPE AS dataType FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'tickets' AND column_name = 'due_in_hours'"
+    )
+    .get();
+  if (row && !["double", "decimal", "float"].includes(String(row.dataType || "").toLowerCase())) {
+    await db.prepare("ALTER TABLE tickets MODIFY COLUMN due_in_hours DOUBLE NOT NULL DEFAULT 72").run();
   }
 }
 

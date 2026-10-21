@@ -16,6 +16,8 @@ import TicketTable from "./components/table/TicketTable";
 import PersonCell from "./components/table/PersonCell";
 import TicketStatusNoteModal from "./components/dialogs/TicketStatusNoteModal";
 import TicketsToolbar from "./components/toolbar/TicketsToolbar";
+import { getDeadlineHours, isValidTicketDeadline } from "./ticketDeadline";
+import EditTicketDueTimeModal from "./components/dialogs/EditTicketDueTimeModal";
 
 type TicketsPageProps = {
 	isAdmin?: boolean;
@@ -59,6 +61,8 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const [adminNoteOpen, setAdminNoteOpen] = useState(false);
 	const [adminNoteText, setAdminNoteText] = useState("");
 	const [savingAdminNote, setSavingAdminNote] = useState(false);
+	const [dueTimeTicket, setDueTimeTicket] = useState<OpsTicket | null>(null);
+	const [savingDueTime, setSavingDueTime] = useState(false);
 
 	// 改状态填备注
 	const [noteId, setNoteId] = useState<string | null>(null);
@@ -299,6 +303,25 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 			messageApi.error(e instanceof Error ? e.message : "修改优先级失败");
 		}
 	};
+	const saveDueTime = async (dueTimeValue: number) => {
+		if (!dueTimeTicket || !Number.isFinite(dueTimeValue) || dueTimeValue <= 0) {
+			messageApi.error("请输入大于 0 的完成时长");
+			return;
+		}
+		setSavingDueTime(true);
+		try {
+			const r = await opsApi.updateTicketDueTime(dueTimeTicket.id, dueTimeValue);
+			setDetail((d) => (d && d.id === dueTimeTicket.id ? r.ticket : d));
+			setDueTimeTicket(null);
+			await opsApi.ticketEvents(dueTimeTicket.id).then((e) => setEvents(e.events));
+			await loadTickets();
+			messageApi.success("期望完成时间已更新");
+		} catch (e) {
+			messageApi.error(e instanceof Error ? e.message : "修改期望完成时间失败");
+		} finally {
+			setSavingDueTime(false);
+		}
+	};
 
 	// 选状态:进行中/排队中 直接改;完成/阻塞 弹框填备注
 	const onPickStatus = (t: OpsTicket, next: string) => {
@@ -454,7 +477,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	// 建单级联
 	const openCreate = async () => {
 		form.resetFields();
-		form.setFieldsValue({ priority: "普通", tickets: [{ dueInHours: undefined }] });
+		form.setFieldsValue({ priority: "普通", tickets: [{ dueInHours: undefined, dueAt: undefined }] });
 		setInvalidTaskIndex(null);
 		setProjects([]);
 		setProjectsLoading(false);
@@ -466,7 +489,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	};
 	const onTenantChange = async (tenantId?: string) => {
 		const seq = ++projectsRequestSeq.current;
-		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{ dueInHours: undefined }] });
+		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{ dueInHours: undefined, dueAt: undefined }] });
 		setProjects([]);
 		setSegments([]);
 		setMembers([]);
@@ -483,7 +506,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const onProjectChange = async (projectId?: string) => {
 		const nextProject = projects.find((project) => String(project.id) === String(projectId));
 		const nextVersionId = defaultVersionId(nextProject);
-		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{ dueInHours: undefined }] });
+		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{ dueInHours: undefined, dueAt: undefined }] });
 		setSegments([]);
 		setMembers([]);
 		if (!projectId) return;
@@ -494,7 +517,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		}
 	};
 	const onVersionChange = async (versionId?: string) => {
-		form.setFieldsValue({ tickets: [{ dueInHours: undefined }] });
+		form.setFieldsValue({ tickets: [{ dueInHours: undefined, dueAt: undefined }] });
 		setSegments([]);
 		setMembers([]);
 		if (!selectedProjectId) return;
@@ -510,15 +533,17 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		const rawTickets = (v.tickets || []) as Record<string, unknown>[];
 		const resolveDueTime = (ticket: Record<string, unknown>, index: number) => {
 			const fieldValue = ticket.dueInHours ?? form.getFieldValue(["tickets", index, "dueInHours"]);
+			const deadlineHours = getDeadlineHours(ticket.dueAt);
 			const segment = segments.find((item) => String(item.id) === String(ticket.segmentId));
 			if (segment?.name === "制片") return Number(segment.defaultDeliveryHours);
-			return fieldValue == null || fieldValue === "" ? undefined : Number(fieldValue);
+			return deadlineHours ?? (fieldValue == null || fieldValue === "" ? undefined : Number(fieldValue));
 		};
 		const hasAnyValue = (ticket: Record<string, unknown>) =>
 			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || ticket.dueInHours != null || stripHtmlText(String(ticket.contentHtml ?? "")));
 		const hasValidDueTime = (ticket: Record<string, unknown>, index: number) => {
 			const hours = resolveDueTime(ticket, index);
-			return hours != null && Number.isInteger(hours) && hours >= 1 && hours <= 720;
+			if (ticket.dueAt != null && !isValidTicketDeadline(ticket.dueAt)) return false;
+			return hours != null && Number.isFinite(hours) && hours >= 0.5 && hours <= 24;
 		};
 		const isComplete = (ticket: Record<string, unknown>, index: number) => {
 			return Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim() && hasValidDueTime(ticket, index));
@@ -694,6 +719,10 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				onClose={closeDetail}
 				onAssign={openAssign}
 				onEditContent={openEditContent}
+				onEditDueTime={() => {
+					if (!detail?.canEditDueTime) return;
+					setDueTimeTicket(detail);
+				}}
 				feedbackCompletion={feedbackCompletion}
 				onSaveFeedbackCompletion={saveFeedbackCompletion}
 				onFeedbackCompletionDirtyChange={setFeedbackCompletionDirty}
@@ -711,6 +740,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 					setAdminNoteTicket(null);
 				}}
 			/>
+			<EditTicketDueTimeModal open={!!dueTimeTicket} value={dueTimeTicket ? Number(dueTimeTicket.dueInHours) : undefined} saving={savingDueTime} onSave={(hours) => void saveDueTime(hours)} onCancel={() => setDueTimeTicket(null)} />
 
 			<TicketStatusNoteModal open={!!noteId} status={noteStatus} value={noteText} onChange={setNoteText} onConfirm={confirmNote} onCancel={() => setNoteId(null)} />
 

@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Avatar, Button, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tooltip } from "antd";
-import { CopyOutlined, DeleteOutlined, ExclamationCircleFilled, PlusOutlined } from "@ant-design/icons";
+import { Avatar, Button, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tooltip } from "antd";
+import { CopyOutlined, DeleteOutlined, ExclamationCircleFilled, InfoCircleOutlined, PlusOutlined } from "@ant-design/icons";
+import dayjs from "dayjs";
 import type { FormInstance } from "antd";
+import type { Dayjs } from "dayjs";
 import type { OpsProject, OpsProjectVersion, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant } from "../../../../api/modules/ops";
 import RichTextEditor from "../../../Ops/RichTextEditor";
 import { PRIORITIES } from "../../constants";
+import { addBusinessHours, ceilDeadlineToHalfHour, disabledTicketDeadlineDate, disabledTicketDeadlineTime, getDeadlineHours } from "../../ticketDeadline";
 
 type OwnerOption = {
 	value: string;
@@ -21,7 +24,8 @@ type TicketDraft = {
 	segmentId?: number;
 	ownerId?: string;
 	contentHtml?: string;
-	dueInHours?: number;
+	dueInHours?: number | string;
+	dueAt?: Dayjs | string;
 };
 
 type CreateTicketModalProps = {
@@ -92,6 +96,16 @@ export default function CreateTicketModal({
 	};
 	const selectedSegment = (segmentId?: number) => segments.find((segment) => segment.id === segmentId);
 	const isFixedSystemDueTime = (segmentId?: number) => selectedSegment(segmentId)?.name === "制片";
+	const setDueAtFromHours = (index: number, value: unknown) => {
+		const hours = Number(value);
+		form.setFieldValue(["tickets", index, "dueAt"], Number.isFinite(hours) && hours > 0 ? addBusinessHours(dayjs(), hours) : undefined);
+	};
+	const setHoursFromDueAt = (index: number, value: unknown) => {
+		const deadline = ceilDeadlineToHalfHour(value);
+		form.setFieldValue(["tickets", index, "dueAt"], deadline ?? undefined);
+		const hours = getDeadlineHours(deadline);
+		form.setFieldValue(["tickets", index, "dueInHours"], hours == null ? undefined : String(hours));
+	};
 	const fillSegmentByOwner = (index: number, ownerId?: string) => {
 		if (!ownerId || tickets[index]?.segmentId) return;
 		const segId = members.find((x) => x.id === ownerId)?.segmentIds?.[0];
@@ -112,6 +126,7 @@ export default function CreateTicketModal({
 				title: draft.title,
 				contentHtml: draft.contentHtml,
 				dueInHours: draft.dueInHours,
+				dueAt: draft.dueAt,
 				segmentId: undefined,
 				ownerId: undefined,
 			},
@@ -318,7 +333,7 @@ export default function CreateTicketModal({
 													) : null}
 												</div>
 											<Row gutter={12}>
-									<Col span={16}>
+							<Col span={10}>
 													<Form.Item
 														className="ops-create-ticket-title-item"
 														name={[field.name, "title"]}
@@ -329,15 +344,40 @@ export default function CreateTicketModal({
 														<Input maxLength={160} placeholder="输入标题" />
 													</Form.Item>
 												</Col>
-			<Col span={8}>
-								<Form.Item
-									name={[field.name, "dueInHours"]}
-									label="期望完成时长（小时）"
-									extra={isFixedSystemDueTime(segmentId) ? `制片固定使用系统交付时长（${selectedSegment(segmentId)?.defaultDeliveryHours ?? 1} 小时）` : undefined}
-									rules={isFixedSystemDueTime(segmentId) ? undefined : [{ required: true, message: "请输入期望完成工单时间" }]}
-								>
-									<InputNumber min={1} max={720} precision={0} disabled={isFixedSystemDueTime(segmentId)} style={{ width: "100%" }} placeholder={isFixedSystemDueTime(segmentId) ? "系统固定时长" : "请输入期望完成工单时间"} />
-								</Form.Item>
+							<Col span={14}>
+								<div className="ant-form-item" style={{ marginBottom: 24 }}>
+									<div className="ant-form-item-label">
+										<label>
+													<span className="ant-form-item-required">期望完成时间</span>{" "}
+											<Tooltip trigger={["click"]} title="只能选择当前时间之后两天内的时间；工作时间为 09:00-21:00，周日不计入，最多 24 个工作小时。">
+												<InfoCircleOutlined style={{ color: "#94a3b8", cursor: "pointer" }} />
+											</Tooltip>
+										</label>
+									</div>
+									<div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+										<Form.Item
+											name={[field.name, "dueInHours"]}
+											extra={isFixedSystemDueTime(segmentId) ? `制片固定使用系统交付时长（${selectedSegment(segmentId)?.defaultDeliveryHours ?? 1} 小时）` : undefined}
+											rules={isFixedSystemDueTime(segmentId) ? undefined : [{ required: true, message: "请输入时长或选择日期时间" }]}
+											style={{ width: 112, marginBottom: 0 }}
+										>
+											<InputNumber stringMode min={0.5} max={24} step={0.5} precision={1} disabled={isFixedSystemDueTime(segmentId)} style={{ width: "100%" }} placeholder={isFixedSystemDueTime(segmentId) ? "系统固定" : "小时数"} onChange={(value) => !isFixedSystemDueTime(segmentId) && setDueAtFromHours(field.name, value)} />
+										</Form.Item>
+										<span style={{ color: "#94a3b8", height: 32, display: "flex", alignItems: "center" }}>/</span>
+										<Form.Item name={[field.name, "dueAt"]} style={{ flex: 1, marginBottom: 0 }}>
+											<DatePicker
+												showTime={{ format: "HH:mm", minuteStep: 30 }}
+												format="YYYY-MM-DD HH:mm"
+												disabled={isFixedSystemDueTime(segmentId)}
+												disabledDate={(date) => disabledTicketDeadlineDate(date)}
+												disabledTime={(date) => disabledTicketDeadlineTime(date)}
+												style={{ width: "100%" }}
+												placeholder={isFixedSystemDueTime(segmentId) ? "系统固定时间" : "选择截止日期时间"}
+												onChange={(value) => !isFixedSystemDueTime(segmentId) && setHoursFromDueAt(field.name, value)}
+											/>
+										</Form.Item>
+									</div>
+								</div>
 							</Col>
 											<Col span={10}>
 												<Form.Item name={[field.name, "segmentId"]} label="环节" rules={[{ required: true, message: "请选择环节" }]}>
@@ -350,7 +390,8 @@ export default function CreateTicketModal({
 														notFoundContent="该项目暂无可分配的环节"
 																							onChange={(nextSegmentId) => {
 																							form.setFieldValue(["tickets", field.name, "ownerId"], undefined);
-																							form.setFieldValue(["tickets", field.name, "dueInHours"], isFixedSystemDueTime(nextSegmentId) ? selectedSegment(nextSegmentId)?.defaultDeliveryHours : undefined);
+																										form.setFieldValue(["tickets", field.name, "dueInHours"], isFixedSystemDueTime(nextSegmentId) ? selectedSegment(nextSegmentId)?.defaultDeliveryHours : undefined);
+																										form.setFieldValue(["tickets", field.name, "dueAt"], isFixedSystemDueTime(nextSegmentId) ? addBusinessHours(dayjs(), Number(selectedSegment(nextSegmentId)?.defaultDeliveryHours ?? 1)) : undefined);
 																						}}
 													/>
 												</Form.Item>

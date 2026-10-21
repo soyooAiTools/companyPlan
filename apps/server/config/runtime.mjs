@@ -34,6 +34,10 @@ export const maxAttachmentBytes = Number(process.env.COMPANYPLAN_MAX_ATTACHMENT_
 export const port = Number(process.env.PORT ?? "4174");
 // 后台全量同步间隔（毫秒）。默认 30 分钟,作兜底——实时性靠 soyoo push 触发的去抖同步；设 0 关闭定时同步（仍会启动时同步一次）。
 export const opsSyncIntervalMs = Number(process.env.COMPANYPLAN_OPS_SYNC_INTERVAL_MS ?? `${30 * 60 * 1000}`);
+const configuredProjectPoolSnapshotSyncIntervalMinutes = Number(process.env.COMPANYPLAN_PROJECT_POOL_SNAPSHOT_SYNC_INTERVAL_MINUTES ?? "5");
+export const projectPoolSnapshotSyncIntervalMinutes = Number.isFinite(configuredProjectPoolSnapshotSyncIntervalMinutes) && configuredProjectPoolSnapshotSyncIntervalMinutes >= 0
+  ? configuredProjectPoolSnapshotSyncIntervalMinutes
+  : 5;
 export const redisConfig = {
   enabled: process.env.COMPANYPLAN_REDIS_ENABLED !== "0" && !!(process.env.COMPANYPLAN_REDIS_URL || process.env.COMPANYPLAN_REDIS_HOST),
   url: process.env.COMPANYPLAN_REDIS_URL ?? "",
