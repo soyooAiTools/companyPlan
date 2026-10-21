@@ -36,6 +36,12 @@ const DEFAULT_SEGMENT_TAG_NAMES = new Map([
   ["外包", new Set(["外包"])],
 ]);
 
+function versionScopedTicketProjectId(projectId, versionId) {
+  const baseProjectId = String(projectId || "").replace(/::version-[^:]+$/, "");
+  const scopedVersionId = String(versionId || "").trim();
+  return scopedVersionId ? `${baseProjectId}::version-${scopedVersionId}` : baseProjectId;
+}
+
 // 富文本 sanitize / 纯文本派生 / 空判断 / 大小上限 → 公用模块 ../utils/rich-html.mjs(提单正文与项目备注共用)
 
 function mapTicket(t, segNameById) {
@@ -248,10 +254,11 @@ export async function prepareTicketCreate({ user, body, feedbackAssignment = fal
   const dueAt = addBusinessHours(now, dueInHours);
   const warnAt = addBusinessHours(now, segment.risk_warning_hours);
   const id = crypto.randomUUID();
+  const storedProjectId = versionScopedTicketProjectId(s.project_id, body.projectVersionId);
 
   return {
     id,
-    projectId: s.project_id,
+    projectId: storedProjectId,
     data: {
       id,
       title: clip(body.title, 160) || "未命名需求",
@@ -259,7 +266,7 @@ export async function prepareTicketCreate({ user, body, feedbackAssignment = fal
       client_id: s.client_id,
       client_name: clip(s.client_name, 160),
       project_name: clip(s.project_name, 160),
-      project_id: s.project_id,
+      project_id: storedProjectId,
       project_version_id: clip(body.projectVersionId, 64),
       project_version_code: clip(body.projectVersionCode, 40),
       project_version_name: clip(body.projectVersionName, 160),
