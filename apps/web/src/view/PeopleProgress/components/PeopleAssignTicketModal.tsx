@@ -28,6 +28,17 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 	const selectedVersionId = Form.useWatch("projectVersionId", form) as string | undefined;
 	const selectedProject = projects.find((project) => String(project.id) === String(selectedProjectId));
 	const selectedVersion = selectedProject?.versions?.find((version) => String(version.id) === String(selectedVersionId));
+	const selectedSegment = (segmentId?: unknown) => segments.find((segment) => String(segment.id) === String(segmentId));
+	const resolveDueTime = (ticket: Record<string, unknown>, index: number) => {
+		const fieldValue = ticket.dueInHours ?? form.getFieldValue(["tickets", index, "dueInHours"]);
+		const segment = selectedSegment(ticket.segmentId);
+		if (segment?.name === "制片") return Number(segment.defaultDeliveryHours ?? 1);
+		return fieldValue;
+	};
+	const hasValidDueTime = (ticket: Record<string, unknown>, index: number) => {
+		const hours = resolveDueTime(ticket, index);
+		return Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 720;
+	};
 	const defaultVersionId = (project?: OpsProject) =>
 		(project?.versions || []).find((version) => version.isDefault || String(version.code || "").toLowerCase() === "v1")?.id || project?.versions?.[0]?.id;
 	const versionProjectId = (projectId?: string, versionId?: string) => (projectId && versionId ? `${projectId}::version-${versionId}` : projectId || "");
@@ -92,20 +103,22 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 
 	const submit = async () => {
 		await form.validateFields([["tenantId"], ["projectId"]]);
-		const value = form.getFieldsValue();
+		const value = form.getFieldsValue(true);
 		const rawTickets = (value.tickets || []) as Record<string, unknown>[];
 		const hasAnyValue = (ticket: Record<string, unknown>) =>
-			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? "")));
-		const isComplete = (ticket: Record<string, unknown>) => Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim());
-		const incompleteIndex = rawTickets.findIndex((ticket) => hasAnyValue(ticket) && !isComplete(ticket));
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || ticket.dueInHours != null || stripHtmlText(String(ticket.contentHtml ?? "")));
+		const isComplete = (ticket: Record<string, unknown>, index: number) =>
+			Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim() && hasValidDueTime(ticket, index));
+		const incompleteIndex = rawTickets.findIndex((ticket, index) => hasAnyValue(ticket) && !isComplete(ticket, index));
 		if (incompleteIndex >= 0) {
 			setInvalidTaskIndex(incompleteIndex);
-			message.error(`工单 ${incompleteIndex + 1}：请补全标题、环节和负责人`);
+			message.error(`工单 ${incompleteIndex + 1}：请补全标题、环节、负责人和期望完成时长`);
 			return;
 		}
 		const tickets = rawTickets
-			.filter(isComplete)
-			.map((ticket) => ({
+			.map((ticket, index) => ({ ticket, index }))
+			.filter(({ ticket, index }) => isComplete(ticket, index))
+			.map(({ ticket, index }) => ({
 				projectId: versionProjectId(value.projectId, selectedVersion?.id),
 				projectVersionId: selectedVersion?.id || "",
 				projectVersionCode: selectedVersion?.code || "",
@@ -115,6 +128,7 @@ export default function PeopleAssignTicketModal({ open, person, onClose, onCreat
 				title: String(ticket.title || "").trim(),
 				priority: value.priority,
 				contentHtml: String(ticket.contentHtml ?? ""),
+				dueInHours: resolveDueTime(ticket, index),
 			}));
 		if (!tickets.length) {
 			message.error("请至少填写一条完整工单");

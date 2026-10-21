@@ -454,7 +454,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	// 建单级联
 	const openCreate = async () => {
 		form.resetFields();
-		form.setFieldsValue({ priority: "普通", tickets: [{}] });
+		form.setFieldsValue({ priority: "普通", tickets: [{ dueInHours: undefined }] });
 		setInvalidTaskIndex(null);
 		setProjects([]);
 		setProjectsLoading(false);
@@ -466,7 +466,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	};
 	const onTenantChange = async (tenantId?: string) => {
 		const seq = ++projectsRequestSeq.current;
-		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{}] });
+		form.setFieldsValue({ projectId: undefined, projectVersionId: undefined, tickets: [{ dueInHours: undefined }] });
 		setProjects([]);
 		setSegments([]);
 		setMembers([]);
@@ -483,7 +483,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const onProjectChange = async (projectId?: string) => {
 		const nextProject = projects.find((project) => String(project.id) === String(projectId));
 		const nextVersionId = defaultVersionId(nextProject);
-		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{}] });
+		form.setFieldsValue({ projectVersionId: nextVersionId, tickets: [{ dueInHours: undefined }] });
 		setSegments([]);
 		setMembers([]);
 		if (!projectId) return;
@@ -494,7 +494,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 		}
 	};
 	const onVersionChange = async (versionId?: string) => {
-		form.setFieldsValue({ tickets: [{}] });
+		form.setFieldsValue({ tickets: [{ dueInHours: undefined }] });
 		setSegments([]);
 		setMembers([]);
 		if (!selectedProjectId) return;
@@ -506,12 +506,24 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	};
 	const submit = async () => {
 		await form.validateFields([["tenantId"], ["projectId"]]);
-		const v = form.getFieldsValue();
+		const v = form.getFieldsValue(true);
 		const rawTickets = (v.tickets || []) as Record<string, unknown>[];
+		const resolveDueTime = (ticket: Record<string, unknown>, index: number) => {
+			const fieldValue = ticket.dueInHours ?? form.getFieldValue(["tickets", index, "dueInHours"]);
+			const segment = segments.find((item) => String(item.id) === String(ticket.segmentId));
+			if (segment?.name === "制片") return Number(segment.defaultDeliveryHours);
+			return fieldValue == null || fieldValue === "" ? undefined : Number(fieldValue);
+		};
 		const hasAnyValue = (ticket: Record<string, unknown>) =>
-			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? "")));
-		const isComplete = (ticket: Record<string, unknown>) => Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim());
-		const incompleteIndex = rawTickets.findIndex((ticket) => hasAnyValue(ticket) && !isComplete(ticket));
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || ticket.dueInHours != null || stripHtmlText(String(ticket.contentHtml ?? "")));
+		const hasValidDueTime = (ticket: Record<string, unknown>, index: number) => {
+			const hours = resolveDueTime(ticket, index);
+			return hours != null && Number.isInteger(hours) && hours >= 1 && hours <= 720;
+		};
+		const isComplete = (ticket: Record<string, unknown>, index: number) => {
+			return Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim() && hasValidDueTime(ticket, index));
+		};
+		const incompleteIndex = rawTickets.findIndex((ticket, index) => hasAnyValue(ticket) && !isComplete(ticket, index));
 		if (incompleteIndex >= 0) {
 			const ticket = rawTickets[incompleteIndex];
 			const ownerName = String(ticket.ownerId ?? "").trim() ? members.find((member) => member.id === String(ticket.ownerId))?.name || String(ticket.ownerId) : "未选负责人";
@@ -523,15 +535,17 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 					!String(ticket.title ?? "").trim() ? { name: ["tickets", incompleteIndex, "title"], errors: ["请输入标题"] } : null,
 					ticket.segmentId == null ? { name: ["tickets", incompleteIndex, "segmentId"], errors: ["请选择环节"] } : null,
 					!String(ticket.ownerId ?? "").trim() ? { name: ["tickets", incompleteIndex, "ownerId"], errors: ["请选择负责人"] } : null,
+					!hasValidDueTime(ticket, incompleteIndex) ? { name: ["tickets", incompleteIndex, "dueInHours"], errors: ["请填写期望的完成时长"] } : null,
 				].filter(Boolean) as Parameters<typeof form.setFields>[0],
 			);
-			messageApi.error(`${ticketLabel}：请补全标题、环节和负责人`);
+			messageApi.error(`${ticketLabel}：请补全标题、环节、负责人和完成时长`);
 			return;
 		}
 		setInvalidTaskIndex(null);
 		const ticketsToCreate = rawTickets
-			.filter(isComplete)
-			.map((ticket: Record<string, unknown>) => ({
+			.map((ticket, index) => ({ ticket, index }))
+			.filter(({ ticket, index }) => isComplete(ticket, index))
+			.map(({ ticket, index }) => ({
 				projectId: versionProjectId(v.projectId, selectedVersion?.id),
 				projectVersionId: selectedVersion?.id || "",
 				projectVersionCode: selectedVersion?.code || "",
@@ -541,6 +555,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 				title: String(ticket.title || "").trim(),
 				priority: v.priority,
 				contentHtml: String(ticket.contentHtml ?? ""),
+				dueInHours: resolveDueTime(ticket, index),
 			}));
 		if (!ticketsToCreate.length) {
 			messageApi.error("请至少填写一条完整工单");
@@ -561,7 +576,7 @@ export default function TicketsPage({ isAdmin = false }: TicketsPageProps) {
 	const hasCreateDraft = () => {
 		const v = form.getFieldsValue();
 		const hasTicketDraft = (v.tickets || []).some((ticket: Record<string, unknown>) =>
-			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? ""))),
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || ticket.dueInHours != null || stripHtmlText(String(ticket.contentHtml ?? ""))),
 		);
 		return Boolean(
 			String(v.tenantId ?? "").trim() || String(v.projectId ?? "").trim() || (v.priority && v.priority !== "普通") || hasTicketDraft,

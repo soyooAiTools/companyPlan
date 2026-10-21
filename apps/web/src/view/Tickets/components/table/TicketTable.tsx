@@ -5,7 +5,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import type { OpsTicket } from "../../../../api/modules/ops";
 import { shortNo, fmtDateTime } from "../../../../utils/format";
-import { PRIORITIES } from "../../constants";
+import { PRIORITIES, STATUSES } from "../../constants";
 import { remainingView } from "../../ticketUtils";
 import PersonCell from "./PersonCell";
 
@@ -318,7 +318,7 @@ export default function TicketTable({
 							placeholder="选择状态"
 							style={{ width: "100%" }}
 							value={statusFilter}
-							options={["排队中", "进行中", "已完成"].map((status) => ({ value: status, label: status }))}
+							options={STATUSES.map((status) => ({ value: status, label: status }))}
 							onChange={onStatusFilterChange}
 						/>
 						{dropdownActions(

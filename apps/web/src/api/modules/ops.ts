@@ -79,6 +79,8 @@ export interface OpsResponsibleMember {
 export interface OpsResponsibleSegment {
 	id: number;
 	name: string;
+	defaultDeliveryHours?: number;
+	riskWarningHours?: number;
 	members: OpsResponsibleMember[];
 }
 export interface OpsTicket {
@@ -174,6 +176,7 @@ export interface CreateTicketBody {
 	summary?: string;
 	hyperlink?: string;
 	text?: string;
+	dueInHours?: number;
 }
 export interface CreateTicketBatchBody {
 	projectId: string;

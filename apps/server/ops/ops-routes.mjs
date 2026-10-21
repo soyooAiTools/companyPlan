@@ -66,7 +66,7 @@ function mapTicket(t, segNameById) {
     hyperlink: t.hyperlink ?? "",
     blockReason: t.block_reason ?? "",
     riskWarningHours: t.risk_warning_hours ?? 8,
-    remainingHours: t.status === "已完成" ? null : remainingBusinessHours(t.due_at), // 距交付的工作小时(正=剩,负=超期);已完成=null
+    remainingHours: t.status === "已完成" ? null : remainingBusinessHours(t.due_at),
     createdAt: t.created_at,
     statusUpdatedAt: t.status_updated_at,
   };
@@ -158,6 +158,11 @@ async function logTicketEvent({ ticketId, user, action, fromStatus = null, toSta
   });
 }
 
+function ticketDueTimeNote(data) {
+  const hours = Number(data?.due_in_hours);
+  return Number.isFinite(hours) ? `期望完成时间：${hours} 小时` : null;
+}
+
 async function backfillDefaultSegmentTags(segments, links, liveTags) {
   // Older production databases already contain the default segments but have
   // no links because tags moved from the local snapshot to the realtime soyoo
@@ -222,17 +227,17 @@ export async function prepareTicketCreate({ user, body, feedbackAssignment = fal
   const segment = await database.ops_segments.findUnique({ where: { id: segmentId } });
   if (!segment) return { error: "环节不存在" };
   const requestedDueInHours = body.dueInHours;
-  const dueInHours = requestedDueInHours == null || requestedDueInHours === ""
-    ? segment.default_delivery_hours
-    : Number(requestedDueInHours);
-  if (!Number.isInteger(dueInHours) || dueInHours < 1 || dueInHours > 720) {
-    return { error: "期望完成时长须为 1 至 720 小时的整数" };
-  }
+  const fixedSystemDueTime = String(segment.name || "").trim() === "制片";
+  const dueInHours = fixedSystemDueTime
+    ? Number(segment.default_delivery_hours)
+    : requestedDueInHours == null || requestedDueInHours === ""
+      ? Number(segment.default_delivery_hours)
+      : Number(requestedDueInHours);
   const segTags = await loadSegmentTags(segmentId, database);
-  if (!segTags.length) return { error: "该环节未绑定任何标签" };
 
   let built;
   try {
+    if (!segTags.length) return { error: "该环节未绑定任何标签" };
     built = await buildTicketSnapshot({ projectId, projectVersionId: body.projectVersionId, ownerId, requesterUserId: meId(user), segTags, allowProjectMember: feedbackAssignment });
   } catch (e) {
     return { soyooError: e };
@@ -659,7 +664,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
               action: "建单",
               from_status: null,
               to_status: "排队中",
-              note: null,
+              note: ticketDueTimeNote(item.data),
               created_at: nowIso(),
             },
           });
@@ -684,7 +689,7 @@ export function registerOpsRoutes(app, { requireAuth, requireAdmin }) {
     const created = await prisma.tickets.create({
       data: prepared.data,
     });
-    await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中" });
+    await logTicketEvent({ ticketId: created.id, user, action: "建单", toStatus: "排队中", note: ticketDueTimeNote(prepared.data) });
     await notif.notifyTicketAssigned(created, meId(user)); // 通知负责人(指给自己不通知;失败不影响建单)
     const projectRow = await refreshProjectPoolSnapshot(created.project_id).catch(() => null);
     res.status(201).json({ ticket: await decorateTickets(created, user, await loadSegNameMap()), projectRow });

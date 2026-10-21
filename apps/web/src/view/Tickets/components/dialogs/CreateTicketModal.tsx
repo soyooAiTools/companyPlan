@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Avatar, Button, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Spin, Tooltip } from "antd";
+import { Avatar, Button, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Spin, Tooltip } from "antd";
 import { CopyOutlined, DeleteOutlined, ExclamationCircleFilled, PlusOutlined } from "@ant-design/icons";
 import type { FormInstance } from "antd";
 import type { OpsProject, OpsProjectVersion, OpsResponsibleMember, OpsResponsibleSegment, OpsTenant } from "../../../../api/modules/ops";
@@ -21,6 +21,7 @@ type TicketDraft = {
 	segmentId?: number;
 	ownerId?: string;
 	contentHtml?: string;
+	dueInHours?: number;
 };
 
 type CreateTicketModalProps = {
@@ -89,6 +90,8 @@ export default function CreateTicketModal({
 		if (segmentId) return (segments.find((s) => s.id === segmentId)?.members ?? []).map(toOwnerOption);
 		return (members ?? []).map(toOwnerOption);
 	};
+	const selectedSegment = (segmentId?: number) => segments.find((segment) => segment.id === segmentId);
+	const isFixedSystemDueTime = (segmentId?: number) => selectedSegment(segmentId)?.name === "制片";
 	const fillSegmentByOwner = (index: number, ownerId?: string) => {
 		if (!ownerId || tickets[index]?.segmentId) return;
 		const segId = members.find((x) => x.id === ownerId)?.segmentIds?.[0];
@@ -108,6 +111,7 @@ export default function CreateTicketModal({
 			{
 				title: draft.title,
 				contentHtml: draft.contentHtml,
+				dueInHours: draft.dueInHours,
 				segmentId: undefined,
 				ownerId: undefined,
 			},
@@ -289,51 +293,52 @@ export default function CreateTicketModal({
 												borderRadius: 8,
 												padding: "12px 14px 14px",
 												background: "#fff",
+															position: "relative",
 											}}>
+													<div style={{ position: "absolute", top: 8, right: 12, zIndex: 2, display: "inline-flex", gap: 4 }}>
+													<Tooltip title="复制此工单">
+														<Button
+															size="small"
+															type="text"
+															htmlType="button"
+															disabled={fields.length >= 20}
+															icon={<CopyOutlined style={{ fontSize: 16 }} />}
+															style={{ width: 28, height: 24 }}
+															onClick={() => copyTask(add, field.name)}
+														/>
+													</Tooltip>
+													{fields.length > 1 ? (
+														hasTaskDraft(tickets[index]) ? (
+															<Popconfirm title="删除这条任务？" description="已填写内容，删除后不会保存。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => removeTask(remove, field.name)}>
+																<Button size="small" type="text" htmlType="button" danger icon={<DeleteOutlined style={{ fontSize: 16 }} />} style={{ width: 28, height: 24 }} />
+															</Popconfirm>
+														) : (
+															<Button size="small" type="text" htmlType="button" danger icon={<DeleteOutlined style={{ fontSize: 16 }} />} style={{ width: 28, height: 24 }} onClick={() => removeTask(remove, field.name)} />
+														)
+													) : null}
+												</div>
 											<Row gutter={12}>
-												<Col span={24}>
+									<Col span={16}>
 													<Form.Item
 														className="ops-create-ticket-title-item"
 														name={[field.name, "title"]}
 														label={
-															<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
 																<span>标题</span>
-																<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
-																	<Tooltip title="复制此工单">
-																		<Button
-																			size="small"
-																			type="text"
-																			htmlType="button"
-																			disabled={fields.length >= 20}
-																			icon={<CopyOutlined style={{ fontSize: 16 }} />}
-																			style={{ width: 28, height: 24 }}
-																			onClick={() => copyTask(add, field.name)}
-																		/>
-																	</Tooltip>
-																	{fields.length > 1 ? (
-																		hasTaskDraft(tickets[index]) ? (
-																			<Popconfirm title="删除这条任务？" description="已填写内容，删除后不会保存。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => removeTask(remove, field.name)}>
-																				<Button size="small" type="text" htmlType="button" danger icon={<DeleteOutlined style={{ fontSize: 16 }} />} style={{ width: 28, height: 24 }} />
-																			</Popconfirm>
-																		) : (
-																			<Button
-																				size="small"
-																				type="text"
-																				htmlType="button"
-																				danger
-																				icon={<DeleteOutlined style={{ fontSize: 16 }} />}
-																				style={{ width: 28, height: 24 }}
-																				onClick={() => removeTask(remove, field.name)}
-																			/>
-																		)
-																	) : null}
-																</span>
-															</div>
 														}
 														rules={[{ required: true, message: "请输入标题" }]}>
 														<Input maxLength={160} placeholder="输入标题" />
 													</Form.Item>
 												</Col>
+			<Col span={8}>
+								<Form.Item
+									name={[field.name, "dueInHours"]}
+									label="期望完成时长（小时）"
+									extra={isFixedSystemDueTime(segmentId) ? `制片固定使用系统交付时长（${selectedSegment(segmentId)?.defaultDeliveryHours ?? 1} 小时）` : undefined}
+									rules={isFixedSystemDueTime(segmentId) ? undefined : [{ required: true, message: "请输入期望完成工单时间" }]}
+								>
+									<InputNumber min={1} max={720} precision={0} disabled={isFixedSystemDueTime(segmentId)} style={{ width: "100%" }} placeholder={isFixedSystemDueTime(segmentId) ? "系统固定时长" : "请输入期望完成工单时间"} />
+								</Form.Item>
+							</Col>
 											<Col span={10}>
 												<Form.Item name={[field.name, "segmentId"]} label="环节" rules={[{ required: true, message: "请选择环节" }]}>
 													<Select
@@ -343,7 +348,10 @@ export default function CreateTicketModal({
 														placeholder="选择环节"
 														options={segments.map((s) => ({ value: s.id, label: s.name }))}
 														notFoundContent="该项目暂无可分配的环节"
-														onChange={() => form.setFieldValue(["tickets", field.name, "ownerId"], undefined)}
+																							onChange={(nextSegmentId) => {
+																							form.setFieldValue(["tickets", field.name, "ownerId"], undefined);
+																							form.setFieldValue(["tickets", field.name, "dueInHours"], isFixedSystemDueTime(nextSegmentId) ? selectedSegment(nextSegmentId)?.defaultDeliveryHours : undefined);
+																						}}
 													/>
 												</Form.Item>
 											</Col>

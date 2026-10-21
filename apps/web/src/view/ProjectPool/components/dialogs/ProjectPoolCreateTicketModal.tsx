@@ -44,6 +44,17 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 	const projectsRequestSeq = useRef(0);
 	const selectedProject = projects.find((item) => String(item.id) === String(selectedProjectId));
 	const selectedVersion = selectedProject?.versions?.find((version) => String(version.id) === String(selectedVersionId));
+	const selectedSegment = (segmentId?: unknown) => segments.find((segment) => String(segment.id) === String(segmentId));
+	const resolveDueTime = (ticket: Record<string, unknown>, index: number) => {
+		const fieldValue = ticket.dueInHours ?? form.getFieldValue(["tickets", index, "dueInHours"]);
+		const segment = selectedSegment(ticket.segmentId);
+		if (segment?.name === "制片") return Number(segment.defaultDeliveryHours ?? 1);
+		return fieldValue;
+	};
+	const hasValidDueTime = (ticket: Record<string, unknown>, index: number) => {
+		const hours = resolveDueTime(ticket, index);
+		return Number.isInteger(Number(hours)) && Number(hours) >= 1 && Number(hours) <= 720;
+	};
 
 	const clickedVersion = project?.versionId
 		? {
@@ -167,12 +178,13 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 
 	const submit = async () => {
 		await form.validateFields([["tenantId"], ["projectId"]]);
-		const v = form.getFieldsValue();
+		const v = form.getFieldsValue(true);
 		const rawTickets = (v.tickets || []) as Record<string, unknown>[];
 		const hasAnyValue = (ticket: Record<string, unknown>) =>
-			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || stripHtmlText(String(ticket.contentHtml ?? "")));
-		const isComplete = (ticket: Record<string, unknown>) => Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim());
-		const incompleteIndex = rawTickets.findIndex((ticket) => hasAnyValue(ticket) && !isComplete(ticket));
+			Boolean(String(ticket.title ?? "").trim() || ticket.segmentId != null || String(ticket.ownerId ?? "").trim() || ticket.dueInHours != null || stripHtmlText(String(ticket.contentHtml ?? "")));
+		const isComplete = (ticket: Record<string, unknown>, index: number) =>
+			Boolean(String(ticket.title ?? "").trim() && ticket.segmentId != null && String(ticket.ownerId ?? "").trim() && hasValidDueTime(ticket, index));
+		const incompleteIndex = rawTickets.findIndex((ticket, index) => hasAnyValue(ticket) && !isComplete(ticket, index));
 		if (incompleteIndex >= 0) {
 			const ticket = rawTickets[incompleteIndex];
 			const ownerName = String(ticket.ownerId ?? "").trim() ? members.find((member) => member.id === String(ticket.ownerId))?.name || String(ticket.ownerId) : "未选负责人";
@@ -184,15 +196,17 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 					!String(ticket.title ?? "").trim() ? { name: ["tickets", incompleteIndex, "title"], errors: ["请输入标题"] } : null,
 					ticket.segmentId == null ? { name: ["tickets", incompleteIndex, "segmentId"], errors: ["请选择环节"] } : null,
 					!String(ticket.ownerId ?? "").trim() ? { name: ["tickets", incompleteIndex, "ownerId"], errors: ["请选择负责人"] } : null,
+					!hasValidDueTime(ticket, incompleteIndex) ? { name: ["tickets", incompleteIndex, "dueInHours"], errors: ["请填写期望的完成时长"] } : null,
 				].filter(Boolean) as Parameters<typeof form.setFields>[0],
 			);
-			messageApi.error(`${ticketLabel}：请补全标题、环节和负责人`);
+			messageApi.error(`${ticketLabel}：请补全标题、环节、负责人和期望完成时长`);
 			return;
 		}
 		setInvalidTaskIndex(null);
 		const ticketsToCreate = rawTickets
-			.filter(isComplete)
-			.map((ticket) => ({
+			.map((ticket, index) => ({ ticket, index }))
+			.filter(({ ticket, index }) => isComplete(ticket, index))
+			.map(({ ticket, index }) => ({
 				projectId: versionProjectId(v.projectId, selectedVersion?.id),
 				projectVersionId: selectedVersion?.id || "",
 				projectVersionCode: selectedVersion?.code || "",
@@ -202,6 +216,7 @@ export default function ProjectPoolCreateTicketModal({ open, project, member, me
 				title: String(ticket.title || "").trim(),
 				priority: v.priority,
 				contentHtml: String(ticket.contentHtml ?? ""),
+				dueInHours: resolveDueTime(ticket, index),
 			}));
 		if (!ticketsToCreate.length) {
 			messageApi.error("请至少填写一条完整工单");
